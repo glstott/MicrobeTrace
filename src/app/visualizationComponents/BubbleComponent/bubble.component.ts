@@ -74,6 +74,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   SelectedNodeCollapsingTypeVariable: boolean;
 
   private suppressCySelectionEvents: boolean = false;
+  private timelineDateAxisRangeSignature = '';
 
   private destroy$ = new Subject<void>();
 
@@ -165,7 +166,21 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     });
 
     $( document ).on( "node-visibility", function( ) {
-      //console.log('node visi event')
+      // Date axes are based on the selected range, not the moving playhead.
+      if (that.hasTimelineFilteredDateAxis()) {
+        if (that.hasTimelineDateAxisRangeChanged()) {
+          that.updateAxisValues('X');
+          that.updateAxisValues('Y');
+          that.svgDefs = {};
+          that.getData();
+        } else {
+          that.updateVisibleNodes();
+        }
+
+        if (!that.SelectedNodeCollapsingTypeVariable) that.updateNodes();
+        return;
+      }
+
       that.updateVisibleNodes()
       if (!that.SelectedNodeCollapsingTypeVariable) {
         that.updateNodes();
@@ -242,6 +257,79 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
 
     // Preserve insertion order between invalid/missing buckets.
     return 0;
+  }
+
+  private isTimelineFilteringActive(): boolean {
+    const timelineField = this.commonService.session.style.widgets["timeline-date-field"];
+    return timelineField !== undefined && timelineField !== null && timelineField !== 'None';
+  }
+
+  private hasTimelineFilteredDateAxis(): boolean {
+    return this.isTimelineFilteringActive() && (this.xVarDate || this.yVarDate);
+  }
+
+  private getTimelineDateAxisRangeSignature(): string {
+    const timelineField = this.commonService.session.style.widgets["timeline-date-field"];
+    const state = this.commonService.session.state;
+    const rangeStart = this.commonService.hasValidTimelineDateValue(state.timeStart)
+      ? new Date(state.timeStart).getTime()
+      : '';
+    const rangeEndValue = state.timeTarget || state.timeEnd;
+    const rangeEnd = this.commonService.hasValidTimelineDateValue(rangeEndValue)
+      ? new Date(rangeEndValue).getTime()
+      : '';
+
+    return [
+      timelineField,
+      rangeStart,
+      rangeEnd,
+      this.xVarDate ? this.xVariable : '',
+      this.yVarDate ? this.yVariable : ''
+    ].join('|');
+  }
+
+  private hasTimelineDateAxisRangeChanged(): boolean {
+    const signature = this.getTimelineDateAxisRangeSignature();
+    if (signature === this.timelineDateAxisRangeSignature) {
+      return false;
+    }
+
+    this.timelineDateAxisRangeSignature = signature;
+    return true;
+  }
+
+  private getTimelineRangeAxisNodes(): any[] {
+    const timelineField = this.commonService.session.style.widgets["timeline-date-field"];
+    const state = this.commonService.session.state;
+    const rangeStart = this.commonService.hasValidTimelineDateValue(state.timeStart)
+      ? new Date(state.timeStart).getTime()
+      : null;
+    const rangeEndValue = state.timeTarget || state.timeEnd;
+    const rangeEnd = this.commonService.hasValidTimelineDateValue(rangeEndValue)
+      ? new Date(rangeEndValue).getTime()
+      : null;
+
+    return this.commonService.getVisibleNodesIgnoringTimeline().filter(node => {
+      const rawDateValue = node[timelineField];
+      if (!this.commonService.hasValidTimelineDateValue(rawDateValue)) {
+        return true;
+      }
+
+      const nodeTime = new Date(rawDateValue).getTime();
+      return (
+        (rangeStart == null || nodeTime >= rangeStart) &&
+        (rangeEnd == null || nodeTime <= rangeEnd)
+      );
+    });
+  }
+
+  private getAxisSourceNodes(axis: string): any[] {
+    const dateAxis = axis == 'X' ? this.xVarDate : this.yVarDate;
+    if (dateAxis && this.isTimelineFilteringActive()) {
+      return this.getTimelineRangeAxisNodes();
+    }
+
+    return this.commonService.session.data.nodeFilteredValues || [];
   }
 
   private syncFromSessionState() {
@@ -679,7 +767,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   * @param axis 'X' or anything else defaults to 'Y' axis
   */
   updateAxisValues(axis: string) {
-    let nodes = this.commonService.session.data.nodeFilteredValues;
+    let nodes = this.getAxisSourceNodes(axis);
 
     if (axis == 'X') {
       this.widgets['bubble-x'] = this.xVariable;
@@ -756,7 +844,9 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     
     if (initial) {
       this.visibleData = [];
-      let fullNodes = this.commonService.session.data.nodeFilteredValues;
+      let fullNodes = this.hasTimelineFilteredDateAxis()
+        ? this.getTimelineRangeAxisNodes()
+        : this.commonService.session.data.nodeFilteredValues;
       this.allData.forEach(node => {
         let X_group = 0, Y_group = 0;
         let currentFullNode = fullNodes.find(fNode => fNode.index == node.index)
