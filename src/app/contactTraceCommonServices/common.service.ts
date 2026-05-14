@@ -580,7 +580,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 settingsLoaded: false,
             },
             state: {
-                timeStart: 0,
+                timeStart: new Date(0),
                 timeEnd: new Date(),
                 timeTarget: null
             },
@@ -3866,6 +3866,12 @@ align(params): Promise<any> {
             clusters = this.session.data.clusters;
         let n = nodes.length;
         let visibleNodes = 0;
+        const timeStart = this.hasValidTimelineDateValue(this.session.state.timeStart)
+            ? moment(this.session.state.timeStart).toDate()
+            : null;
+        const timeEnd = this.hasValidTimelineDateValue(this.session.state.timeEnd)
+            ? moment(this.session.state.timeEnd).toDate()
+            : null;
         for (let i = 0; i < n; i++) {
             const node = nodes[i];
 
@@ -3882,9 +3888,11 @@ align(params): Promise<any> {
             if (dateField != "None") {
                 const rawDateValue = node[dateField];
                 if (this.hasValidTimelineDateValue(rawDateValue)) {
+                    const nodeDate = moment(rawDateValue).toDate();
                     node.visible =
                         node.visible &&
-                        moment(this.session.state.timeEnd).toDate() >= moment(rawDateValue).toDate();
+                        (timeStart == null || nodeDate >= timeStart) &&
+                        (timeEnd == null || nodeDate <= timeEnd);
                 }
             }
 

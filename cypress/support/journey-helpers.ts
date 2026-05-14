@@ -1212,6 +1212,81 @@ export function setTimelineDate(date: string | Date): void {
     });
 }
 
+export function setTimelineRange(start: string | Date, end: string | Date): void {
+  const parsedStart = start instanceof Date ? moment(start) : moment(String(start));
+  const parsedEnd = end instanceof Date ? moment(end) : moment(String(end));
+  expect(parsedStart.isValid(), `valid timeline range start for ${String(start)}`).to.equal(true);
+  expect(parsedEnd.isValid(), `valid timeline range end for ${String(end)}`).to.equal(true);
+  expect(parsedStart.toDate().getTime(), 'timeline range start <= end').to.be.at.most(parsedEnd.toDate().getTime());
+  const startDate = parsedStart.toDate();
+  const endDate = parsedEnd.toDate();
+
+  cy.get('#global-timeline svg', { timeout: 15000 }).should('exist');
+  cy.window()
+    .its('commonService.visuals.microbeTrace')
+    .should((microbeTrace) => {
+      expect(microbeTrace, 'microbeTrace visual').to.exist;
+      expect(microbeTrace.onTimelineRangeInputChanged, 'timeline range input handler').to.be.a('function');
+      expect(microbeTrace.xAttribute, 'timeline scale').to.exist;
+      expect(microbeTrace.startHandle, 'timeline start handle').to.exist;
+      expect(microbeTrace.endHandle, 'timeline end handle').to.exist;
+    });
+
+  cy.window().then((win: unknown) => {
+    const w = win as WinWithMT;
+    const microbeTrace = w.commonService.visuals.microbeTrace;
+    microbeTrace.timelineRangeStartDate = startDate;
+    microbeTrace.timelineRangeEndDate = endDate;
+    microbeTrace.onTimelineRangeInputChanged();
+  });
+
+  cy.window().its('commonService.session.state').should((state) => {
+    expect(new Date(state.timeStart as string | number | Date).getTime(), 'timeline range start')
+      .to.equal(startDate.getTime());
+    expect(new Date(state.timeTarget as string | number | Date).getTime(), 'timeline range target')
+      .to.equal(endDate.getTime());
+    expect(new Date(state.timeEnd as string | number | Date).getTime(), 'timeline range current end')
+      .to.equal(endDate.getTime());
+  });
+
+  cy.get('body').then(($body) => {
+    if ($body.find('#timeline-start-date-input').length > 0) {
+      cy.get('#timeline-start-date-input').invoke('val').should((value) => {
+        expect(moment(String(value), ['M/D/YYYY', 'MM/DD/YYYY'], true).isSame(parsedStart, 'day'), 'start date input')
+          .to.equal(true);
+      });
+      cy.get('#timeline-end-date-input').invoke('val').should((value) => {
+        expect(moment(String(value), ['M/D/YYYY', 'MM/DD/YYYY'], true).isSame(parsedEnd, 'day'), 'end date input')
+          .to.equal(true);
+      });
+    }
+  });
+}
+
+export function moveTimelineRangeHandle(handle: 'start' | 'end', date: string | Date): void {
+  const parsedDate = date instanceof Date ? moment(date) : moment(String(date));
+  expect(parsedDate.isValid(), `valid timeline ${handle} handle date for ${String(date)}`).to.equal(true);
+  const targetDate = parsedDate.toDate();
+  const selector = handle === 'start' ? '.timeline-range-start-handle' : '.timeline-range-end-handle';
+
+  cy.get(`#global-timeline svg ${selector}`, { timeout: 15000 }).should('exist');
+  cy.window().then((win: unknown) => {
+    const w = win as WinWithMT;
+    const microbeTrace = w.commonService.visuals.microbeTrace;
+    if (handle === 'start') {
+      microbeTrace.setTimelineRangeFromStartDate(targetDate);
+    } else {
+      microbeTrace.setTimelineRangeFromEndDate(targetDate);
+    }
+  });
+
+  cy.window().its('commonService.session.state').should((state) => {
+    const stateKey = handle === 'start' ? 'timeStart' : 'timeTarget';
+    expect(new Date(state[stateKey] as string | number | Date).getTime(), `timeline ${handle} handle state`)
+      .to.equal(targetDate.getTime());
+  });
+}
+
 export function assertVisibleNodeIds(expectedNodeIds: string[], timeout = 20000): void {
   cy.window({ timeout }).should((win: unknown) => {
     const w = win as WinWithMT;

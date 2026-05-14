@@ -8,7 +8,9 @@ import {
   computeOracleForProfile,
   getOracleSnapshot,
   launchProfileToTwoD,
+  moveTimelineRangeHandle,
   openGlobalStylingTab,
+  setTimelineRange,
   setTimelineField,
 } from '../../../support/journey-helpers';
 import type { OracleStep } from '../../../oracle/types';
@@ -187,6 +189,7 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
   const timeline = profile.expectations.timeline!;
   const startCheckpoint = timeline.checkpoints.find((checkpoint) => checkpoint.id === 'timeline-start') ?? timeline.checkpoints[0];
   const midCheckpoint = timeline.checkpoints.find((checkpoint) => checkpoint.id === 'timeline-mid') ?? timeline.checkpoints[0];
+  const maxCheckpoint = timeline.checkpoints.find((checkpoint) => checkpoint.id === 'timeline-max') ?? timeline.checkpoints[timeline.checkpoints.length - 1];
 
   it('keeps 2D timeline play/pause and manual slider checkpoints aligned on uploaded data', () => {
     let initialLabel = '';
@@ -261,6 +264,90 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
 
     clickTimelineSliderAtDate(startCheckpoint.date);
     getOracleSnapshot('oracleResult', startCheckpoint.id).then((snapshot) => {
+      assertNetworkMatchesOracleSnapshot(snapshot);
+    });
+  });
+
+  it('links custom timeline range fields, draggable handles, playback bounds, and reset behavior', () => {
+    const inputRangeStart = '7/7/2021';
+    const inputRangeEnd = midCheckpoint.date;
+    const draggedRangeStart = '7/11/2021';
+
+    const oracleSteps: OracleStep[] = [
+      {
+        id: 'timeline-enabled',
+        kind: 'set-timeline-field',
+        field: timeline.field,
+      },
+      {
+        id: 'range-from-inputs',
+        kind: 'set-timeline-range',
+        start: inputRangeStart,
+        end: inputRangeEnd,
+      },
+      {
+        id: 'range-from-handle',
+        kind: 'set-timeline-range',
+        start: draggedRangeStart,
+        end: inputRangeEnd,
+      },
+      {
+        id: 'range-reset',
+        kind: 'set-timeline-range',
+        start: startCheckpoint.date,
+        end: maxCheckpoint.date,
+      },
+    ];
+
+    computeOracleForProfile(profile, oracleSteps);
+
+    launchProfileToTwoD(profile);
+    assertAfterLaunchCounts(profile);
+    setTimelineField(timeline.field);
+
+    cy.openGlobalSettings();
+    cy.contains('#global-settings-modal .nav-link', 'Timeline').click({ force: true });
+    setTimelineRange(inputRangeStart, inputRangeEnd);
+    cy.closeGlobalSettings();
+
+    getOracleSnapshot('oracleResult', 'range-from-inputs').then((snapshot) => {
+      assertNetworkMatchesOracleSnapshot(snapshot);
+    });
+
+    moveTimelineRangeHandle('start', draggedRangeStart);
+    getOracleSnapshot('oracleResult', 'range-from-handle').then((snapshot) => {
+      assertNetworkMatchesOracleSnapshot(snapshot);
+    });
+
+    cy.get('#timeline-play-button').should('contain', 'Play').click();
+    cy.get('#timeline-play-button', { timeout: 15000 }).should('contain', 'Pause');
+
+    cy.window({ timeout: 15000 }).should((win: unknown) => {
+      const value = (win as WinWithCy).commonService.session.state.timeEnd;
+      const currentTime = new Date(value as string | number | Date).getTime();
+      expect(currentTime, 'bounded playback starts inside selected range')
+        .to.be.at.least(new Date(draggedRangeStart).getTime())
+        .and.at.most(new Date(inputRangeEnd).getTime());
+    });
+
+    cy.wait(500);
+    cy.window({ timeout: 15000 }).should((win: unknown) => {
+      const value = (win as WinWithCy).commonService.session.state.timeEnd;
+      const currentTime = new Date(value as string | number | Date).getTime();
+      expect(currentTime, 'bounded playback remains inside selected range')
+        .to.be.at.least(new Date(draggedRangeStart).getTime())
+        .and.at.most(new Date(inputRangeEnd).getTime());
+    });
+
+    cy.get('#timeline-play-button').should('contain', 'Pause').click();
+    cy.get('#timeline-play-button').should('contain', 'Play');
+
+    cy.openGlobalSettings();
+    cy.contains('#global-settings-modal .nav-link', 'Timeline').click({ force: true });
+    cy.get('#timeline-reset-range-button').click({ force: true });
+    cy.closeGlobalSettings();
+
+    getOracleSnapshot('oracleResult', 'range-reset').then((snapshot) => {
       assertNetworkMatchesOracleSnapshot(snapshot);
     });
   });
