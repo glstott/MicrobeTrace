@@ -2089,6 +2089,21 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.refreshKeyTablesView();
     }
 
+    private refreshTimelineColorState(): void {
+        const nodeColorVariable = this.commonService.session.style.widgets['node-color-variable'];
+        const linkColorVariable = this.commonService.session.style.widgets['link-color-variable'];
+
+        if (nodeColorVariable && nodeColorVariable !== 'None') {
+            this.commonService.createNodeColorMap();
+        }
+
+        if (linkColorVariable && linkColorVariable !== 'None') {
+            this.commonService.createLinkColorMap();
+        }
+
+        this.refreshVisibleColorTables();
+    }
+
     mapPreviousShapeNameToCurrent(name: string): string {
         return resolveNodeShapeKey(name);
     }
@@ -2570,7 +2585,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     const aggregates = this.commonService.createLinkColorMap();
     console.log('DEBUG: createLinkColorMap =>', aggregates);
 
-    const vlinks = this.commonService.getVisibleLinks();
+    const vlinks = this.commonService.getVisibleTopologySummary().links;
     console.log('DEBUG: getVisibleLinks =>', vlinks?.length);
 
     const aggregateValues = Object.keys(aggregates);
@@ -2876,9 +2891,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     }
 
     private refreshTimelineVisibility(): void {
-        this.commonService.setNodeVisibility(false);
-        this.commonService.setLinkVisibility(false);
+        this.commonService.setNodeVisibility(true);
+        this.commonService.setLinkVisibility(true);
+        this.refreshTimelineColorState();
         this.commonService.updateStatistics();
+        $(document).trigger("node-visibility");
     }
 
     private applyTimelineRange(startDate: Date, endDate: Date, updatePlayhead = true): void {
@@ -3043,9 +3060,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             // change timeline variable when end time not reaching target time - redraw netwrok to start fresh
             if (moment(this.commonService.session.state.timeEnd).toDate() < moment(this.commonService.session.state.timeTarget).toDate()) {
                 this.commonService.session.state.timeEnd = this.commonService.session.state.timeTarget;
-                this.commonService.setNodeVisibility(false);
-                this.commonService.setLinkVisibility(false);
-                this.commonService.updateStatistics();
+                this.refreshTimelineVisibility();
                 this.store.setNetworkUpdated(true);
             }
         }
@@ -3056,9 +3071,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             $("#global-timeline-wrapper").fadeOut();
             this.commonService.session.network.timelineNodes = [];
             this.clearTimelineRangeState();
-            this.commonService.setNodeVisibility(false);
-            this.commonService.setLinkVisibility(false);
-            this.commonService.updateStatistics();
+            this.refreshTimelineVisibility();
             this.store.setNetworkUpdated(true);
             return;
         }

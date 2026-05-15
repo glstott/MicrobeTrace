@@ -412,7 +412,12 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
          // Used for timeline mode, TODO: update to use an RxJS Observable
         $( document ).on( "node-visibility", function( ) {
             let visNodes = that.commonService.getVisibleNodes();
-            if (visNodes.length == that.nodes.length) { return; }
+            const getNodeId = (node: any): string => String(node?._id ?? node?.id ?? node?.ID ?? '');
+            const currentNodeIds = new Set((that.nodes || []).map(getNodeId));
+            const sameVisibleNodeMembership = visNodes.length == that.nodes.length
+                && visNodes.every(node => currentNodeIds.has(getNodeId(node)));
+
+            if (sameVisibleNodeMembership) { return; }
             that.nodes = visNodes;
             that.matchCoordinates(undefined, true);
             that.nodes.forEach(node => {

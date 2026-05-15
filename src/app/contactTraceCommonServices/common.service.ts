@@ -3460,7 +3460,7 @@ align(params): Promise<any> {
             return [];
         }
 
-        const links = this.getVisibleLinks();
+        const links = this.getVisibleTopologySummary().links;
       
         let linkColors;
         if( this.session.style.linkColorsTable && this.session.style.linkColorsTable[linkColorVariable]) {
