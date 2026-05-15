@@ -380,6 +380,17 @@ label[for="search"] {
     cursor: ew-resize;
     stroke-width: 2px;
   }
+  .timeline-range-hit-area {
+    fill: transparent;
+    stroke: transparent;
+    cursor: ew-resize;
+    pointer-events: all;
+  }
+  #global-timeline .timeline-range-start-label,
+  #global-timeline .label,
+  #global-timeline .ticks text {
+    pointer-events: none;
+  }
   .handle {
     fill: #fff;
     stroke: #000;
@@ -388,8 +399,7 @@ label[for="search"] {
     stroke-width: 1.25px;
   }
   .timeline-range-start-label {
-    fill: #575962;
-    font-size: 12px;
+    fill: #000;
   }
 
   .p-dialog .p-dialog-header button {

@@ -328,6 +328,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     public handle: any;
     public startHandle: any;
     public endHandle: any;
+    public startHandleHitArea: any;
+    public endHandleHitArea: any;
     public rangeTrack: any;
     
     public label: any;
@@ -2841,6 +2843,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.commonService.session.state.timeTarget = null;
         this.startHandle = null;
         this.endHandle = null;
+        this.startHandleHitArea = null;
+        this.endHandleHitArea = null;
         this.rangeTrack = null;
         this.handle = null;
         this.label = null;
@@ -2926,8 +2930,16 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             this.startHandle.attr("cx", startX);
         }
 
+        if (this.startHandleHitArea) {
+            this.startHandleHitArea.attr("cx", startX);
+        }
+
         if (this.endHandle) {
             this.endHandle.attr("cx", endX);
+        }
+
+        if (this.endHandleHitArea) {
+            this.endHandleHitArea.attr("cx", endX);
         }
 
         if (this.startLabel) {
@@ -3158,45 +3170,66 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             .attr("x", this.xAttribute)
             .attr("y", 10)
             .attr("text-anchor", "middle")
+            .attr("pointer-events", "none")
             .text(function(d) { return tickDateFormat(d); });
 
         this.startLabel = slider.append("text")
             .attr("class", "timeline-range-start-label")
             .attr("text-anchor", "middle")
-            .attr("y", -42);
+            .attr("y", -42)
+            .attr("pointer-events", "none");
 
         this.label = slider.append("text")
             .attr("class", "label")
             .attr("text-anchor", "middle")
-            .attr("y", -20);
+            .attr("y", -20)
+            .attr("pointer-events", "none");
+
+        const createStartHandleDrag = () => d3.drag()
+            .on("start.interrupt", function() { slider.interrupt(); })
+            .on("start drag", function() {
+                const eventX = (d3 as any).event.x;
+                that.stopTimelinePlayback();
+                that.setTimelineRangeFromStartDate(that.xAttribute.invert(eventX));
+            });
+
+        const createEndHandleDrag = () => d3.drag()
+            .on("start.interrupt", function() { slider.interrupt(); })
+            .on("start drag", function() {
+                const eventX = (d3 as any).event.x;
+                that.stopTimelinePlayback();
+                that.setTimelineRangeFromEndDate(that.xAttribute.invert(eventX));
+            });
 
         this.startHandle = slider.append("circle")
             .attr("class", "timeline-range-handle timeline-range-start-handle")
             .attr("r", 9)
-            .call(d3.drag()
-                .on("start.interrupt", function() { slider.interrupt(); })
-                .on("start drag", function() {
-                    const eventX = (d3 as any).event.x;
-                    that.stopTimelinePlayback();
-                    that.setTimelineRangeFromStartDate(that.xAttribute.invert(eventX));
-                })
-            );
+            .call(createStartHandleDrag());
 
         this.endHandle = slider.append("circle")
             .attr("class", "timeline-range-handle timeline-range-end-handle")
             .attr("r", 9)
-            .call(d3.drag()
-                .on("start.interrupt", function() { slider.interrupt(); })
-                .on("start drag", function() {
-                    const eventX = (d3 as any).event.x;
-                    that.stopTimelinePlayback();
-                    that.setTimelineRangeFromEndDate(that.xAttribute.invert(eventX));
-                })
-            );
+            .call(createEndHandleDrag());
 
         this.handle = slider.append("circle")
             .attr("class", "handle timeline-playhead-handle")
             .attr("r", 6);
+
+        this.startHandleHitArea = slider.append("circle")
+            .attr("class", "timeline-range-hit-area timeline-range-start-hit-area")
+            .attr("r", 18)
+            .attr("fill", "transparent")
+            .attr("stroke", "transparent")
+            .attr("pointer-events", "all")
+            .call(createStartHandleDrag());
+
+        this.endHandleHitArea = slider.append("circle")
+            .attr("class", "timeline-range-hit-area timeline-range-end-hit-area")
+            .attr("r", 18)
+            .attr("fill", "transparent")
+            .attr("stroke", "transparent")
+            .attr("pointer-events", "all")
+            .call(createEndHandleDrag());
 
         this.commonService.session.style.widgets["timeline-date-field"] = field;
         this.applyTimelineRange(startDate, endDate, false);
@@ -3215,11 +3248,19 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                     return;
                 }
 
+                let resumeDate = this.getTimelineEndFromState() || startDate;
+                if (
+                    resumeDate.getTime() < startDate.getTime() ||
+                    resumeDate.getTime() >= targetDate.getTime()
+                ) {
+                    resumeDate = startDate;
+                }
+
                 this.currentTimelineStartValue = this.xAttribute(startDate);
                 this.currentTimelineTargetValue = this.xAttribute(targetDate);
-                this.currentTimelineValue = this.currentTimelineStartValue;
+                this.currentTimelineValue = this.xAttribute(resumeDate);
                 this.playBtnText = "Pause";
-                this.update(startDate, { playbackOnly: true });
+                this.update(resumeDate, { playbackOnly: true });
                 this.commonService.session.timeline = setInterval(this.step, this.timelineSpeed, this);
             }
 

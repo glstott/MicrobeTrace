@@ -949,6 +949,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
             // If the selection state was changed, notify other components.
             if (selectionChanged) {
+                this.commonService.updateStatistics();
                 $(document).trigger('node-selected');
             }
         }, 100); // Debounce for 100ms to handle rapid events efficiently.
@@ -1507,6 +1508,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 } else {
                   that.selectedNodeId = undefined;
                 }
+
+                that.commonService.updateStatistics();
               
                 if (that.debugMode) {
                   console.log('node-selected in 2d ids: ', mtSelectedNodeIds);

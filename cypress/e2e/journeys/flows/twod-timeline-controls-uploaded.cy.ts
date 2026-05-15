@@ -4,6 +4,7 @@ import moment from 'moment';
 import { getProfile } from '../datasets/profile';
 import {
   assertAfterLaunchCounts,
+  assertMetricCount,
   assertNetworkMatchesOracleSnapshot,
   computeOracleForProfile,
   getOracleSnapshot,
@@ -18,6 +19,13 @@ import type { OracleStep } from '../../../oracle/types';
 type WinWithCy = Window & {
   commonService: any;
   cytoscapeInstance?: any;
+};
+
+type RenderedTopologySummary = {
+  nodes: number;
+  visibleLinks: number;
+  clusters: number;
+  singletons: number;
 };
 
 const normalizeColor = (value: string): string => String(value || '').replace(/\s+/g, '').toLowerCase();
@@ -120,6 +128,105 @@ const assertRenderedLogicalLinkCountMatchesMetric = (): void => {
   });
 };
 
+const getRenderedTopologySummary = (win: WinWithCy): RenderedTopologySummary => {
+  const cyInstance = win.cytoscapeInstance;
+  expect(cyInstance, 'cytoscapeInstance').to.exist;
+
+  const nodeIds = getRenderedVisibleNodeIds(win);
+  const nodeIdSet = new Set(nodeIds);
+  const adjacency = new Map<string, Set<string>>();
+  const uniqueLinks = new Map<string, { source: string; target: string }>();
+
+  nodeIds.forEach((nodeId) => {
+    adjacency.set(nodeId, new Set<string>());
+  });
+
+  cyInstance.edges(':visible').forEach((edge: any) => {
+    const source = String(edge.source().id());
+    const target = String(edge.target().id());
+
+    if (source === target || !nodeIdSet.has(source) || !nodeIdSet.has(target)) {
+      return;
+    }
+
+    const logicalId = normalizeLogicalLinkId(String(edge.id()));
+    if (!uniqueLinks.has(logicalId)) {
+      uniqueLinks.set(logicalId, { source, target });
+    }
+  });
+
+  uniqueLinks.forEach(({ source, target }) => {
+    adjacency.get(source)?.add(target);
+    adjacency.get(target)?.add(source);
+  });
+
+  const visited = new Set<string>();
+  let clusters = 0;
+  let singletons = 0;
+
+  nodeIds.forEach((nodeId) => {
+    if (visited.has(nodeId)) {
+      return;
+    }
+
+    const stack = [nodeId];
+    let componentSize = 0;
+    visited.add(nodeId);
+
+    while (stack.length > 0) {
+      const current = stack.pop() as string;
+      componentSize += 1;
+
+      adjacency.get(current)?.forEach((neighbor) => {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          stack.push(neighbor);
+        }
+      });
+    }
+
+    if (componentSize === 1 && (adjacency.get(nodeId)?.size ?? 0) === 0) {
+      singletons += 1;
+    } else if (componentSize > 1) {
+      clusters += 1;
+    }
+  });
+
+  return {
+    nodes: nodeIds.length,
+    visibleLinks: uniqueLinks.size,
+    clusters,
+    singletons,
+  };
+};
+
+const assertRenderedTopologyMetricsMatchStats = (): void => {
+  cy.window()
+    .then((win: unknown) => getRenderedTopologySummary(win as WinWithCy))
+    .then((summary) => {
+      assertMetricCount('#numberOfNodes', summary.nodes);
+      assertMetricCount('#numberOfVisibleLinks', summary.visibleLinks);
+      assertMetricCount('#numberOfDisjointComponents', summary.clusters);
+      assertMetricCount('#numberOfSingletonNodes', summary.singletons);
+    });
+};
+
+const assertTimelineRangeHandleHitAreas = (): void => {
+  cy.get('#global-timeline svg .timeline-range-start-hit-area', { timeout: 15000 })
+    .should('have.attr', 'r', '18')
+    .and('have.attr', 'pointer-events', 'all');
+
+  cy.get('#global-timeline svg .timeline-range-end-hit-area')
+    .should('have.attr', 'r', '18')
+    .and('have.attr', 'pointer-events', 'all');
+
+  cy.get('#global-timeline svg .timeline-range-start-label')
+    .should('have.attr', 'pointer-events', 'none');
+
+  cy.get('#global-timeline svg text.label')
+    .should('have.attr', 'pointer-events', 'none');
+};
+
 const clickTimelineSliderAtDate = (date: string): void => {
   cy.window().then((win: unknown) => {
     const typedWindow = win as WinWithCy;
@@ -194,6 +301,8 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
   it('keeps 2D timeline play/pause and manual slider checkpoints aligned on uploaded data', () => {
     let initialLabel = '';
     let initialTime = 0;
+    let timelineStartTime = 0;
+    let pausedTime = 0;
 
     const oracleSteps: OracleStep[] = [
       {
@@ -219,6 +328,7 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
     assertAfterLaunchCounts(profile);
 
     setTimelineField(timeline.field);
+    assertTimelineRangeHandleHitAreas();
 
     getOracleSnapshot('oracleResult', 'timeline-enabled').then((snapshot) => {
       assertNetworkMatchesOracleSnapshot(snapshot);
@@ -231,8 +341,9 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
       });
 
     cy.window().then((win: unknown) => {
-      const value = (win as WinWithCy).commonService.session.state.timeEnd;
-      initialTime = new Date(value as string | number | Date).getTime();
+      const state = (win as WinWithCy).commonService.session.state;
+      timelineStartTime = new Date(state.timeStart as string | number | Date).getTime();
+      initialTime = new Date(state.timeEnd as string | number | Date).getTime();
     });
 
     cy.get('#timeline-play-button').should('contain', 'Play').click();
@@ -242,11 +353,18 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
       const nextValue = (win as WinWithCy).commonService.session.state.timeEnd;
       const nextTime = new Date(nextValue as string | number | Date).getTime();
       expect(Number.isFinite(nextTime), 'timeline playback date').to.equal(true);
-      expect(nextTime, 'timeline playback advanced the current date').not.to.equal(initialTime);
+      expect(nextTime, 'timeline playback advanced past the start date').to.be.greaterThan(timelineStartTime);
+      expect(nextTime, 'timeline playback remains before the target date').to.be.lessThan(initialTime);
     });
 
     cy.get('#timeline-play-button').should('contain', 'Pause').click();
     cy.get('#timeline-play-button').should('contain', 'Play');
+
+    cy.window().then((win: unknown) => {
+      const value = (win as WinWithCy).commonService.session.state.timeEnd;
+      pausedTime = new Date(value as string | number | Date).getTime();
+      expect(pausedTime, 'captured paused timeline date').to.be.greaterThan(timelineStartTime);
+    });
 
     cy.get('svg g.slider text.label')
       .invoke('text')
@@ -254,8 +372,23 @@ describe('Journey Flow - 2D uploaded timeline controls', () => {
         expect(String(text).trim(), 'timeline label after play/pause').not.to.equal(initialLabel);
       });
 
+    cy.get('#timeline-play-button').should('contain', 'Play').click();
+    cy.get('#timeline-play-button', { timeout: 15000 }).should('contain', 'Pause');
+
+    cy.window().then((win: unknown) => {
+      const resumedValue = (win as WinWithCy).commonService.session.state.timeEnd;
+      const resumedTime = new Date(resumedValue as string | number | Date).getTime();
+      expect(Number.isFinite(resumedTime), 'timeline resumed playback date').to.equal(true);
+      expect(resumedTime, 'timeline resumes from paused date instead of restarting')
+        .to.be.at.least(pausedTime);
+    });
+
+    cy.get('#timeline-play-button').should('contain', 'Pause').click();
+    cy.get('#timeline-play-button').should('contain', 'Play');
+
     assertTwoDTimelineNodeMembershipAligned();
     assertRenderedLogicalLinkCountMatchesMetric();
+    assertRenderedTopologyMetricsMatchStats();
 
     clickTimelineSliderAtDate(midCheckpoint.date);
     getOracleSnapshot('oracleResult', midCheckpoint.id).then((snapshot) => {
