@@ -681,6 +681,26 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
           }, 0);
       }
 
+    getLatestSessionWarningMessage(): string {
+        const warnings = this.commonService.session?.warnings;
+        if (!Array.isArray(warnings) || warnings.length === 0) {
+            return '';
+        }
+
+        const latestWarning = warnings[warnings.length - 1];
+        if (typeof latestWarning === 'string') {
+            return latestWarning;
+        }
+
+        return String(latestWarning?.message || '');
+    }
+
+    clearSessionWarnings(): void {
+        if (Array.isArray(this.commonService.session?.warnings)) {
+            this.commonService.session.warnings = [];
+        }
+    }
+
     
     // New method to handle the actual threshold change logic
     private executeThresholdChange(newThreshold: number): void {
@@ -2023,6 +2043,26 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         })
     }
 
+    private publishDistanceDisplayFormatChanged(): void {
+        const componentRefs = new Set<ComponentRef<any>>();
+
+        this.homepageTabs.forEach(tab => {
+            if (tab.componentRef) {
+                componentRefs.add(tab.componentRef);
+            }
+        });
+
+        const componentMap = (this._goldenLayoutHostComponent as any)?._componentRefMap as Map<any, ComponentRef<any>> | undefined;
+        componentMap?.forEach(componentRef => componentRefs.add(componentRef));
+
+        componentRefs.forEach(componentRef => {
+            const refreshDistanceDisplayFormat = componentRef.instance?.refreshDistanceDisplayFormat;
+            if (refreshDistanceDisplayFormat) {
+                refreshDistanceDisplayFormat.call(componentRef.instance);
+            }
+        });
+    }
+
     publishUpdateLinkColor() {
         this.homepageTabs.forEach(tab => {
             if (tab.componentRef &&
@@ -2682,17 +2722,26 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     console.log('DEBUG: final rowcount in table:', finalCount);
 
         if (isEditable) {
+            if (!this.commonService.session.style.linkValueNames) {
+                this.commonService.session.style.linkValueNames = {};
+            }
+
             linkColorTable
-                .find("td")
+                .find("td[data-value]")
                 .on("dblclick", function () {
                     $(this).attr("contenteditable", "true").focus();
                 })
-                .on("focusout", () => {
-                    const $this = $(this);
-                    $this.attr("contenteditable", "false");
+                .on("focusout", (event) => {
+                    const $cell = $(event.currentTarget);
+                    const rawValue = $cell.data("value");
+                    $cell.attr("contenteditable", "false");
 
-                    this.commonService.session.style.linkValueNames[$this.data("value")] = $this.text();
+                    if (rawValue === undefined || rawValue === null) {
+                        return;
+                    }
 
+                    this.commonService.session.style.linkValueNames[String(rawValue)] = $cell.text();
+                    this.cdref.markForCheck();
                 });
         }
 
@@ -2965,8 +3014,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
     update(h) {
 
-        (this.commonService.session.state as any)['timelineTickUpdate'] =
-          this.commonService.session.style.widgets["timeline-date-field"] != 'None';
+        // Timeline-aware views update from node-visibility; other views should
+        // not treat playback ticks as generic network updates.
         this.handle.attr("cx", this.xAttribute(h));
         this.label
         .attr("x", this.xAttribute(h))
@@ -2975,7 +3024,6 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.commonService.setNodeVisibility(false);
         this.commonService.setLinkVisibility(false);
         this.commonService.updateStatistics();
-        this.store.setNetworkUpdated(true);
   }
 
     step(that : any) { 
@@ -3433,13 +3481,20 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         console.log('onLinkThresholdChanged called 2');
 
         if(!silent) {
-            // Immediately hide links
-            this.commonService.setLinkVisibility(false, false);
+            const applyThresholdVisibility = () => {
+                this.commonService.setLinkVisibility(false, false);
 
-            console.log('tagClusters called link threshold change');
+                console.log('tagClusters called link threshold change');
 
-            // Now schedule the heavy update (tag clusters, update visibilities, stats) using debouncing
-            this.commonService.updateNetworkVisuals(false, true);
+                // Now schedule the heavy update (tag clusters, update visibilities, stats) using debouncing
+                this.commonService.updateNetworkVisuals(false, true);
+            };
+
+            this.commonService.ensurePatristicEdgesForThreshold(parsedThreshold)
+                .catch(error => {
+                    console.error('Patristic threshold re-query failed:', error);
+                })
+                .finally(applyThresholdVisibility);
         }
 
     }
@@ -3491,7 +3546,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         }
 
         this.refreshThresholdStabilityPanel(false);
-        this.publishUpdateVisualization();
+        this.publishDistanceDisplayFormatChanged();
     }
         
 
@@ -3593,7 +3648,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.FieldList = [];
 
         this.FieldList.push({ label: "None", value: "None" });
-        this.commonService.session.data['nodeFields'].map((d, i) => {
+        this.commonService.getStyleableNodeFields().forEach(d => {
             
             this.FieldList.push(
                 {
