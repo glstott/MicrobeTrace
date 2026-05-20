@@ -20,9 +20,12 @@ import svg from 'cytoscape-svg';
 import { Subject, Subscription, takeUntil } from 'rxjs';
 //import fcose from 'cytoscape-fcose';
 import * as d3f from 'd3-force';
+import moment from 'moment';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 import { ExportService, ExportOptions } from '@app/contactTraceCommonServices/export.service';
 import { NgZone } from '@angular/core'; 
+
+type NetworkLayoutMode = 'Force Directed' | 'Timeline';
 
 interface CustomNodeSvgExportReplacement {
     exportHeight: number;
@@ -38,6 +41,24 @@ interface CustomNodeSvgExportReplacement {
     height: number;
 }
 
+interface TimelineLayoutTick {
+    x: number;
+    label: string;
+}
+
+interface TimelineLayoutMetadata {
+    active: boolean;
+    field: string;
+    ticks: TimelineLayoutTick[];
+    domainStart: number | null;
+    domainEnd: number | null;
+    rangeStart: number;
+    rangeEnd: number;
+    singleDateDomain: boolean;
+    noDateX: number | null;
+    hasNoDateNodes: boolean;
+}
+
 @Component({
     selector: 'TwoDComponent',
     templateUrl: './twoD-plugin.component.html',
@@ -51,6 +72,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     // Reference to the Cytoscape container
     @ViewChild('cy', { static: false }) cyContainer: ElementRef;
     @ViewChild('exportContainer') exportContainer: ElementRef;
+    @ViewChild('timelineAxisOverlay', { static: false }) timelineAxisOverlay: ElementRef<SVGSVGElement>;
+    @ViewChild('toolBtnContainer', { static: false }) toolBtnContainer: ElementRef<HTMLElement>;
     @ViewChild('polygonColorTable') polygonColorTable!: ElementRef;
     @ViewChild('networkStats') networkStatisticsTable!: ElementRef;
 
@@ -62,6 +85,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     pendingPartialUpdate = false;
     rerenderTimeout: any;
     private isDestroyed = false;
+    private applyingTimelinePositionLock = false;
     layoutParallelNodesPerColumn = 4;
     debugMode = false;
     overideTransparency = false;
@@ -185,6 +209,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         { label: 'Show', value: 'Show' }
     ];
     SelectedNetworkGridLineTypeVariable: string = "Hide";
+    NetworkLayoutModes: any = [
+        { label: 'Standard Network', value: 'Force Directed' },
+        { label: 'Timeline', value: 'Timeline' }
+    ];
+    SelectedNetworkLayoutModeVariable: NetworkLayoutMode = 'Force Directed';
+    SelectedNetworkTimelineDateFieldVariable: string = 'None';
+    SelectedNetworkTimelineVerticalSpacingVariable: number = 100;
 
     SelecetedNetworkLinkStrengthVariable: any = 0.123;
     SelectedNetworkExportFilenameVariable: string = "";
@@ -235,6 +266,24 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     networkUpdatedSubscription: any;
     settingsLoadedSubscription: any;
     private styleFileSub: any;
+    private timelineLayoutMetadata: TimelineLayoutMetadata = {
+        active: false,
+        field: 'None',
+        ticks: [],
+        domainStart: null,
+        domainEnd: null,
+        rangeStart: 0,
+        rangeEnd: 0,
+        singleDateDomain: false,
+        noDateX: null,
+        hasNoDateNodes: false
+    };
+    private timelineAxisUpdateTimeout: any;
+    private timelineAxisResizeObserver: ResizeObserver | null = null;
+    private timelineAxisResizeObservedElements = new Set<Element>();
+    private goldenLayoutSize: { width: number; height: number } | null = null;
+    private readonly windowResizeHandler = () => this.redrawTimelineAxisForResize();
+
     constructor(injector: Injector,
         private eventManager: EventManager,
         public commonService: CommonService,
@@ -253,8 +302,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         // this.setExpanded(this.mainSite);
 
         this.widgets = this.commonService.session.style.widgets;
+        this.ensureTimelineLayoutWidgetDefaults();
 
-        this.container.on('resize', () => { setTimeout(() => this.fit(), 200)})
+        this.container.on('resize', () => {
+            this.redrawTimelineAxisForResize();
+            setTimeout(() => this.fit(), 200);
+        })
+        window.addEventListener('resize', this.windowResizeHandler);
         this.container.on('hide', () => { 
             this.viewActive = false; 
             this.cdref.detectChanges();
@@ -279,6 +333,107 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     }
 
     private destroy$ = new Subject<void>();
+
+    override setPositionAndSize(left: number, top: number, width: number, height: number): void {
+        super.setPositionAndSize(left, top, width, height);
+        this.goldenLayoutSize = { width, height };
+        this.redrawTimelineAxisForResize();
+    }
+
+    private ensureTimelineLayoutWidgetDefaults(): void {
+        if (!this.widgets) return;
+        if (!this.widgets['network-layout-mode']) {
+            this.widgets['network-layout-mode'] = 'Force Directed';
+        }
+        if (!this.widgets['network-timeline-date-field']) {
+            this.widgets['network-timeline-date-field'] = 'None';
+        }
+        if (!this.widgets['network-timeline-vertical-spacing']) {
+            this.widgets['network-timeline-vertical-spacing'] = 100;
+        }
+    }
+
+    private getNetworkLayoutMode(): NetworkLayoutMode {
+        this.ensureTimelineLayoutWidgetDefaults();
+        return this.widgets['network-layout-mode'] === 'Timeline' ? 'Timeline' : 'Force Directed';
+    }
+
+    private getNetworkTimelineDateField(): string {
+        this.ensureTimelineLayoutWidgetDefaults();
+        return String(this.widgets['network-timeline-date-field'] || 'None');
+    }
+
+    public isTimelineLayoutSelected(): boolean {
+        return this.getNetworkLayoutMode() === 'Timeline';
+    }
+
+    public isTimelineLayoutActive(): boolean {
+        return this.isTimelineLayoutSelected() && this.getNetworkTimelineDateField() !== 'None';
+    }
+
+    private getNetworkTimelineVerticalSpacingScale(): number {
+        const rawSpacing = Number(this.widgets?.['network-timeline-vertical-spacing']);
+        const spacing = Number.isFinite(rawSpacing) ? rawSpacing : 100;
+        return Math.min(Math.max(spacing, 5), 180) / 100;
+    }
+
+    private getTimelineAwareEdgeRoutingStyle(): any {
+        if (!this.isTimelineLayoutActive()) {
+            return {
+                'curve-style': 'straight'
+            };
+        }
+
+        return {
+            'curve-style': 'taxi',
+            'taxi-direction': 'horizontal',
+            'taxi-turn': '50%',
+            'taxi-turn-min-distance': 10
+        };
+    }
+
+    private updateEdgeRoutingStyles(): void {
+        if (!this.cy) return;
+
+        this.cy.style()
+            .selector('edge')
+            .style(this.getTimelineAwareEdgeRoutingStyle())
+            .update();
+    }
+
+    private shouldLockTimelineNodeX(node: cytoscape.NodeSingular): boolean {
+        return (
+            this.isTimelineLayoutActive() &&
+            !!node &&
+            !node.empty() &&
+            !node.hasClass('hidden') &&
+            !node.hasClass('parent') &&
+            node.children().length === 0
+        );
+    }
+
+    private enforceTimelineNodeX(node: cytoscape.NodeSingular): boolean {
+        if (!this.shouldLockTimelineNodeX(node)) return false;
+
+        const timelineX = Number(node.data('timelineX'));
+        if (!Number.isFinite(timelineX)) return false;
+
+        const currentPosition = node.position();
+        if (Math.abs(currentPosition.x - timelineX) < 0.5) return false;
+
+        const lockedPosition = { x: timelineX, y: currentPosition.y };
+        this.applyingTimelinePositionLock = true;
+        node.position(lockedPosition);
+        this.applyingTimelinePositionLock = false;
+        this.nodePositions.set(node.id(), lockedPosition);
+        return true;
+    }
+
+    private applyTimelineNodeXLocks(): void {
+        if (!this.cy || !this.isTimelineLayoutActive()) return;
+
+        this.cy.nodes(':visible').forEach(node => this.enforceTimelineNodeX(node));
+    }
 
     private isCytoscapeContainerReady(): boolean {
         const element = this.cyContainer?.nativeElement as HTMLElement | undefined;
@@ -313,6 +468,35 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         }
 
         return { nodes, links };
+    }
+
+    private normalizeNetworkDataForCytoscape(
+        networkData: { nodes: any[]; links: any[] },
+        warnInvalidLinks = true
+    ): Set<string> {
+        networkData.nodes.forEach(node => {
+            node.id = this.getNodeId(node);
+        });
+
+        const nodeIds = new Set(networkData.nodes.map(node => this.getNodeId(node)));
+
+        networkData.links.forEach(link => {
+            link.source = this.getLinkEndpointId(link.source);
+            link.target = this.getLinkEndpointId(link.target);
+        });
+
+        if (warnInvalidLinks) {
+            networkData.links.forEach(link => {
+                if (!nodeIds.has(link.source)) {
+                    console.warn('Link source not found in nodes:', link.source, link);
+                }
+                if (!nodeIds.has(link.target)) {
+                    console.warn('Link target not found in nodes:', link.target, link);
+                }
+            });
+        }
+
+        return nodeIds;
     }
 
 
@@ -382,12 +566,638 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     ngAfterViewInit(): void {
         console.log('--- TwoD ngAfterViewInit called');
 
+        this.syncNetworkContainerBounds();
+        this.ensureTimelineAxisResizeObserver();
+
         if (this.commonService.session.data.nodes.length > 0 && !this.cy) {
             this.onLoadNewData();
         }
       }
 
-  mapDataToCytoscapeElements(data: any, timelineTick=false): cytoscape.ElementsDefinition {
+    private getNodeId(node: any): string {
+        return String(node?._id ?? node?.id ?? '');
+    }
+
+    private getRawTimelineLayoutDateValue(node: any, field: string): any {
+        const rawDateValues = node?._rawDateValues;
+        if (rawDateValues && Object.prototype.hasOwnProperty.call(rawDateValues, field)) {
+            return rawDateValues[field];
+        }
+
+        return node?.[field];
+    }
+
+    private getTimelineLayoutTimestamp(node: any, field: string): number | null {
+        const rawValue = this.getRawTimelineLayoutDateValue(node, field);
+        if (!this.commonService.hasValidTimelineDateValue(rawValue)) {
+            return null;
+        }
+
+        const timestamp = moment(rawValue).valueOf();
+        return Number.isFinite(timestamp) ? timestamp : null;
+    }
+
+    private getTimelineLayoutReferenceNodes(): any[] {
+        return this.isTimelineFilteringActive()
+            ? this.commonService.getVisibleNodesIgnoringTimeline(true)
+            : this.commonService.getVisibleNodes(true);
+    }
+
+    private formatTimelineTickLabel(timestamp: number, domainStart: number, domainEnd: number): string {
+        const spanDays = Math.abs(domainEnd - domainStart) / 86400000;
+        const value = moment(timestamp);
+
+        if (spanDays > 730) {
+            return value.format('YYYY');
+        }
+
+        if (spanDays > 90) {
+            return value.format('MMM YYYY');
+        }
+
+        return value.format('MMM D');
+    }
+
+    private getTimelineNodeVerticalRadius(node: any): number {
+        const rawSize = Number(node?.nodeSize ?? this.widgets?.['node-radius']);
+        const size = Number.isFinite(rawSize) ? rawSize : Number(this.widgets?.['node-radius'] ?? 10);
+        return this.mapNodeSize(size);
+    }
+
+    private spreadTimelineNodesVertically(nodes: any[], links: any[], nodeIdSet: Set<string>): void {
+        if (nodes.length < 2) return;
+
+        const degreeById = new Map<string, number>();
+        nodeIdSet.forEach(id => degreeById.set(id, 0));
+        links.forEach(link => {
+            const source = this.getLinkEndpointId(link.source);
+            const target = this.getLinkEndpointId(link.target);
+            if (nodeIdSet.has(source)) {
+                degreeById.set(source, (degreeById.get(source) ?? 0) + 1);
+            }
+            if (nodeIdSet.has(target)) {
+                degreeById.set(target, (degreeById.get(target) ?? 0) + 1);
+            }
+        });
+
+        const averageRadius = d3.mean(nodes, node => this.getTimelineNodeVerticalRadius(node)) ?? 12;
+        const countScaledGap = nodes.length > 250
+            ? 18
+            : nodes.length > 120
+                ? 24
+                : nodes.length > 60
+                    ? 30
+                    : 36;
+        const spacingScale = this.getNetworkTimelineVerticalSpacingScale();
+        const baseGap = Math.max(averageRadius * 2 + 4, countScaledGap) * spacingScale;
+        const sortedNodes = [...nodes].sort((a, b) => {
+            const yDiff = Number(a.y) - Number(b.y);
+            if (Number.isFinite(yDiff) && Math.abs(yDiff) > 0.01) return yDiff;
+
+            const xDiff = Number(a.timelineX) - Number(b.timelineX);
+            if (Number.isFinite(xDiff) && Math.abs(xDiff) > 0.01) return xDiff;
+
+            return this.getNodeId(a).localeCompare(this.getNodeId(b));
+        });
+
+        sortedNodes[0].y = 0;
+        for (let index = 1; index < sortedNodes.length; index++) {
+            const previous = sortedNodes[index - 1];
+            const current = sortedNodes[index];
+            const previousDegree = degreeById.get(this.getNodeId(previous)) ?? 0;
+            const currentDegree = degreeById.get(this.getNodeId(current)) ?? 0;
+            const degreeGap = Math.min(14, Math.max(previousDegree, currentDegree) * 1.75) * spacingScale;
+
+            current.y = Number(previous.y) + baseGap + degreeGap;
+        }
+
+        const minY = Math.min(...sortedNodes.map(node => Number(node.y)));
+        const maxY = Math.max(...sortedNodes.map(node => Number(node.y)));
+        const centerY = Number.isFinite(minY) && Number.isFinite(maxY) ? (minY + maxY) / 2 : 0;
+        sortedNodes.forEach(node => {
+            node.y = Number(node.y) - centerY;
+        });
+    }
+
+    private clearTimelineLayoutMetadata(): void {
+        this.timelineLayoutMetadata = {
+            active: false,
+            field: 'None',
+            ticks: [],
+            domainStart: null,
+            domainEnd: null,
+            rangeStart: 0,
+            rangeEnd: 0,
+            singleDateDomain: false,
+            noDateX: null,
+            hasNoDateNodes: false
+        };
+        this.updateTimelineStatisticsOffset();
+        this.updateTimelineAxisOverlay();
+    }
+
+    private resolveNodeCoordinate(node: any, coordinate: 'x' | 'y'): number {
+        const directValue = Number(node?.[coordinate]);
+        if (Number.isFinite(directValue)) {
+            return directValue;
+        }
+
+        const nodeId = this.getNodeId(node);
+        const cachedValue = Number(this.nodePositions.get(nodeId)?.[coordinate]);
+        if (Number.isFinite(cachedValue)) {
+            return cachedValue;
+        }
+
+        return Math.random() * 500;
+    }
+
+    private async precomputeTimelinePositionsWithD3(
+        nodes: any[],
+        links: any[],
+        ticks: number = 120
+    ): Promise<{ nodes: any[]; links: any[] }> {
+        const field = this.getNetworkTimelineDateField();
+        if (!this.isTimelineLayoutActive()) {
+            this.clearTimelineLayoutMetadata();
+            return { nodes, links };
+        }
+
+        const referenceNodes = this.getTimelineLayoutReferenceNodes();
+        const referenceTimestamps = referenceNodes
+            .map(node => this.getTimelineLayoutTimestamp(node, field))
+            .filter((timestamp): timestamp is number => timestamp !== null);
+        const validReferenceCount = referenceTimestamps.length;
+        const domainStart = validReferenceCount ? Math.min(...referenceTimestamps) : null;
+        const domainEnd = validReferenceCount ? Math.max(...referenceTimestamps) : null;
+        const visibleNodeCount = Math.max(nodes.length, 1);
+        const distinctDateCount = new Set(referenceTimestamps).size;
+        const containerWidth = this.cyContainer?.nativeElement?.getBoundingClientRect().width || 800;
+        const timelineWidth = Math.max(containerWidth * 1.25, distinctDateCount * 70, visibleNodeCount * 24, 600);
+        const rangeStart = -timelineWidth / 2;
+        const rangeEnd = timelineWidth / 2;
+        const hasDateDomain = domainStart !== null && domainEnd !== null;
+        const singleDateDomain = hasDateDomain && domainStart === domainEnd;
+        const dateScale = hasDateDomain && !singleDateDomain
+            ? d3.scaleTime().domain([new Date(domainStart), new Date(domainEnd)]).range([rangeStart, rangeEnd])
+            : null;
+        const noDateX = hasDateDomain ? rangeEnd + 140 : 0;
+
+        const nodeIdSet = new Set(nodes.map(node => {
+            const nodeId = this.getNodeId(node);
+            node.id = nodeId;
+            return nodeId;
+        }));
+        let hasNoDateNodes = false;
+
+        nodes.forEach((node, index) => {
+            const nodeId = this.getNodeId(node);
+            const timestamp = this.getTimelineLayoutTimestamp(node, field);
+            const hasDate = timestamp !== null && hasDateDomain;
+            const timelineX = hasDate
+                ? singleDateDomain
+                    ? 0
+                    : Number(dateScale(new Date(timestamp)))
+                : noDateX;
+
+            hasNoDateNodes = hasNoDateNodes || !hasDate;
+
+            const cachedY = this.nodePositions.get(nodeId)?.y;
+            const existingY = Number(node.y);
+            node.x = timelineX;
+            node.y = Number.isFinite(existingY)
+                ? existingY
+                : Number.isFinite(cachedY)
+                    ? cachedY
+                    : (index - ((nodes.length - 1) / 2)) * 42;
+            node.timelineX = timelineX;
+            node.timelineNoDate = !hasDate;
+            node.timelineDateField = field;
+            node.fx = timelineX;
+        });
+
+        const simulationLinks = links
+            .map(link => ({
+                source: this.getLinkEndpointId(link.source),
+                target: this.getLinkEndpointId(link.target)
+            }))
+            .filter(link => nodeIdSet.has(link.source) && nodeIdSet.has(link.target));
+
+        if (!this.commonService.session.network.allPinned) {
+            const simulation = d3.forceSimulation(nodes as any[])
+                .force('charge', d3.forceManyBody().strength(-45))
+                .force('link', d3.forceLink(simulationLinks).id((d: any) => d.id).distance(this.SelectedLinkLengthVariable * 1.15).strength(0.03))
+                .force('y', d3.forceY(0).strength(0.02))
+                .force('collide', d3.forceCollide().radius((d: any) => this.getTimelineNodeVerticalRadius(d) + 12))
+                .stop();
+
+            for (let tick = 0; tick < ticks; tick++) {
+                simulation.tick();
+            }
+
+            simulation.stop();
+            this.spreadTimelineNodesVertically(nodes, links, nodeIdSet);
+        }
+
+        nodes.forEach((node, index) => {
+            const fallbackY = (index - ((nodes.length - 1) / 2)) * 42;
+            node.x = node.timelineX;
+            node.y = Number.isFinite(Number(node.y)) ? Number(node.y) : fallbackY;
+            delete node.fx;
+            delete node.vx;
+            delete node.vy;
+        });
+
+        const tickTarget = Math.max(2, Math.min(8, Math.floor(containerWidth / 130)));
+        const ticksForAxis = hasDateDomain
+            ? singleDateDomain
+                ? [{ x: 0, label: this.formatTimelineTickLabel(domainStart, domainStart, domainEnd) }]
+                : dateScale.ticks(tickTarget).map((date: Date) => ({
+                    x: Number(dateScale(date)),
+                    label: this.formatTimelineTickLabel(date.getTime(), domainStart, domainEnd)
+                }))
+            : [];
+
+        this.timelineLayoutMetadata = {
+            active: true,
+            field,
+            ticks: ticksForAxis,
+            domainStart,
+            domainEnd,
+            rangeStart,
+            rangeEnd,
+            singleDateDomain: !!singleDateDomain,
+            noDateX,
+            hasNoDateNodes
+        };
+
+        return { nodes, links };
+    }
+
+    private ensureTimelineAxisResizeObserver(): void {
+        if (typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        if (!this.timelineAxisResizeObserver) {
+            this.timelineAxisResizeObserver = new ResizeObserver(() => this.redrawTimelineAxisForResize());
+        }
+
+        [
+            this.exportContainer?.nativeElement,
+            this.cyContainer?.nativeElement,
+            this.cy?.container(),
+            this.container?.element,
+            this.rootHtmlElement
+        ]
+            .filter((element): element is Element => !!element)
+            .forEach(element => {
+                if (!this.timelineAxisResizeObservedElements.has(element)) {
+                    this.timelineAxisResizeObserver.observe(element);
+                    this.timelineAxisResizeObservedElements.add(element);
+                }
+            });
+    }
+
+    private redrawTimelineAxisForResize(): void {
+        this.syncNetworkContainerBounds();
+        if (this.cy) {
+            this.cy.resize();
+        }
+        if (this.timelineAxisUpdateTimeout) {
+            clearTimeout(this.timelineAxisUpdateTimeout);
+            this.timelineAxisUpdateTimeout = null;
+        }
+        this.updateTimelineAxisOverlay();
+    }
+
+    private setElementStyle(element: HTMLElement, property: string, value: string): void {
+        if (element.style.getPropertyValue(property) !== value) {
+            element.style.setProperty(property, value);
+        }
+    }
+
+    private getRect(element?: Element | null): DOMRect | null {
+        if (!element || typeof element.getBoundingClientRect !== 'function') {
+            return null;
+        }
+
+        return element.getBoundingClientRect();
+    }
+
+    private syncNetworkContainerBounds(): void {
+        const exportElement = this.exportContainer?.nativeElement as HTMLElement | undefined;
+        const cyElement = (this.cy?.container() as HTMLElement | undefined)
+            || (this.cyContainer?.nativeElement as HTMLElement | undefined);
+        if (!exportElement) {
+            return;
+        }
+
+        const exportRect = this.getRect(exportElement);
+        const hostRect = this.getRect(this.rootHtmlElement);
+        const containerRect = this.getRect(this.container?.element);
+        const toolbarRect = this.getRect(this.toolBtnContainer?.nativeElement);
+        const warningRect = this.getRect(document.getElementById('url-warning-div'));
+        const exportTop = exportRect?.top
+            || ((hostRect?.top || containerRect?.top || 0) + (toolbarRect?.height || 0));
+        const hostTop = hostRect?.top || containerRect?.top || exportTop;
+        const bottomCandidates = [
+            hostRect?.bottom,
+            containerRect?.bottom,
+            Number.isFinite(this.goldenLayoutSize?.height)
+                ? hostTop + this.goldenLayoutSize.height
+                : undefined,
+            warningRect && warningRect.height > 0 && warningRect.top > exportTop
+                ? warningRect.top
+                : undefined
+        ].filter((value): value is number => Number.isFinite(value) && value > exportTop + 40);
+
+        let availableHeight = bottomCandidates.length
+            ? Math.floor(Math.min(...bottomCandidates) - exportTop)
+            : 0;
+
+        if (!availableHeight) {
+            const paneHeight = this.goldenLayoutSize?.height
+                || hostRect?.height
+                || containerRect?.height
+                || 0;
+            availableHeight = Math.floor(paneHeight - (toolbarRect?.height || 0) - 2);
+        }
+
+        if (availableHeight > 0) {
+            this.setElementStyle(exportElement, 'height', `${Math.max(80, availableHeight)}px`);
+        }
+
+        if (cyElement) {
+            this.setElementStyle(cyElement, 'height', '100%');
+            this.setElementStyle(cyElement, 'width', '100%');
+        }
+    }
+
+    private scheduleTimelineAxisOverlayUpdate(): void {
+        if (this.timelineAxisUpdateTimeout) {
+            clearTimeout(this.timelineAxisUpdateTimeout);
+        }
+
+        this.timelineAxisUpdateTimeout = setTimeout(() => {
+            this.timelineAxisUpdateTimeout = null;
+            this.updateTimelineAxisOverlay();
+        }, 0);
+    }
+
+    private getTimelineAxisTicks(screenWidth: number, zoom: number): TimelineLayoutTick[] {
+        const metadata = this.timelineLayoutMetadata;
+        if (metadata.domainStart === null || metadata.domainEnd === null) {
+            return metadata.ticks;
+        }
+
+        if (metadata.singleDateDomain) {
+            return [{
+                x: (metadata.rangeStart + metadata.rangeEnd) / 2,
+                label: this.formatTimelineTickLabel(metadata.domainStart, metadata.domainStart, metadata.domainEnd)
+            }];
+        }
+
+        const renderedTimelineWidth = Math.abs(metadata.rangeEnd - metadata.rangeStart) * Math.max(zoom, 0.01);
+        const tickTarget = Math.max(2, Math.min(20, Math.floor(Math.max(screenWidth, renderedTimelineWidth) / 120)));
+        const dateScale = d3.scaleTime()
+            .domain([new Date(metadata.domainStart), new Date(metadata.domainEnd)])
+            .range([metadata.rangeStart, metadata.rangeEnd]);
+
+        return dateScale.ticks(tickTarget).map((date: Date) => ({
+            x: Number(dateScale(date)),
+            label: this.formatTimelineTickLabel(date.getTime(), metadata.domainStart, metadata.domainEnd)
+        }));
+    }
+
+    private estimateTimelineAxisLabelWidth(label: string, fontSize: number): number {
+        return Math.max(34, (label.length * fontSize * 0.62) + 12);
+    }
+
+    private filterTimelineAxisLabelCollisions<T extends { renderedX: number; label: string }>(
+        ticks: T[],
+        noDateLabelX: number | null
+    ): T[] {
+        const noDateHalfWidth = noDateLabelX === null
+            ? 0
+            : this.estimateTimelineAxisLabelWidth('No date provided', 16) / 2;
+        const accepted: T[] = [];
+
+        [...ticks].sort((a, b) => a.renderedX - b.renderedX).forEach(tick => {
+            const tickHalfWidth = this.estimateTimelineAxisLabelWidth(tick.label, 14) / 2;
+            if (noDateLabelX !== null && Math.abs(tick.renderedX - noDateLabelX) < tickHalfWidth + noDateHalfWidth + 12) {
+                return;
+            }
+
+            const previous = accepted[accepted.length - 1];
+            if (previous) {
+                const previousHalfWidth = this.estimateTimelineAxisLabelWidth(previous.label, 14) / 2;
+                if (tick.renderedX - previous.renderedX < previousHalfWidth + tickHalfWidth + 14) {
+                    return;
+                }
+            }
+
+            accepted.push(tick);
+        });
+
+        return accepted;
+    }
+
+    private getNetworkStatisticsWrapper(): HTMLElement | null {
+        return (this.networkStatisticsTable?.nativeElement
+            ?.closest('#network-statistics-wrapper') as HTMLElement | null)
+            || document.getElementById('network-statistics-wrapper');
+    }
+
+    private updateTimelineStatisticsOffset(axisLabelScreenTop?: number): void {
+        const statsWrapper = this.getNetworkStatisticsWrapper();
+        if (!statsWrapper) {
+            return;
+        }
+
+        if (this.isTimelineLayoutActive()) {
+            const hostRect = this.getRect(this.rootHtmlElement);
+            const dynamicBottom = hostRect && Number.isFinite(axisLabelScreenTop)
+                ? Math.ceil(hostRect.bottom - axisLabelScreenTop + 8)
+                : 86;
+            statsWrapper.style.setProperty('bottom', `${Math.max(86, dynamicBottom)}px`, 'important');
+        } else {
+            statsWrapper.style.removeProperty('bottom');
+        }
+    }
+
+    private getTimelineAxisOverlayFrame(): { width: number; height: number; left: number; top: number; screenTop: number } {
+        this.syncNetworkContainerBounds();
+
+        const hostElement = this.exportContainer?.nativeElement as HTMLElement | undefined;
+        const cyElement = (this.cy?.container() as HTMLElement | undefined)
+            || (this.cyContainer?.nativeElement as HTMLElement | undefined);
+        const hostRect = this.getRect(hostElement);
+        const cyRect = this.getRect(cyElement);
+
+        const width = cyRect?.width
+            || hostRect?.width
+            || cyElement?.clientWidth
+            || hostElement?.clientWidth
+            || 0;
+        const height = cyRect?.height
+            || hostRect?.height
+            || cyElement?.clientHeight
+            || hostElement?.clientHeight
+            || 0;
+        const left = cyRect && hostRect ? Math.max(0, Math.round(cyRect.left - hostRect.left)) : 0;
+        const top = cyRect && hostRect ? Math.max(0, Math.round(cyRect.top - hostRect.top)) : 0;
+        const screenTop = cyRect?.top || hostRect?.top || 0;
+
+        return { width, height, left, top, screenTop };
+    }
+
+    private updateTimelineAxisOverlay(): void {
+        const overlay = this.timelineAxisOverlay?.nativeElement;
+        if (!overlay) {
+            return;
+        }
+
+        this.ensureTimelineAxisResizeObserver();
+
+        const overlaySelection = d3.select(overlay);
+        overlaySelection.selectAll('*').remove();
+
+        if (!this.isTimelineLayoutActive() || !this.timelineLayoutMetadata.active || !this.cy) {
+            overlaySelection.classed('hidden', true);
+            this.updateTimelineStatisticsOffset();
+            return;
+        }
+
+        const { width, height, left, top, screenTop } = this.getTimelineAxisOverlayFrame();
+
+        if (!width || !height) {
+            overlaySelection.classed('hidden', true);
+            this.updateTimelineStatisticsOffset();
+            return;
+        }
+
+        overlaySelection
+            .classed('hidden', false)
+            .attr('width', width)
+            .attr('height', height)
+            .attr('viewBox', `0 0 ${width} ${height}`)
+            .style('width', `${width}px`)
+            .style('height', `${height}px`)
+            .style('left', `${left}px`)
+            .style('top', `${top}px`);
+
+        const pan = this.cy.pan();
+        const zoom = this.cy.zoom();
+        const renderedX = (modelX: number): number => (modelX * zoom) + pan.x;
+        const axisY = Math.max(24, height - 48);
+        const axisLabelY = Math.min(height - 12, axisY + 18);
+        this.updateTimelineStatisticsOffset(screenTop + axisLabelY - 18);
+        const gridBottom = Math.max(0, axisY - 8);
+
+        let noDateAxisX: number | null = null;
+        if (this.timelineLayoutMetadata.hasNoDateNodes && this.timelineLayoutMetadata.noDateX !== null) {
+            const noDateRenderedX = renderedX(this.timelineLayoutMetadata.noDateX);
+            const labelPadding = Math.min(112, Math.max(42, width / 4));
+            noDateAxisX = Math.min(
+                Math.max(noDateRenderedX, labelPadding),
+                Math.max(labelPadding, width - labelPadding)
+            );
+        }
+
+        const visibleTickCandidates = this.getTimelineAxisTicks(width, zoom)
+            .map(tick => ({ ...tick, renderedX: renderedX(tick.x) }))
+            .filter(tick => tick.renderedX >= -80 && tick.renderedX <= width + 80);
+        const visibleTicks = this.filterTimelineAxisLabelCollisions(visibleTickCandidates, noDateAxisX);
+
+        overlaySelection.append('line')
+            .attr('class', 'timeline-axis-baseline')
+            .attr('x1', 0)
+            .attr('x2', width)
+            .attr('y1', axisY)
+            .attr('y2', axisY)
+            .attr('stroke', '#464646')
+            .attr('stroke-opacity', 0.6)
+            .attr('stroke-width', 1)
+            .attr('fill', 'none');
+
+        const tickGroups = overlaySelection.selectAll('g.timeline-axis-tick')
+            .data(visibleTicks)
+            .enter()
+            .append('g')
+            .attr('class', 'timeline-axis-tick');
+
+        tickGroups.append('line')
+            .attr('class', 'timeline-axis-gridline')
+            .attr('x1', d => d.renderedX)
+            .attr('x2', d => d.renderedX)
+            .attr('y1', 0)
+            .attr('y2', gridBottom)
+            .attr('stroke', '#464646')
+            .attr('stroke-opacity', 0.18)
+            .attr('stroke-width', 1)
+            .attr('fill', 'none');
+
+        tickGroups.append('line')
+            .attr('class', 'timeline-axis-tickmark')
+            .attr('x1', d => d.renderedX)
+            .attr('x2', d => d.renderedX)
+            .attr('y1', axisY - 4)
+            .attr('y2', axisY + 4)
+            .attr('stroke', '#464646')
+            .attr('stroke-opacity', 0.7)
+            .attr('stroke-width', 1)
+            .attr('fill', 'none');
+
+        tickGroups.append('text')
+            .attr('class', 'timeline-axis-label')
+            .attr('x', d => d.renderedX)
+            .attr('y', axisLabelY)
+            .attr('fill', '#333333')
+            .attr('font-size', 14)
+            .attr('text-anchor', 'middle')
+            .attr('paint-order', 'stroke')
+            .attr('stroke', '#ffffff')
+            .attr('stroke-width', 3)
+            .attr('stroke-linejoin', 'round')
+            .text(d => d.label);
+
+        if (noDateAxisX !== null) {
+            overlaySelection.append('line')
+                .attr('class', 'timeline-axis-gridline timeline-axis-no-date-gridline')
+                .attr('x1', noDateAxisX)
+                .attr('x2', noDateAxisX)
+                .attr('y1', 0)
+                .attr('y2', gridBottom)
+                .attr('stroke', '#464646')
+                .attr('stroke-opacity', 0.18)
+                .attr('stroke-width', 1)
+                .attr('stroke-dasharray', '5 4')
+                .attr('fill', 'none');
+
+            overlaySelection.append('line')
+                .attr('class', 'timeline-axis-tickmark timeline-axis-no-date-tickmark')
+                .attr('x1', noDateAxisX)
+                .attr('x2', noDateAxisX)
+                .attr('y1', axisY - 4)
+                .attr('y2', axisY + 4)
+                .attr('stroke', '#464646')
+                .attr('stroke-opacity', 0.7)
+                .attr('stroke-width', 1)
+                .attr('fill', 'none');
+
+            overlaySelection.append('text')
+                .attr('class', 'timeline-axis-label timeline-axis-no-date-label timeline-axis-no-date-axis-label')
+                .attr('x', noDateAxisX)
+                .attr('y', axisLabelY)
+                .attr('fill', '#333333')
+                .attr('font-size', 16)
+                .attr('font-weight', 700)
+                .attr('text-anchor', 'middle')
+                .text('No date provided');
+        }
+    }
+
+  mapDataToCytoscapeElements(data: any): cytoscape.ElementsDefinition {
 
     console.log('--- TwoD mapDataToCytoscapeElements called');
         // Create a set to track unique parent nodes
@@ -436,58 +1246,28 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             parentNodes.add(node.group);
         }
 
-        if (timelineTick) {
-            // otherwise data: label gets overridden to be undefined
-            node.label = this.getNodeLabel(node);
-            node.nodeSize = Number(this.getNodeSize(node));
-            [node.nodeColor, node.bgOpacity] = this.getNodeColor(node);
-            const shapeKey = this.getNodeShape(node);
-            return {
-                data: {
-                    id: node.id,
-                    parent: (node.group && this.widgets['polygons-show']) || undefined, // Assign parent if exists
-                    //nodeColor: this.getNodeColor(node), // <-- Added for dynamic node color
-                    selectedBorderColor: this.widgets['selected-color'],
-                    fontSize: this.getNodeFontSize(node), // <-- Added for dynamic label size
-                    shape: resolveCustomNodeIconCytoscapeShape(shapeKey),
-                    shapeKey,
-                    ...getCustomNodeShapeData(shapeKey, node.nodeColor),
-                    // Include any additional node-specific data properties
-                    ...node
-                },
-                position: { 
-                    x:node.x || this.nodePositions.get(node.id)?.x || Math.random() * 500,
-                    y:node.y || this.nodePositions.get(node.id)?.y || Math.random() * 500
-                }
+        node.label = this.getNodeLabel(node);
+        node.nodeSize = Number(this.getNodeSize(node));
+        [node.nodeColor, node.bgOpacity] = this.getNodeColor(node);
+        const shapeKey = this.getNodeShape(node);
+
+        return {
+            data: {
+                id: node.id,
+                parent: (node.group && this.widgets['polygons-show']) || undefined,
+                borderWidth: this.getNodeBorderWidth(node),
+                selectedBorderColor: this.widgets['selected-color'],
+                fontSize: this.getNodeFontSize(node),
+                shape: resolveCustomNodeIconCytoscapeShape(shapeKey),
+                shapeKey,
+                ...getCustomNodeShapeData(shapeKey, node.nodeColor),
+                ...node
+            },
+            position: {
+                x: this.resolveNodeCoordinate(node, 'x'),
+                y: this.resolveNodeCoordinate(node, 'y')
             }
-        } else {
-            node.label = this.getNodeLabel(node);
-            node.nodeSize = Number(this.getNodeSize(node));
-            [node.nodeColor, node.bgOpacity] = this.getNodeColor(node); // <-- Added for dynamic node color
-            const shapeKey = this.getNodeShape(node);
-            return {
-                data: {
-                    id: node.id,
-                    //label: (this.widgets['node-label-variable'] === 'None' || !node.label) ? '' : node.label,
-                    parent: (node.group && this.widgets['polygons-show']) || undefined, // Assign parent if exists
-                    //nodeSize: Number(this.getNodeSize(node)), // Existing node size
-                    //nodeColor: this.getNodeColor(node), // <-- Added for dynamic node color
-                    borderWidth: this.getNodeBorderWidth(node), // <-- Added for dynamic border width
-                    selectedBorderColor: this.widgets['selected-color'],
-                    fontSize: this.getNodeFontSize(node), // <-- Added for dynamic label size
-                    shape: resolveCustomNodeIconCytoscapeShape(shapeKey),
-                    shapeKey,
-                    ...getCustomNodeShapeData(shapeKey, node.nodeColor),
-                    // Include any additional node-specific data properties
-                    ...node
-                },
-                position: {
-                    x: node.x || this.nodePositions.get(node.id)?.x || Math.random() * 500,
-                    y: node.y || this.nodePositions.get(node.id)?.y || Math.random() * 500
-                  }
-                  
-            };
-        }
+        };
     });
 
     console.log('--- TwoD mapDataToCytoscapeElements nodes done');
@@ -636,7 +1416,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     'label' : 'data(label)',                   
                     // 'target-arrow-color': '#ccc',
                     // 'target-arrow-shape': 'triangle',
-                    'curve-style': 'straight'
+                    ...this.getTimelineAwareEdgeRoutingStyle()
                     // 'opacity': 'data(opacity)' // Existing opacity
                 }
             },
@@ -699,6 +1479,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
     attachCytoscapeEvents() {
         console.log('--- TwoD attachCytoscapeEvents called');
+        this.ensureTimelineAxisResizeObserver();
         $('#cy').off('contextmenu.twod').on('contextmenu.twod', (e) => e.preventDefault());
 
         // Debounced function to sync Cytoscape selections with the common service.
@@ -732,6 +1513,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
         // Listen for all selection events to trigger the sync.
         this.cy.on('select unselect', 'node', syncCySelectionToService);
+        this.cy.on('pan zoom resize', () => this.scheduleTimelineAxisOverlayUpdate());
+        this.cy.on('position', 'node', (evt) => {
+            if (!this.applyingTimelinePositionLock) {
+                this.enforceTimelineNodeX(evt.target);
+            }
+            this.scheduleTimelineAxisOverlayUpdate();
+        });
         
         this.cy.on('tap', 'node', (evt) => {
             const node = evt.target;
@@ -1113,8 +1901,18 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     updateNodePos(node: cytoscape.NodeSingular): void {
         const nodeId = node.id();
         // This is for REAL user events. It reads the now-updated position from Cytoscape.
-        const newPosition = node.position(); 
+        let newPosition = node.position();
+        if (this.isTimelineLayoutActive()) {
+            const timelineX = Number(node.data('timelineX'));
+            if (Number.isFinite(timelineX)) {
+                newPosition = { x: timelineX, y: newPosition.y };
+                node.position(newPosition);
+            }
+        }
+
+        this.nodePositions.set(nodeId, newPosition);
         this.commonService.updateNodePosition(nodeId, newPosition);
+        this.scheduleTimelineAxisOverlayUpdate();
     }
     /** Initializes the view.
      * 
@@ -2646,7 +3444,11 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     }
 
     updateLayout() {
-        if (this.commonService.session.style.widgets['polygons-show'] == false || this.commonService.session.style.widgets['polygons-foci'] == 'None') {
+        if (
+            this.isTimelineLayoutActive() ||
+            this.commonService.session.style.widgets['polygons-show'] == false ||
+            this.commonService.session.style.widgets['polygons-foci'] == 'None'
+        ) {
             this._partialUpdate();
         } else {
             this.gatherGroups();
@@ -3317,65 +4119,40 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         }
 
         let networkData = this.getVisibleNetworkDataForRender(timelineTick || this.isTimelineFilteringActive());
+        this.normalizeNetworkDataForCytoscape(networkData, false);
 
-       
-        // Need to convert source and target to string ids for cytoscape
-        networkData.links.forEach((link) => {
-            // If link.source is an object, grab its _id and convert to string
-            if (typeof link.source === 'object') {
-            link.source = link.source._id.toString();
+        if (this.isTimelineLayoutActive() && (!this.cy || timelineTick)) {
+            const { nodes: laidOutNodes, links: laidOutLinks } =
+                await this.precomputeTimelinePositionsWithD3(networkData.nodes, networkData.links, timelineTick ? 45 : 120);
+
+            if (this.isDestroyed) {
+                this.commonService.session.network.rendering = false;
+                return;
             }
 
-            // Same for link.target
-            if (typeof link.target === 'object') {
-            link.target = link.target._id.toString();
+            console.log('--- TwoD networkData after precompute0: ', _.cloneDeep(networkData.links));
+
+            networkData.nodes = laidOutNodes;
+            networkData.links = laidOutLinks;
+        } else if (!this.cy) {
+            this.clearTimelineLayoutMetadata();
+            const { nodes: laidOutNodes, links: laidOutLinks } =
+                await this.precomputePositionsWithD3(networkData.nodes, networkData.links, 300).then(({ nodes: n, links: l }) => {
+                    return this.precomputePositionsWithD3(n, l, 5, false);
+                });
+
+            if (this.isDestroyed) {
+                this.commonService.session.network.rendering = false;
+                return;
             }
-        });
 
-        const nodeIds = new Set(networkData.nodes.map(n => n.id));
+            console.log('--- TwoD networkData after precompute0: ', _.cloneDeep(networkData.links));
 
-
-       // Instead of calling synchronously, await the precomputation:
-       if (!this.cy) {
-        const { nodes: laidOutNodes, links: laidOutLinks } =
-        await this.precomputePositionsWithD3(networkData.nodes, networkData.links, 300).then(({nodes: n, links: l}) => {
-            return this.precomputePositionsWithD3(n, l, 5, false);
-        });
-
-        if (this.isDestroyed) {
-            this.commonService.session.network.rendering = false;
-            return;
+            networkData.nodes = laidOutNodes;
+            networkData.links = laidOutLinks;
         }
 
-        console.log('--- TwoD networkData after precompute0: ', _.cloneDeep(networkData.links));
-        
-        // Update networkData with the precomputed positions
-        networkData.nodes = laidOutNodes;
-        networkData.links = laidOutLinks;
-
-
-        networkData.links.forEach((link, i) => {
-            // If link.source is an object, grab its _id and convert to string
-            if (typeof link.source === 'object') {
-            link.source = link.source._id.toString();
-            }
-        
-            // Same for link.target
-            if (typeof link.target === 'object') {
-            link.target = link.target._id.toString();
-            }
-        });
-
-
-        networkData.links.forEach(link => {
-            if (!nodeIds.has(link.source)) {
-                console.warn('Link source not found in nodes:', link.source, link);
-            }
-            if (!nodeIds.has(link.target)) {
-                console.warn('Link target not found in nodes:', link.target, link);
-            }
-        });
-       }
+        this.normalizeNetworkDataForCytoscape(networkData);
 
 
         // Update Cytoscape visualization if it exists
@@ -3388,8 +4165,10 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
             // Add new nodes and edges
             this.cy.elements().remove();
-            const newElements = this.mapDataToCytoscapeElements(this.data, true);
+            const newElements = this.mapDataToCytoscapeElements(this.data);
             this.cy.add(newElements);
+            this.applyTimelineNodeXLocks();
+            this.updateEdgeRoutingStyles();
 
             // Apply the Cose layout to arrange the nodes
             // const layout = this.cy.layout({
@@ -3404,6 +4183,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 this.updateGroupAssignments(this.widgets['polygons-foci'], false);
             }
 
+            this.scheduleTimelineAxisOverlayUpdate();
 
         } else{
             this.data = this.commonService.convertToGraphDataArray(networkData);
@@ -3492,7 +4272,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     // ✅ keep app model in sync, like a real dragfree event
                     this.updateNodePos(node);
 
-                    return newPos;  // so the test can assert directly
+                    return node.position();  // so the test can assert directly
                     });
                 },
                 selectNodesInRenderedBox: (x1: number, y1: number, x2: number, y2: number) => {
@@ -3706,6 +4486,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
               this.store.setNetworkUpdated(false);
               this.commonService.session.network.rendering = false;
               this.commonService.demoNetworkRendered = true;
+              this.applyTimelineNodeXLocks();
+              this.scheduleTimelineAxisOverlayUpdate();
 
               if (this.pendingPartialUpdate) {
                 void this._partialUpdate();
@@ -4089,7 +4871,7 @@ private updateArrowStyles(): void {
         },
         'target-arrow-color': 'data(lineColor)',
         'source-arrow-color': 'data(lineColor)',
-        'curve-style': 'straight'
+        ...this.getTimelineAwareEdgeRoutingStyle()
       })
       .update();
   }
@@ -4193,6 +4975,47 @@ private updateArrowStyles(): void {
             this.widgets['network-gridlines-show'] = true;
         } else {
             this.widgets['network-gridlines-show'] = false;
+        }
+    }
+
+    onNetworkLayoutModeChange(e: NetworkLayoutMode): void {
+        this.widgets['network-layout-mode'] = e === 'Timeline' ? 'Timeline' : 'Force Directed';
+        this.SelectedNetworkLayoutModeVariable = this.widgets['network-layout-mode'];
+        this.updateTimelineStatisticsOffset();
+
+        if (!this.isTimelineLayoutActive()) {
+            this.clearTimelineLayoutMetadata();
+        }
+
+        this.updateEdgeRoutingStyles();
+        if (this.isTimelineLayoutSelected() && this.getNetworkTimelineDateField() === 'None') {
+            return;
+        }
+
+        this.updateLayout();
+    }
+
+    onNetworkTimelineDateFieldChange(e: string): void {
+        this.widgets['network-timeline-date-field'] = e || 'None';
+        this.SelectedNetworkTimelineDateFieldVariable = this.widgets['network-timeline-date-field'];
+        this.updateTimelineStatisticsOffset();
+
+        if (!this.isTimelineLayoutActive()) {
+            this.clearTimelineLayoutMetadata();
+        }
+
+        this.updateEdgeRoutingStyles();
+        this.updateLayout();
+    }
+
+    onNetworkTimelineVerticalSpacingChange(e: number): void {
+        const spacing = Number(e);
+        const clampedSpacing = Number.isFinite(spacing) ? Math.min(Math.max(spacing, 5), 180) : 100;
+        this.widgets['network-timeline-vertical-spacing'] = clampedSpacing;
+        this.SelectedNetworkTimelineVerticalSpacingVariable = clampedSpacing;
+
+        if (this.isTimelineLayoutActive()) {
+            this.updateLayout();
         }
     }
 
@@ -4351,8 +5174,10 @@ scaleLinkWidth() {
      */
     fit() {
         if (this.cy) {
+            this.syncNetworkContainerBounds();
             this.cy.resize();
             this.cy.fit(this.cy.nodes(), 30);
+            this.scheduleTimelineAxisOverlayUpdate();
         }
     };
 
@@ -4479,7 +5304,12 @@ scaleLinkWidth() {
             node.nodeSize = Number(cy.nodes().getElementById(node._id).data('nodeSize'));
         })
     }
-    const { nodes: laidOutNodes, links: laidOutLinks } = await this.precomputePositionsWithD3(networkData.nodes, networkData.links, 30, false);
+    if (!this.isTimelineLayoutActive()) {
+        this.clearTimelineLayoutMetadata();
+    }
+    const { nodes: laidOutNodes, links: laidOutLinks } = this.isTimelineLayoutActive()
+        ? await this.precomputeTimelinePositionsWithD3(networkData.nodes, networkData.links, 70)
+        : await this.precomputePositionsWithD3(networkData.nodes, networkData.links, 30, false);
 
     if (this.isDestroyed || this.cy !== cy || !this.isCytoscapeUsable(cy)) {
         return;
@@ -4487,38 +5317,10 @@ scaleLinkWidth() {
 
     networkData.nodes = laidOutNodes;
     networkData.links = laidOutLinks;
+    this.normalizeNetworkDataForCytoscape(networkData);
 
     // Use batch mode to disable auto-panning during updates
     cy.batch(() => {
-
-        networkData.nodes.forEach(node => {
-            node.id = node._id.toString();
-        });
-        networkData.links.forEach((link, i) => {
-            // Set a unique link id if desired
-            //link.id =  i.toString();  // or link.index.toString()
-            // If link.source is an object, grab its _id and convert to string
-            if (typeof link.source === 'object') {
-                link.source = link.source._id.toString();
-            }
-
-            // Same for link.target
-            if (typeof link.target === 'object') {
-            link.target = link.target._id.toString();
-            }
-        });
-
-        const nodeIds = new Set(networkData.nodes.map(n => n.id));
-
-        networkData.links.forEach(link => {
-        if (!nodeIds.has(link.source)) {
-            console.warn('Link source not found in nodes:', link.source, link);
-        }
-        if (!nodeIds.has(link.target)) {
-            console.warn('Link target not found in nodes:', link.target, link);
-        }
-        });
-
         console.log('--- TwoDComponent _partialUpdate called:  ', networkData.links);
 
         this.data = this.commonService.convertToGraphDataArray(networkData);
@@ -4610,7 +5412,10 @@ scaleLinkWidth() {
         //     }
         // });
 
+        this.applyTimelineNodeXLocks();
+        this.updateEdgeRoutingStyles();
         this.fit();
+        this.scheduleTimelineAxisOverlayUpdate();
 
            // Set rendered to true now that network has rendered
            this.store.setNetworkRendered(true); 
@@ -4622,6 +5427,7 @@ scaleLinkWidth() {
 
     applyStyleFileSettings() {
         this.widgets = this.commonService.session.style.widgets;
+        this.ensureTimelineLayoutWidgetDefaults();
         this.loadSettings();
         this._partialUpdate(); 
     }
@@ -4634,6 +5440,16 @@ scaleLinkWidth() {
         this.destroy$.next();
         this.destroy$.complete();
         this.commonService.session.network.rendering = false;
+        if (this.timelineAxisUpdateTimeout) {
+            clearTimeout(this.timelineAxisUpdateTimeout);
+            this.timelineAxisUpdateTimeout = null;
+        }
+        if (this.timelineAxisResizeObserver) {
+            this.timelineAxisResizeObserver.disconnect();
+            this.timelineAxisResizeObserver = null;
+        }
+        this.timelineAxisResizeObservedElements.clear();
+        window.removeEventListener('resize', this.windowResizeHandler);
 
         this.styleFileSub.unsubscribe();
 
@@ -4668,6 +5484,7 @@ scaleLinkWidth() {
 
         console.log('onLoadNewData');
         this.widgets = this.commonService.session.style.widgets;
+        this.ensureTimelineLayoutWidgetDefaults();
         this.IsDataAvailable = (this.commonService.session.data.nodes.length > 0);
 
         if (!this.IsDataAvailable) {
@@ -4716,6 +5533,7 @@ scaleLinkWidth() {
      * (ie. onPolygonLabelVariableChange, onPolygonLabelVariableChange, onPolygonLabelOrientationChange all call redrawPolygonLabels) XXXXX
      */
     loadSettings() {
+        this.ensureTimelineLayoutWidgetDefaults();
 
         //Polygons|Label Size
         this.SelectedPolygonLabelSizeVariable = this.widgets['polygons-label-size'];
@@ -4829,6 +5647,11 @@ scaleLinkWidth() {
         //Network|Gridlines
         this.SelectedNetworkGridLineTypeVariable = this.widgets['network-gridlines-show'] ? "Show" : "Hide";
         this.onNetworkGridlinesShowHideChange(this.SelectedNetworkGridLineTypeVariable);
+
+        //Network|Layout
+        this.SelectedNetworkLayoutModeVariable = this.getNetworkLayoutMode();
+        this.SelectedNetworkTimelineDateFieldVariable = this.getNetworkTimelineDateField();
+        this.SelectedNetworkTimelineVerticalSpacingVariable = Number(this.widgets['network-timeline-vertical-spacing']);
 
         //Network|Link Strength
         this.SelecetedNetworkLinkStrengthVariable = this.widgets['network-link-strength'];

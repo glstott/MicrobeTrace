@@ -30,6 +30,9 @@ const selector : any = {
   nodeBorderWidth: '#node-border-width',
   showArrowsToggle: '#link-directed-undirected',
   showGridlinesToggle: '#network-gridlines-show-hide',
+  networkLayoutMode: '#network-layout-mode',
+  networkTimelineDateField: '#network-timeline-date-field',
+  networkTimelineVerticalSpacing: '#network-timeline-vertical-spacing',
   nodeLabelSize: '#node-label-size',
   nodeLabelOrientation: '#node-label-orientation',
   nodeRadiusVar: '#node-radius-variable',
@@ -41,6 +44,79 @@ const selector : any = {
   groupLabelSize: '#polygons-label-size',
   groupLabelOrientation: '#polygon-label-orientation'
 };
+
+const timelineLayoutDateField = 'Date of symptom onset Date';
+const timelineDragNodeId = 'MZ740979';
+
+function leafNodes(cyInstance: Core) {
+  return cyInstance
+    .nodes(':visible')
+    .filter((node) => node.children().length === 0 && !node.hasClass('parent') && !node.hasClass('hidden'));
+}
+
+function expectVisibleEdgeRouting(curveStyle: string): void {
+  getCy().should((cyInstance) => {
+    const edge = cyInstance.edges(':visible').first();
+    expect(edge.empty(), 'visible edge exists').to.equal(false);
+    expect(edge.style('curve-style'), 'visible edge routing').to.equal(curveStyle);
+  });
+}
+
+function getTimelineVerticalSpan(cyInstance: Core): number {
+  const yPositions = leafNodes(cyInstance)
+    .toArray()
+    .map((node) => node.position('y'));
+
+  return Math.max(...yPositions) - Math.min(...yPositions);
+}
+
+function expectTimelineAxisLabelsDoNotOverlap(): void {
+  cy.get('.timeline-axis-overlay text.timeline-axis-label').should(($labels) => {
+    const rects = Array.from($labels)
+      .map((label) => {
+        const rect = label.getBoundingClientRect();
+        return {
+          text: label.textContent || '',
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+        };
+      })
+      .filter((rect) => rect.text.trim().length > 0 && rect.width > 0)
+      .sort((a, b) => a.left - b.left);
+
+    for (let index = 1; index < rects.length; index++) {
+      expect(
+        rects[index].left,
+        `${rects[index - 1].text} should not overlap ${rects[index].text}`,
+      ).to.be.greaterThan(rects[index - 1].right - 2);
+    }
+  });
+}
+
+function openNetworkDisplaySettings(): void {
+  cy.get('@dialogContainer').find('.tab-pane.active').contains('p-accordion-panel', 'Display').click();
+}
+
+function enableTimelineLayout(field = timelineLayoutDateField): void {
+  openNetworkDisplaySettings();
+  cy.get('@dialogContainer').find(selector.networkLayoutMode).contains('Timeline').click({ force: true });
+  cy.window().its('commonService.session.style.widgets.network-layout-mode').should('equal', 'Timeline');
+
+  cy.get('@dialogContainer').find(selector.networkTimelineDateField, { timeout: 10000 }).click({ force: true });
+  cy.contains('li[role="option"]', field, { timeout: 10000 }).click({ force: true });
+  cy.window().its('commonService.session.style.widgets.network-timeline-date-field').should('equal', field);
+  cy.get('.timeline-axis-overlay:not(.hidden)', { timeout: 20000 }).should('exist');
+  getCy().should((cyInstance) => {
+    const nodes = leafNodes(cyInstance);
+    expect(nodes.length, 'timeline layout visible nodes').to.be.greaterThan(0);
+    expect(
+      nodes.toArray().some((node) => Number.isFinite(Number(node.data('timelineX')))),
+      'nodes have timeline X positions',
+    ).to.equal(true);
+  });
+  expectVisibleEdgeRouting('taxi');
+}
 
 
 // Test suite for core rendering and functionality
@@ -430,6 +506,251 @@ describe('2D Network - Settings Pane Interactions', () => {
       
         cy.get('@dialogContainer').find(selector.neighborHighlightToggle).contains('Normal').click();
         cy.window().its('commonService.session.style.widgets.node-highlight').should('be.false');
+    });
+
+    it('should arrange dated nodes from left to right in timeline layout', () => {
+        enableTimelineLayout();
+
+        getCy().then((cyInstance) => {
+            const datedNodes = leafNodes(cyInstance)
+                .toArray()
+                .map((node) => ({
+                    id: node.id(),
+                    x: node.position('x'),
+                    time: Date.parse(String(node.data(timelineLayoutDateField)))
+                }))
+                .filter((node) => Number.isFinite(node.time))
+                .sort((a, b) => a.time - b.time);
+
+            expect(datedNodes.length, 'dated nodes').to.be.greaterThan(1);
+            expect(datedNodes[0].x, `${datedNodes[0].id} should be left of ${datedNodes[datedNodes.length - 1].id}`)
+                .to.be.lessThan(datedNodes[datedNodes.length - 1].x);
+        });
+    });
+
+    it('should spread timeline nodes vertically to reduce orthogonal edge overlap', () => {
+        enableTimelineLayout();
+
+        getCy().then((cyInstance) => {
+            const yPositions = leafNodes(cyInstance).toArray().map((node) => node.position('y'));
+            const verticalSpan = getTimelineVerticalSpan(cyInstance);
+
+            expect(yPositions.length, 'timeline layout visible nodes').to.be.greaterThan(10);
+            expect(verticalSpan, 'timeline vertical span').to.be.greaterThan(350);
+            expect(verticalSpan, 'timeline vertical span').to.be.lessThan(1800);
+        });
+    });
+
+    it('should adjust timeline vertical spacing with the network slider', () => {
+        enableTimelineLayout();
+
+        cy.get('@dialogContainer').find(selector.networkTimelineVerticalSpacing)
+            .should('have.attr', 'min', '5')
+            .and('have.attr', 'max', '180');
+
+        let defaultSpan = 0;
+        getCy().then((cyInstance) => {
+            defaultSpan = getTimelineVerticalSpan(cyInstance);
+        });
+
+        cy.get('@dialogContainer').find(selector.networkTimelineVerticalSpacing)
+            .invoke('val', 180)
+            .trigger('change', { force: true });
+        cy.window().its('commonService.session.style.widgets.network-timeline-vertical-spacing').should('equal', 180);
+        getCy().should((cyInstance) => {
+            expect(getTimelineVerticalSpan(cyInstance), 'expanded timeline vertical span')
+                .to.be.greaterThan(defaultSpan * 1.5);
+        });
+
+        cy.get('@dialogContainer').find(selector.networkTimelineVerticalSpacing)
+            .invoke('val', 5)
+            .trigger('change', { force: true });
+        cy.window().its('commonService.session.style.widgets.network-timeline-vertical-spacing').should('equal', 5);
+        getCy().should((cyInstance) => {
+            expect(getTimelineVerticalSpan(cyInstance), 'compressed timeline vertical span')
+                .to.be.lessThan(defaultSpan * 0.2);
+        });
+    });
+
+    it('should resize the timeline axis and keep statistics above the axis labels', () => {
+        enableTimelineLayout();
+
+        cy.get('#network-statistics-wrapper')
+            .should('be.visible')
+            .invoke('css', 'bottom')
+            .then((bottom) => {
+                expect(parseFloat(String(bottom)), 'statistics bottom offset').to.be.greaterThan(0);
+            });
+        cy.get('#network-statistics-wrapper').then(($stats) => {
+            const statsRect = $stats[0].getBoundingClientRect();
+            cy.get('.timeline-axis-overlay text.timeline-axis-label').should(($labels) => {
+                const overlapsStats = Array.from($labels).some((label) => {
+                    const labelRect = label.getBoundingClientRect();
+                    return labelRect.right > statsRect.left &&
+                        labelRect.left < statsRect.right &&
+                        labelRect.bottom > statsRect.top &&
+                        labelRect.top < statsRect.bottom;
+                });
+
+                expect(overlapsStats, 'timeline axis labels overlap statistics').to.equal(false);
+            });
+        });
+
+        cy.viewport(1300, 800);
+        cy.get('.timeline-axis-overlay').then(($overlay) => {
+            const wideAxisWidth = Number($overlay.attr('width'));
+            const tallAxisHeight = Number($overlay.attr('height'));
+            expect(wideAxisWidth, 'wide axis width').to.be.greaterThan(0);
+            expect(tallAxisHeight, 'tall axis height').to.be.greaterThan(0);
+            cy.get('#cy').parent().invoke('height').then((tallGraphHeight) => {
+                expect(Number(tallGraphHeight), 'tall graph container height').to.be.greaterThan(0);
+
+                cy.viewport(900, 560);
+                cy.get('#cy').parent().invoke('height').should((shortGraphHeight) => {
+                    expect(Number(shortGraphHeight), 'graph container height after viewport resize')
+                        .to.be.lessThan(Number(tallGraphHeight) - 20);
+                });
+                cy.get('.timeline-axis-overlay').should(($resizedOverlay) => {
+                    const narrowAxisWidth = Number($resizedOverlay.attr('width'));
+                    const shortAxisHeight = Number($resizedOverlay.attr('height'));
+                    expect(narrowAxisWidth, 'narrow axis width').to.be.greaterThan(0);
+                    expect(shortAxisHeight, 'short axis height').to.be.greaterThan(0);
+                    expect(narrowAxisWidth, 'axis width after viewport resize').to.be.lessThan(wideAxisWidth - 20);
+                    expect(shortAxisHeight, 'axis height after viewport resize').to.be.lessThan(tallAxisHeight - 20);
+                });
+            });
+        });
+        cy.viewport(1000, 660);
+    });
+
+    it('should keep timeline axis labels separated while zooming', () => {
+        enableTimelineLayout();
+
+        expectTimelineAxisLabelsDoNotOverlap();
+
+        getCy().then((cyInstance) => {
+            cyInstance.zoom({
+                level: Math.max(cyInstance.minZoom(), cyInstance.zoom() * 0.45),
+                renderedPosition: { x: 400, y: 300 },
+            });
+        });
+        expectTimelineAxisLabelsDoNotOverlap();
+
+        getCy().then((cyInstance) => {
+            cyInstance.zoom({
+                level: Math.min(cyInstance.maxZoom(), cyInstance.zoom() * 3),
+                renderedPosition: { x: 400, y: 300 },
+            });
+        });
+        expectTimelineAxisLabelsDoNotOverlap();
+    });
+
+    it('should keep undated nodes visible in the no-date band and preserve links', () => {
+        cy.window().then((win: any) => {
+            const updateNode = (node: any) => {
+                if (!node) return;
+                node[timelineLayoutDateField] = '0';
+                if (node._rawDateValues) {
+                    node._rawDateValues[timelineLayoutDateField] = '0';
+                }
+            };
+
+            updateNode(win.commonService.session.data.nodes.find((node: any) => node._id === timelineDragNodeId));
+            updateNode(win.commonService.session.data.nodeFilteredValues.find((node: any) => node._id === timelineDragNodeId));
+        });
+
+        enableTimelineLayout();
+
+        getCy().then((cyInstance) => {
+            const noDateNode = cyInstance.getElementById(timelineDragNodeId);
+            const datedNodeXs = leafNodes(cyInstance)
+                .toArray()
+                .filter((node) => node.id() !== timelineDragNodeId && !node.data('timelineNoDate'))
+                .map((node) => node.position('x'));
+
+            expect(noDateNode.empty(), `node ${timelineDragNodeId} should exist`).to.be.false;
+            expect(noDateNode.visible(), `node ${timelineDragNodeId} should stay visible`).to.be.true;
+            expect(noDateNode.data('timelineNoDate'), 'undated node flag').to.equal(true);
+            expect(datedNodeXs.length, 'dated comparison nodes').to.be.greaterThan(0);
+            expect(noDateNode.position('x'), 'no-date node x').to.be.greaterThan(Math.max(...datedNodeXs));
+            expect(cyInstance.edges(':visible').length, 'visible links').to.be.greaterThan(0);
+        });
+
+        cy.get('.timeline-axis-no-date-label').should('contain.text', 'No date provided');
+        cy.get('.timeline-axis-no-date-band').should('not.exist');
+        cy.get('.timeline-axis-no-date-tickmark').should('exist');
+        cy.get('.timeline-axis-no-date-axis-label-background').should('not.exist');
+        cy.get('.timeline-axis-no-date-axis-label').should('contain.text', 'No date provided');
+        cy.get('.timeline-axis-no-date-axis-label').should('have.attr', 'font-size', '16');
+        cy.get('.timeline-axis-tick .timeline-axis-label').first().should('have.attr', 'font-size', '14');
+        cy.get('.timeline-axis-tick .timeline-axis-label').first().invoke('attr', 'y').then((axisLabelY) => {
+            cy.get('.timeline-axis-no-date-axis-label').invoke('attr', 'y').should('equal', axisLabelY);
+        });
+    });
+
+    it('should lock dragged nodes to their date-derived X coordinate in timeline layout', () => {
+        enableTimelineLayout();
+
+        getCy().then((cyInstance) => {
+            const node = cyInstance.getElementById(timelineDragNodeId);
+            expect(node.empty(), `node ${timelineDragNodeId} should exist`).to.be.false;
+
+            const initial = { ...node.position() };
+
+            cy.window().then((win: any) => {
+                const after = win.Cypress.test.dragNodeDelta(timelineDragNodeId, 100, 50);
+
+                expect(after, 'drag helper returned a position').to.not.be.null;
+                expect(after.x, 'date-locked rendered X').to.be.closeTo(initial.x, 1);
+                expect(after.y, 'rendered Y').to.be.closeTo(initial.y + 50, 1);
+
+                const backingNode = win.commonService.session.data.nodes.find((n: any) => n._id === timelineDragNodeId);
+                expect(backingNode.x, 'model X').to.be.closeTo(initial.x, 1);
+                expect(backingNode.y, 'model Y').to.be.closeTo(after.y, 1);
+            });
+        });
+    });
+
+    it('should layer global timeline filtering over timeline layout without shifting X positions', () => {
+        enableTimelineLayout();
+
+        let timelineXById: Record<string, number> = {};
+        getCy().then((cyInstance) => {
+            timelineXById = {};
+            leafNodes(cyInstance)
+                .toArray()
+                .forEach((node) => {
+                    timelineXById[node.id()] = node.position('x');
+                });
+        });
+
+        cy.window().then((win: any) => {
+            win.commonService.session.style.widgets['node-timeline-variable'] = timelineLayoutDateField;
+            win.commonService.session.style.widgets['timeline-date-field'] = timelineLayoutDateField;
+            win.commonService.session.state.timeEnd = new Date('2021-08-03').toISOString();
+            win.commonService.setNodeVisibility(false);
+        });
+
+        getCy().should((cyInstance) => {
+            const remainingNodes = leafNodes(cyInstance)
+                .toArray()
+                .filter((node) => timelineXById[node.id()] !== undefined);
+
+            expect(remainingNodes.length, 'remaining timeline-filtered nodes').to.be.greaterThan(0);
+            remainingNodes.forEach((node) => {
+                expect(node.position('x'), `${node.id()} X after global timeline filter`)
+                    .to.be.closeTo(timelineXById[node.id()], 1);
+            });
+        });
+    });
+
+    it('should switch back to standard network layout and hide the timeline axis', () => {
+        enableTimelineLayout();
+
+        cy.get('@dialogContainer').find(selector.networkLayoutMode).contains('Standard Network').click({ force: true });
+        cy.window().its('commonService.session.style.widgets.network-layout-mode').should('equal', 'Force Directed');
+        cy.get('.timeline-axis-overlay').should('have.class', 'hidden');
+        expectVisibleEdgeRouting('straight');
     });
   });
 

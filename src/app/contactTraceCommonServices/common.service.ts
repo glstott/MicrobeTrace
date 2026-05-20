@@ -62,6 +62,21 @@ export class CommonService extends AppComponentBase implements OnInit {
         'Waterfall'
     ]);
 
+    private readonly missingTimelineDateTokens = new Set([
+        '',
+        '0',
+        '0.0',
+        'na',
+        'n/a',
+        'nan',
+        'none',
+        'null',
+        'undefined',
+        'unknown',
+        'not available',
+        'invalid date'
+    ]);
+
     private readonly legacyViewNameMap: { [key: string]: string } = {
         '2d_network': '2D Network',
         '2dnetwork': '2D Network',
@@ -421,7 +436,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             "mst-computed": false,
             'network-friction': 0.4,
             'network-gravity': 0.05,
+            'network-layout-mode': 'Force Directed',
             'network-link-strength': 0.124,
+            'network-timeline-date-field': 'None',
+            'network-timeline-vertical-spacing': 100,
             'node-charge': 200,
             'node-border-width' : 2.0,
             'node-color': '#1f77b4',
@@ -865,9 +883,14 @@ export class CommonService extends AppComponentBase implements OnInit {
             return false;
         }
 
+        if (typeof value === 'number' && value === 0) {
+            return false;
+        }
+
         if (typeof value === 'string') {
             const trimmed = value.trim();
-            if (trimmed === '' || trimmed.toLowerCase() === 'null') {
+            const normalized = trimmed.toLowerCase();
+            if (this.missingTimelineDateTokens.has(normalized)) {
                 return false;
             }
         }
