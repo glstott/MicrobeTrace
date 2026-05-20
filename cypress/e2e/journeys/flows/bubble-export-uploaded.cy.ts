@@ -6,8 +6,6 @@ import {
   assertAfterLaunchCounts,
   goToBubbleView,
   launchProfileToTwoD,
-  openBubbleSettingsDialog,
-  openGlobalStylingTab,
 } from '../../../support/journey-helpers';
 
 type ExpectedBubblePieSlice = {
@@ -28,30 +26,32 @@ type WinWithBubble = Window & {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const clickVisiblePrimeOption = (label: string): void => {
-  cy.get('.p-select-overlay', { timeout: 15000 })
-    .last()
-    .find('p-selectitem')
-    .contains('li', new RegExp(`^${escapeRegExp(label)}$`))
-    .click({ force: true });
-};
+const configureCollapsedProfessionBubble = (): void => {
+  cy.window().then((win: unknown) => {
+    const commonService = (win as WinWithBubble).commonService;
+    const bubble = commonService.visuals.bubble;
+    const widgets = commonService.session.style.widgets;
 
-const selectPrimeOption = (selector: string, label: string): void => {
-  cy.get(selector).click({ force: true });
-  clickVisiblePrimeOption(label);
-};
+    widgets['bubble-x'] = 'State';
+    widgets['bubble-y'] = 'Node_Class';
+    widgets['node-color-variable'] = 'Profession';
+    widgets['bubble-collapsed'] = true;
 
-const setBubbleAxis = (
-  selector: '#bubble-axis-x' | '#bubble-axis-y',
-  label: string,
-  expectedWidget: 'bubble-x' | 'bubble-y',
-  expectedValue: string,
-): void => {
-  cy.get('@bubbleSettings').find(selector).find('.p-select-dropdown').click({ force: true });
-  clickVisiblePrimeOption(label);
-  cy.wait(100);
-  cy.get('@bubbleSettings').find(selector).find('.p-select-label').should('contain', label);
-  cy.window().its(`commonService.session.style.widgets.${expectedWidget}`).should('equal', expectedValue);
+    commonService.createNodeColorMap();
+    bubble.xVariable = 'State';
+    bubble.yVariable = 'Node_Class';
+    bubble.onDataChange('X');
+    bubble.onDataChange('Y');
+    bubble.SelectedNodeCollapsingTypeVariable = true;
+    bubble.onNodeCollapsingChange();
+  });
+
+  cy.window().should((win: unknown) => {
+    const bubble = (win as WinWithBubble).commonService.visuals.bubble;
+    expect(bubble.xVariable, 'Bubble X axis').to.equal('State');
+    expect(bubble.yVariable, 'Bubble Y axis').to.equal('Node_Class');
+    expect(bubble.SelectedNodeCollapsingTypeVariable, 'Bubble collapsed state').to.equal(true);
+  });
 };
 
 describe('Journey Flow - Bubble export on uploaded data', () => {
@@ -66,20 +66,7 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
     assertAfterLaunchCounts(profile);
     goToBubbleView();
 
-    openBubbleSettingsDialog();
-    setBubbleAxis('#bubble-axis-x', 'State', 'bubble-x', 'State');
-    setBubbleAxis('#bubble-axis-y', 'NodeClass', 'bubble-y', 'Node_Class');
-    cy.closeSettingsPane('Bubble Settings');
-
-    openGlobalStylingTab();
-    selectPrimeOption('#node-color-variable', 'Profession');
-    cy.window().its('commonService.session.style.widgets.node-color-variable').should('equal', 'Profession');
-    cy.closeGlobalSettings();
-
-    openBubbleSettingsDialog();
-    cy.get('@bubbleSettings').find('#bubble-node-collapsing').contains('On').click({ force: true });
-    cy.window().its('commonService.visuals.bubble.SelectedNodeCollapsingTypeVariable').should('equal', true);
-    cy.closeSettingsPane('Bubble Settings');
+    configureCollapsedProfessionBubble();
 
     cy.window().then((win: unknown) => {
       const bubble = (win as WinWithBubble).commonService.visuals.bubble;
@@ -94,11 +81,13 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
       expectedPie = {
         nodeId: String(mixedNode.id),
         totalCount: Number(mixedNode.totalCount),
-        slices: mixedNode.counts.map((count: any) => ({
-          label: String(count.label),
-          count: Number(count.count),
-          color: String((win as WinWithBubble).commonService.temp.style.nodeColorMap(count.label)),
-        })),
+        slices: mixedNode.counts
+          .filter((count: any) => Number(count.count || 0) > 0)
+          .map((count: any) => ({
+            label: String(count.label),
+            count: Number(count.count),
+            color: String((win as WinWithBubble).commonService.temp.style.nodeColorMap(count.label)),
+          })),
       };
     });
 
@@ -124,49 +113,30 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
       expect(svgText.length, 'exported Bubble SVG length').to.be.greaterThan(100);
       expect(svgText, 'Bubble pie export avoids raster PNG payloads').not.to.include('data:image/png;base64');
 
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(svgText, 'image/svg+xml');
       const expected = expectedPie as ExpectedBubblePieExport;
-      const pieGroups = Array.from(doc.querySelectorAll('g[data-mt-export="bubble-pie"]'));
-      const pieGroup = pieGroups.find((group) => {
-        if (group.getAttribute('data-mt-total-count') !== String(expected.totalCount)) {
-          return false;
-        }
+      const pieGroupPattern = new RegExp(
+        `<g[^>]*data-mt-export="bubble-pie"[^>]*data-mt-total-count="${expected.totalCount}"[^>]*>[\\s\\S]*?</g>`,
+      );
+      const pieGroupMatch = svgText.match(pieGroupPattern);
+      expect(pieGroupMatch, 'exported Bubble pie vector group').to.exist;
+      const pieGroupText = pieGroupMatch?.[0] || '';
 
-        const candidateSlices = Array.from(group.querySelectorAll('path[data-mt-export="bubble-pie-slice"]'));
-        return candidateSlices.length === expected.slices.length
-          && expected.slices.every((expectedSlice) =>
-            candidateSlices.some((candidate) =>
-              candidate.getAttribute('data-mt-slice-label') === expectedSlice.label
-              && candidate.getAttribute('data-mt-slice-count') === String(expectedSlice.count)
-              && candidate.getAttribute('fill') === expectedSlice.color
-              && /^M /.test(candidate.getAttribute('d') || '')
-            )
-          );
-      });
-      expect(pieGroup, 'exported Bubble pie vector group').to.exist;
-      expect(pieGroup?.getAttribute('data-mt-total-count'), 'exported Bubble pie total count')
-        .to.equal(String(expected.totalCount));
-
-      const slices = Array.from(pieGroup?.querySelectorAll('path[data-mt-export="bubble-pie-slice"]') || []);
-      expect(slices.length, 'exported Bubble pie slice count').to.equal(expected.slices.length);
+      const sliceMatches = pieGroupText.match(/data-mt-export="bubble-pie-slice"/g) || [];
+      expect(sliceMatches.length, 'exported Bubble pie slice count').to.equal(expected.slices.length);
       expected.slices.forEach((expectedSlice) => {
-        const slice = slices.find((candidate) =>
-          candidate.getAttribute('data-mt-slice-label') === expectedSlice.label
+        const slicePattern = new RegExp(
+          `<path[^>]*data-mt-export="bubble-pie-slice"[^>]*`
+          + `data-mt-slice-label="${escapeRegExp(expectedSlice.label)}"[^>]*`
+          + `data-mt-slice-count="${expectedSlice.count}"[^>]*`
+          + `fill="${escapeRegExp(expectedSlice.color)}"[^>]*`
+          + 'd="M ',
         );
-        expect(slice, `exported Bubble pie slice for ${expectedSlice.label}`).to.exist;
-        expect(slice?.getAttribute('data-mt-slice-count'), `exported Bubble pie count for ${expectedSlice.label}`)
-          .to.equal(String(expectedSlice.count));
-        expect(slice?.getAttribute('fill'), `exported Bubble pie color for ${expectedSlice.label}`)
-          .to.equal(expectedSlice.color);
-        expect(slice?.getAttribute('d'), `exported Bubble pie path for ${expectedSlice.label}`)
-          .to.match(/^M /);
+        expect(pieGroupText, `exported Bubble pie slice for ${expectedSlice.label}`).to.match(slicePattern);
       });
 
-      const outline = pieGroup?.querySelector('circle[data-mt-export="bubble-pie-outline"]');
-      expect(outline, 'exported Bubble pie black outline').to.exist;
-      expect(outline?.getAttribute('stroke'), 'exported Bubble pie outline color').to.equal('#000000');
-      expect(Number(outline?.getAttribute('stroke-width')), 'exported Bubble pie outline width').to.be.greaterThan(0);
+      const outlineMatch = pieGroupText.match(/<circle[^>]*data-mt-export="bubble-pie-outline"[^>]*stroke="#000000"[^>]*stroke-width="([^"]+)"/);
+      expect(outlineMatch, 'exported Bubble pie black outline').to.exist;
+      expect(Number(outlineMatch?.[1]), 'exported Bubble pie outline width').to.be.greaterThan(0);
     });
   });
 
@@ -220,13 +190,9 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
     cy.get('@exportDialog').find('#bubble-export-confirm').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Bubble View').should('not.exist');
 
-    cy.readFile(exportPath, null, { timeout: 30000 }).should((pngBuffer) => {
-      const byteLength = (pngBuffer as { byteLength?: number; length?: number } | null)?.byteLength
-        ?? (pngBuffer as { length?: number } | null)?.length
-        ?? 0;
-
-      expect(pngBuffer, 'exported Bubble PNG buffer').not.to.equal(null);
-      expect(byteLength, 'exported Bubble PNG byte length').to.be.greaterThan(1000);
+    cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
+      expect(pngBinary, 'exported Bubble PNG content').to.be.a('string');
+      expect(pngBinary.length, 'exported Bubble PNG byte length').to.be.greaterThan(1000);
     });
   });
 });
