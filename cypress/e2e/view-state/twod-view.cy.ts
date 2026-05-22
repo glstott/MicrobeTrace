@@ -8,7 +8,13 @@
  */
 
 import { Core } from 'cytoscape';
-import { ensureTwoDNetworkView, visitAppAndAcceptEula } from '../../support/journey-helpers';
+import {
+  ensureTwoDNetworkView,
+  openGlobalFilteringTab,
+  setGlobalDistanceMetric,
+  setTN93DistanceDisplayFormat,
+  visitAppAndAcceptEula,
+} from '../../support/journey-helpers';
 import { byTestId, testIds } from '../../support/selectors';
 
 const getCy = () => cy.window({ log: false }).its('cytoscapeInstance') as Cypress.Chainable<Core>;
@@ -41,6 +47,23 @@ const getNumericMetricValue = (link: any, metric: string): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
+const isDistanceLinkForCollapse = (link: any, metric: string): boolean => {
+  if (link?.hasDistance !== true || getNumericMetricValue(link, metric) === null) {
+    return false;
+  }
+
+  const distanceOrigins = Array.isArray(link?.distanceOrigins)
+    ? link.distanceOrigins.filter((origin: any) => typeof origin === 'string' && origin.length > 0)
+    : (typeof link?.distanceOrigin === 'string' && link.distanceOrigin.length > 0 ? [link.distanceOrigin] : []);
+
+  if (distanceOrigins.length > 0) {
+    return true;
+  }
+
+  const origins = Array.isArray(link?.origin) ? link.origin : [];
+  return origins.some((origin: any) => String(origin || '').toLowerCase().includes('distance'));
+};
+
 const configureSyntheticCollapseColors = (win: any, threshold: number): void => {
   const commonService = win.commonService;
   const widgets = commonService.session.style.widgets;
@@ -71,7 +94,7 @@ const configureSyntheticCollapseColors = (win: any, threshold: number): void => 
     const target = getEndpointId(link.target);
     const value = getNumericMetricValue(link, metric);
 
-    if (visibleIds.has(source) && visibleIds.has(target) && value !== null && value <= threshold) {
+    if (visibleIds.has(source) && visibleIds.has(target) && isDistanceLinkForCollapse(link, metric) && value !== null && value <= threshold) {
       union(source, target);
     }
   });
@@ -150,8 +173,140 @@ function aggregateNodes(cyInstance: Core) {
   return cyInstance.nodes(':visible').filter((node) => node.data('isCollapsedAggregate') === true);
 }
 
+function getCollapseThresholdWithAggregateEdges(): Cypress.Chainable<{ raw: number; displayed: number }> {
+  return cy.window().then((win: any) => {
+    const commonService = win.commonService;
+    const widgets = commonService.session.style.widgets;
+    const metric = String(widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'distance');
+    const visibleNodes = commonService.getVisibleNodes();
+    const visibleIds = new Set<string>(visibleNodes.map(getNodeId));
+    const visibleDistanceLinks = (commonService.session.data.links || [])
+      .filter((link: any) => visibleIds.has(getEndpointId(link.source)) && visibleIds.has(getEndpointId(link.target)))
+      .filter((link: any) => isDistanceLinkForCollapse(link, metric))
+      .map((link: any) => ({
+        source: getEndpointId(link.source),
+        target: getEndpointId(link.target),
+        value: getNumericMetricValue(link, metric),
+      }))
+      .filter((link: any) => link.value !== null)
+      .sort((a: any, b: any) => a.value - b.value);
+    const thresholds = Array.from(new Set(visibleDistanceLinks.map((link: any) => link.value))) as number[];
+
+    const find = (parent: Map<string, string>, id: string): string => {
+      const current = parent.get(id) || id;
+      if (current === id) return current;
+      const root = find(parent, current);
+      parent.set(id, root);
+      return root;
+    };
+
+    const union = (parent: Map<string, string>, a: string, b: string): void => {
+      const rootA = find(parent, a);
+      const rootB = find(parent, b);
+      if (rootA !== rootB) {
+        parent.set(rootB, rootA);
+      }
+    };
+
+    for (const threshold of thresholds) {
+      const parent = new Map<string, string>();
+      visibleIds.forEach((id) => parent.set(id, id));
+      visibleDistanceLinks.forEach((link: any) => {
+        if (link.value <= threshold) {
+          union(parent, link.source, link.target);
+        }
+      });
+
+      const components = new Map<string, string[]>();
+      visibleNodes.forEach((node: any) => {
+        const id = getNodeId(node);
+        const root = find(parent, id);
+        components.set(root, [...(components.get(root) || []), id]);
+      });
+
+      const renderedByOriginalId = new Map<string, string>();
+      Array.from(components.values()).forEach((memberIds, componentIndex) => {
+        const renderedId = memberIds.length > 1 ? `aggregate-${componentIndex}` : memberIds[0];
+        memberIds.forEach((id) => renderedByOriginalId.set(id, renderedId));
+      });
+
+      const hasAggregateEdge = visibleDistanceLinks.some((link: any) => {
+        const source = renderedByOriginalId.get(link.source) || link.source;
+        const target = renderedByOriginalId.get(link.target) || link.target;
+        return source !== target && (source.startsWith('aggregate-') || target.startsWith('aggregate-'));
+      });
+
+      if (hasAggregateEdge) {
+        return {
+          raw: threshold,
+          displayed: commonService.toDisplayedDistanceValue(threshold, metric),
+        };
+      }
+    }
+
+    const fallbackRaw = Math.max(...visibleDistanceLinks.map((link: any) => link.value));
+    return {
+      raw: fallbackRaw,
+      displayed: commonService.toDisplayedDistanceValue(fallbackRaw, metric),
+    };
+  });
+}
+
+function expectCollapsedAggregateEdgesAreRetargeted(cyInstance: Core): void {
+  const aggregateIds = new Set(aggregateNodes(cyInstance).map((node) => node.id()));
+  const aggregateEndpointEdges = cyInstance.edges().filter((edge) => (
+    aggregateIds.has(String(edge.data('source'))) || aggregateIds.has(String(edge.data('target')))
+  ));
+
+  expect(aggregateEndpointEdges.length, 'edges with aggregate endpoint data').to.be.greaterThan(0);
+  aggregateEndpointEdges.forEach((edge: any) => {
+    expect(edge.source().id(), `${edge.id()} rendered source`).to.equal(String(edge.data('source')));
+    expect(edge.target().id(), `${edge.id()} rendered target`).to.equal(String(edge.data('target')));
+    expect(edge.source().visible(), `${edge.id()} source visible`).to.equal(true);
+    expect(edge.target().visible(), `${edge.id()} target visible`).to.equal(true);
+  });
+}
+
+function expectAggregateNodesDoNotOverlapVisibleNodes(cyInstance: Core): void {
+  const aggregates = aggregateNodes(cyInstance).toArray();
+  const visibleNodes = leafNodes(cyInstance).toArray();
+  const overlaps: string[] = [];
+
+  aggregates.forEach((aggregate: any) => {
+    const aggregatePosition = aggregate.position();
+    const aggregateRadius = parseFloat(aggregate.style('width')) / 2;
+
+    visibleNodes.forEach((node: any) => {
+      if (node.id() === aggregate.id()) {
+        return;
+      }
+
+      const nodePosition = node.position();
+      const nodeRadius = parseFloat(node.style('width')) / 2;
+      const dx = aggregatePosition.x - nodePosition.x;
+      const dy = aggregatePosition.y - nodePosition.y;
+      const distance = Math.sqrt((dx * dx) + (dy * dy));
+
+      if (distance < aggregateRadius + nodeRadius - 1) {
+        overlaps.push(`${aggregate.id()} overlaps ${node.id()}`);
+      }
+    });
+  });
+
+  expect(overlaps, 'collapsed aggregate node overlaps').to.deep.equal([]);
+}
+
 function openNodeCollapseSettings(): void {
   cy.get('@dialogContainer').contains('p-accordion-panel', 'Collapse Related Nodes').click();
+}
+
+function reopenTwoDNodeSettings(): void {
+  cy.get(selector.settingsBtn).click();
+  cy.contains('.p-dialog-title', '2D Network Settings')
+    .should('be.visible')
+    .parents('.p-dialog')
+    .as('dialogContainer');
+  cy.get('@dialogContainer').contains('.nav-link', 'Nodes').click();
 }
 
 function getCollapseThresholdFromVisibleLinks(): Cypress.Chainable<{ raw: number; displayed: number }> {
@@ -162,6 +317,7 @@ function getCollapseThresholdFromVisibleLinks(): Cypress.Chainable<{ raw: number
     const visibleIds = new Set(commonService.getVisibleNodes().map(getNodeId));
     const values = (commonService.session.data.links || [])
       .filter((link: any) => visibleIds.has(getEndpointId(link.source)) && visibleIds.has(getEndpointId(link.target)))
+      .filter((link: any) => isDistanceLinkForCollapse(link, metric))
       .map((link: any) => getNumericMetricValue(link, metric))
       .filter((value: number | null): value is number => value !== null);
     const raw = Math.max(...values);
@@ -432,6 +588,7 @@ describe('2D Network - Settings Pane Interactions', () => {
         cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).should('be.visible').and('be.disabled');
         cy.window().then((win: any) => {
           expect(win.commonService.session.style.widgets['network-node-collapse-enabled']).to.equal(false);
+          expect(Number(win.commonService.session.style.widgets['network-node-collapse-threshold']), 'default collapse threshold').to.equal(0);
         });
 
         cy.get('@dialogContainer').find(selector.nodeCollapseToggle).contains('Show').click({ force: true });
@@ -501,6 +658,123 @@ describe('2D Network - Settings Pane Interactions', () => {
         cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('have.attr', 'step', '1');
     });
 
+    it('should update collapse distance controls from global metric and format selections', () => {
+        openNodeCollapseSettings();
+
+        cy.closeSettingsPane('2D Network Settings');
+        openGlobalFilteringTab();
+        setGlobalDistanceMetric('tn93');
+        setTN93DistanceDisplayFormat('percentage');
+        cy.closeGlobalSettings();
+
+        reopenTwoDNodeSettings();
+        openNodeCollapseSettings();
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+          expect(Number(value), 'TN93 percentage collapse threshold after global setting').to.equal(1.5);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('have.attr', 'step', '0.1');
+
+        cy.closeSettingsPane('2D Network Settings');
+        openGlobalFilteringTab();
+        setGlobalDistanceMetric('snps');
+        cy.closeGlobalSettings();
+        waitForTwoDRenderIdle();
+
+        reopenTwoDNodeSettings();
+        openNodeCollapseSettings();
+        cy.window().then((win: any) => {
+          expect(win.commonService.session.style.widgets['default-distance-metric']).to.equal('snps');
+          expect(Number(win.commonService.session.style.widgets['network-node-collapse-threshold'])).to.equal(16);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+          expect(Number(value), 'SNP collapse threshold after global setting').to.equal(16);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('have.attr', 'step', '1');
+    });
+
+    it('should ignore non-distance links when collapsing related nodes', () => {
+        openNodeCollapseSettings();
+
+        cy.window().then((win: any) => {
+          const commonService = win.commonService;
+          const widgets = commonService.session.style.widgets;
+          const twoD = commonService.visuals.twoD;
+          const metric = 'distance';
+          const threshold = 0;
+          const visibleNodes = commonService.getVisibleNodes();
+          const visibleIds = new Set<string>(visibleNodes.map(getNodeId));
+          const parent = new Map<string, string>();
+
+          const find = (id: string): string => {
+            const current = parent.get(id) || id;
+            if (current === id) return current;
+            const root = find(current);
+            parent.set(id, root);
+            return root;
+          };
+
+          const union = (a: string, b: string): void => {
+            const rootA = find(a);
+            const rootB = find(b);
+            if (rootA !== rootB) {
+              parent.set(rootB, rootA);
+            }
+          };
+
+          widgets['default-distance-metric'] = 'tn93';
+          widgets['link-sort-variable'] = metric;
+          widgets['network-node-collapse-threshold'] = threshold;
+          visibleIds.forEach((id) => parent.set(id, id));
+
+          (commonService.session.data.links || []).forEach((link: any) => {
+            const source = getEndpointId(link.source);
+            const target = getEndpointId(link.target);
+            const value = getNumericMetricValue(link, metric);
+
+            if (visibleIds.has(source) && visibleIds.has(target) && isDistanceLinkForCollapse(link, metric) && value !== null && value <= threshold) {
+              union(source, target);
+            }
+          });
+
+          const sourceNode = visibleNodes[0];
+          const targetNode = visibleNodes.find((node: any) => find(getNodeId(node)) !== find(getNodeId(sourceNode)));
+          expect(targetNode, 'visible node in a different distance-collapse component').to.exist;
+
+          const source = getNodeId(sourceNode);
+          const target = getNodeId(targetNode);
+          commonService.session.data.links.push({
+            id: 'non-distance-collapse-test',
+            source,
+            target,
+            distance: threshold,
+            visible: true,
+            cluster: 1,
+            origin: ['Synthetic Contact'],
+            hasDistance: false,
+            directed: false,
+            nn: false,
+          });
+
+          twoD.SelectedNodeCollapseThresholdDisplayedVariable = commonService.toDisplayedDistanceValue(threshold, metric);
+          twoD.onNodeCollapseEnabledChange(true);
+          cy.wrap([source, target], { log: false }).as('nonDistanceCollapsePair');
+        });
+
+        waitForTwoDRenderIdle();
+
+        cy.get('@nonDistanceCollapsePair').then((pair: any) => {
+          getCy().should((cyInstance) => {
+            const [source, target] = pair.map(String);
+            const collapsedTogether = aggregateNodes(cyInstance).toArray().some((node: any) => {
+              const memberIds = (node.data('collapsedMemberIds') || []).map(String);
+              return memberIds.includes(source) && memberIds.includes(target);
+            });
+
+            expect(collapsedTogether, 'non-distance link endpoints collapsed together').to.equal(false);
+          });
+        });
+    });
+
     it('should collapse related visible nodes into aggregate pie nodes and restore real nodes when disabled', () => {
         let originalLeafCount = 0;
         let baseRenderedWidth = 0;
@@ -511,7 +785,7 @@ describe('2D Network - Settings Pane Interactions', () => {
         });
 
         openNodeCollapseSettings();
-        getCollapseThresholdFromVisibleLinks().then(({ raw, displayed }) => {
+        getCollapseThresholdWithAggregateEdges().then(({ raw, displayed }) => {
           cy.window().then((win: any) => {
             configureSyntheticCollapseColors(win, raw);
             win.commonService.session.style.widgets['network-node-collapse-threshold'] = raw;
@@ -539,6 +813,8 @@ describe('2D Network - Settings Pane Interactions', () => {
             expect(parseFloat(sizedAggregate.style('width')), 'aggregate rendered size')
               .to.be.closeTo(baseRenderedWidth * Math.sqrt(Number(sizedAggregate.data('totalCount'))), 1);
             expect(mixedPies.length, 'mixed-color pie aggregate').to.be.greaterThan(0);
+            expectCollapsedAggregateEdgesAreRetargeted(cyInstance);
+            expectAggregateNodesDoNotOverlapVisibleNodes(cyInstance);
           });
 
           cy.window().then((win: any) => {

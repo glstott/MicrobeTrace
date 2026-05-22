@@ -422,7 +422,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     SelectedNodeRadiusVariable: string = "None";
     SelectedNodeRadiusSizeVariable: number = 50;
     SelectedNodeCollapseTypeVariable: boolean = false;
-    SelectedNodeCollapseThresholdDisplayedVariable: number = 0.015;
+    SelectedNodeCollapseThresholdDisplayedVariable: number = 0;
     NodeCollapseThresholdMinDisplayed: number = 0;
     NodeCollapseThresholdMaxDisplayed: number = 1;
     NodeCollapseThresholdStepDisplayed: number = 0.001;
@@ -627,7 +627,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             this.widgets['network-node-collapse-enabled'] = false;
         }
         if (!Number.isFinite(Number(this.widgets['network-node-collapse-threshold']))) {
-            this.widgets['network-node-collapse-threshold'] = 0.015;
+            this.widgets['network-node-collapse-threshold'] = 0;
         }
     }
 
@@ -805,20 +805,36 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         return null;
     }
 
+    private isNodeCollapseDistanceLink(link: any, metric: string): boolean {
+        if (link?.hasDistance !== true || this.getNumericMetricValue(link, metric) === null) {
+            return false;
+        }
+
+        const getLinkDistanceOrigins = this.commonService.getLinkDistanceOrigins?.bind(this.commonService);
+        const distanceOrigins = getLinkDistanceOrigins ? getLinkDistanceOrigins(link) : [];
+        if (distanceOrigins.length > 0) {
+            return true;
+        }
+
+        const origins = Array.isArray(link?.origin) ? link.origin : [];
+        return origins.some((origin: any) => String(origin || '').toLowerCase().includes('distance'));
+    }
+
     private getNodeCollapseDistanceLinks(nodeIds: Set<string>, metric: string): any[] {
         return (this.commonService.session.data.links || []).filter(link => {
             const source = this.getLinkEndpointId(link.source);
             const target = this.getLinkEndpointId(link.target);
             return nodeIds.has(source)
                 && nodeIds.has(target)
-                && this.getNumericMetricValue(link, metric) !== null;
+                && this.isNodeCollapseDistanceLink(link, metric);
         });
     }
 
     private updateNodeCollapseThresholdDisplayBounds(): void {
         this.ensureNodeCollapseWidgetDefaults();
         const metric = this.getNodeCollapseMetric();
-        const values = (this.commonService.session.data.links || [])
+        const nodeIds = new Set((this.commonService.session.data.nodes || []).map(node => this.getNodeId(node)));
+        const values = this.getNodeCollapseDistanceLinks(nodeIds, metric)
             .map(link => this.getNumericMetricValue(link, metric))
             .filter((value): value is number => value !== null)
             .sort((a, b) => a - b);
@@ -873,6 +889,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             this.widgets['network-node-collapse-threshold'] = globalThreshold;
         }
 
+        this.updateLinkLabels();
         this.syncNodeCollapseControlsFromWidgets();
         this.cdref.detectChanges();
 
@@ -1229,6 +1246,15 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     }
 
     private getTimelineNodeVerticalRadius(node: any): number {
+        return this.getD3CollisionRadius(node);
+    }
+
+    private getD3CollisionRadius(node: any): number {
+        const aggregateRenderedSize = Number(node?.aggregateRenderedSize);
+        if (Number.isFinite(aggregateRenderedSize) && aggregateRenderedSize > 0) {
+            return aggregateRenderedSize;
+        }
+
         const rawSize = Number(node?.nodeSize ?? this.widgets?.['node-radius']);
         const size = Number.isFinite(rawSize) ? rawSize : Number(this.widgets?.['node-radius'] ?? 10);
         return this.mapNodeSize(size);
@@ -2540,7 +2566,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 .force('charge', d3.forceManyBody().strength(-30))
                 .force('link', d3.forceLink(links).id((d: any) => d.id).distance(this.SelectedLinkLengthVariable))
                 .force('center', d3.forceCenter(0, 0))
-                .force('collide', d3.forceCollide().radius(d => this.mapNodeSize(d.nodeSize ? d.nodeSize : this.widgets['node-radius'])))
+                .force('collide', d3.forceCollide().radius(d => this.getD3CollisionRadius(d)))
                 .force('x', d3.forceX().strength(.005))
                 .force('y', d3.forceY().strength(.005))
                 .stop(); 
@@ -5208,6 +5234,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         const collectDataStart = this.getPerformanceNow();
         let networkData = this.getVisibleNetworkDataForRender(timelineTick || this.isTimelineFilteringActive());
         this.normalizeNetworkDataForCytoscape(networkData, false);
+        networkData = this.applyNodeCollapseToNetworkData(networkData);
+        this.normalizeNetworkDataForCytoscape(networkData, false);
         this.recordTwoDRenderTiming('twoDCollectVisibleGraphData', collectDataStart, {
             timelineTick,
             nodes: networkData.nodes.length,
@@ -5241,13 +5269,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             this.clearTimelineLayoutMetadata();
             const precomputeStart = this.getPerformanceNow();
             const initialLayout = await this.precomputePositionsWithD3(networkData.nodes, networkData.links, 300);
-            const refinementLayout = await this.precomputePositionsWithD3(initialLayout.nodes, initialLayout.links, 5, false);
+            const refinementTicks = this.isNodeCollapseEnabled() ? 60 : 5;
+            const refinementLayout = await this.precomputePositionsWithD3(initialLayout.nodes, initialLayout.links, refinementTicks, false);
             const { nodes: laidOutNodes, links: laidOutLinks } = refinementLayout;
             this.recordTwoDRenderTiming('twoDPrecomputePositions', precomputeStart, {
                 mode: 'force-directed',
                 nodes: laidOutNodes.length,
                 links: laidOutLinks.length,
-                ticks: 305,
+                ticks: 300 + refinementTicks,
                 tickBatches: initialLayout.tickBatches + refinementLayout.tickBatches,
                 initialTicksPerYield: initialLayout.ticksPerYield,
                 refinementTicksPerYield: refinementLayout.ticksPerYield
@@ -5266,8 +5295,6 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             networkData.links = laidOutLinks;
         }
 
-        this.normalizeNetworkDataForCytoscape(networkData);
-        networkData = this.applyNodeCollapseToNetworkData(networkData);
         this.normalizeNetworkDataForCytoscape(networkData);
 
         // Update Cytoscape visualization if it exists
@@ -6530,6 +6557,10 @@ scaleLinkWidth() {
             node.nodeSize = Number(cy.nodes().getElementById(node._id).data('nodeSize'));
         })
     }
+    this.normalizeNetworkDataForCytoscape(networkData, false);
+    networkData = this.applyNodeCollapseToNetworkData(networkData);
+    this.normalizeNetworkDataForCytoscape(networkData);
+
     if (!this.isTimelineLayoutActive()) {
         this.clearTimelineLayoutMetadata();
     }
@@ -6546,8 +6577,6 @@ scaleLinkWidth() {
 
     networkData.nodes = laidOutNodes;
     networkData.links = laidOutLinks;
-    this.normalizeNetworkDataForCytoscape(networkData);
-    networkData = this.applyNodeCollapseToNetworkData(networkData);
     this.normalizeNetworkDataForCytoscape(networkData);
     this.recordTwoDRenderTiming('twoDPartialPrecomputePositions', precomputeStart, {
         nodes: laidOutNodes.length,
@@ -6613,9 +6642,13 @@ scaleLinkWidth() {
 
         // Add/Update new edges
         newElements.edges.forEach(e => {
-            const cyEdge = cy.getElementById(e.data.id);
+            let cyEdge = cy.getElementById(e.data.id);
             if (!cyEdge || !cyEdge.length) {
-                cy.add(e); // Add edge
+                cyEdge = cy.add(e); // Add edge
+            } else if (cyEdge.source().id() !== e.data.source || cyEdge.target().id() !== e.data.target) {
+                // Cytoscape edge endpoints are not retargeted by mutating data.
+                cy.remove(cyEdge);
+                cyEdge = cy.add(e);
             } else {
                 cyEdge.data({ ...cyEdge.data(), ...e.data }); // Update edge data
             }

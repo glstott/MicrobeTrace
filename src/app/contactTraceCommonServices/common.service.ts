@@ -484,7 +484,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'network-layout-mode': 'Force Directed',
             'network-link-strength': 0.124,
             'network-node-collapse-enabled': false,
-            'network-node-collapse-threshold': 0.015,
+            'network-node-collapse-threshold': 0,
             'network-timeline-date-field': 'None',
             'network-timeline-vertical-spacing': 100,
             'node-charge': 200,
