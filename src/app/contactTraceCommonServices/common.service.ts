@@ -483,6 +483,8 @@ export class CommonService extends AppComponentBase implements OnInit {
             'network-gravity': 0.05,
             'network-layout-mode': 'Force Directed',
             'network-link-strength': 0.124,
+            'network-node-collapse-enabled': false,
+            'network-node-collapse-threshold': 0.015,
             'network-timeline-date-field': 'None',
             'network-timeline-vertical-spacing': 100,
             'node-charge': 200,
@@ -1963,8 +1965,10 @@ export class CommonService extends AppComponentBase implements OnInit {
         const nodes = microbeData.nodes.map((node) => ({
           ...node, // Spread existing properties
           id: node._id, // Ensure the id property is set correctly
-          group: node.cluster,
-          color: this.getColorByIndex(node.index), // Add or override the color property
+          group: node.isCollapsedAggregate ? node.group : node.cluster,
+          color: node.color ?? (Number.isInteger(node.index) && node.index >= 0
+            ? this.getColorByIndex(node.index)
+            : this.session.style.widgets['node-color']), // Add or override the color property
           label: (this.session.style.widgets['node-label-variable'] === 'None') ? '' : node.label, // Ensure label is defined
             nodeSize: node.nodeSize ?? 20, // Default node size
             borderWidth: node.borderWidth ?? this.session.style.widgets['node-border-width'] ?? 1 // Default border width

@@ -13,6 +13,7 @@ import svg from 'cytoscape-svg';
 import { ExportService, ExportOptions } from '@app/contactTraceCommonServices/export.service';
 import { Subject, Subscription, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
+import { buildPieChartPatternDef, buildPieChartSvgDataUri, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
 
 type DataRecord = { index: number, id: string, x: number; y: number, color: string, Xgroup: number, Ygroup: number, strokeColor: string, totalCount?: number, counts ?: any }//selected: boolean }
 
@@ -830,8 +831,8 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
         return;
       } else {
         let size = this.nodeSize * Math.sqrt(node.totalCount);
-        let svgPattern = `<svg width='${size}' height='${size}' xmlns='http://www.w3.org/2000/svg'><defs>${this.svgDefs[`node${i}`]}</defs><circle fill="url(#node${i})" cx='${size/2}' cy='${size/2}' r='${size/2}'/></svg>`;
-        let b64 = 'data:image/svg+xml;base64,' + btoa(svgPattern);
+        const slices = this.getPieChartSlicesForCollapsedNode(node);
+        let b64 = buildPieChartSvgDataUri(`node${i}`, size, slices);
         this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
       }
     })
@@ -913,35 +914,22 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
    */
   generatePieChartsSVGDefs(changedVisibleNodes) : void {
     changedVisibleNodes.forEach((indexNumber) => {
-      let patternString = '';
       let node = this.visibleData.find(vNode => vNode.index == indexNumber);
 
-      if (node.totalCount < 2 || node.counts.length == 1 || node == undefined) {
+      if (node == undefined || node.totalCount < 2 || node.counts.length == 1) {
         return;
       }
-      let proportions = []
-      let coordinates = []
-      let colors = [];
-      node.counts.forEach(x => {
-        let proportion = proportions.reduce((acc, cv) => acc+cv, 0) + x.count/node.totalCount
-        let xPos = Math.cos(2 * Math.PI * proportion)
-        let yPos = Math.sin(2 * Math.PI * proportion)
-        
-        proportions.push(x.count/node.totalCount)
-        coordinates.push([xPos, yPos])
-        colors.push(this.commonService.temp.style.nodeColorMap(x.label))
-      })
-
-      patternString += `<pattern id='node${indexNumber}' viewBox='-1 -1 2 2' style='transform: rotate(-.25turn)' width='100%' height='100%'>` ;
-      for (let i = 0; i<coordinates.length; i++) {
-        let arcStart = i == 0 ? '1 0': coordinates[i-1][0] + ' ' + coordinates[i-1][1];
-        let largeArcFlag = proportions[i] > .5 ? 1: 0 
-        let arcEnd = i == coordinates.length-1 ? '1 0' : coordinates[i][0] + ' ' + coordinates[i][1]
-        patternString += `<path d='M 0 0 L ${arcStart} A 1 1 0 ${largeArcFlag} 1 ${arcEnd} L 0 0' fill='${colors[i]}' />`
-      }
-      patternString += '</pattern>'
-      this.svgDefs[`node${indexNumber}`] = (patternString);
+      const slices = this.getPieChartSlicesForCollapsedNode(node);
+      this.svgDefs[`node${indexNumber}`] = buildPieChartPatternDef(`node${indexNumber}`, slices);
     })
+  }
+
+  private getPieChartSlicesForCollapsedNode(node: DataRecord): PieChartSlice[] {
+    return (node?.counts || []).map((countItem) => ({
+      label: String(countItem.label),
+      count: Number(countItem.count),
+      color: this.commonService.temp.style.nodeColorMap(countItem.label)
+    }));
   }
 
   /**
@@ -1199,8 +1187,8 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
           return;
         } else {
           let size = this.nodeSize * Math.sqrt(node.totalCount);
-          let svgPattern = `<svg width='${size}' height='${size}' xmlns='http://www.w3.org/2000/svg'><defs>${this.svgDefs[`node${i}`]}</defs><circle fill="url(#node${i})" cx='${size/2}' cy='${size/2}' r='${size/2}'/></svg>`;
-          let b64 = 'data:image/svg+xml;base64,' + btoa(svgPattern);
+          const slices = this.getPieChartSlicesForCollapsedNode(node);
+          let b64 = buildPieChartSvgDataUri(`node${i}`, size, slices);
           this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
         }
       })

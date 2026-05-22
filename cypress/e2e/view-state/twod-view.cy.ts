@@ -26,6 +26,78 @@ const expectCytoscapeElement = (element: any, message: string): void => {
   expect(Boolean(element && typeof element.empty === 'function' && !element.empty()), message).to.equal(true);
 };
 
+const getNodeId = (node: any): string => String(node?._id ?? node?.id ?? '');
+
+const getEndpointId = (endpoint: any): string => {
+  if (endpoint && typeof endpoint === 'object') {
+    return String(endpoint._id ?? endpoint.id ?? '');
+  }
+
+  return String(endpoint ?? '');
+};
+
+const getNumericMetricValue = (link: any, metric: string): number | null => {
+  const value = Number(link?.[metric]);
+  return Number.isFinite(value) ? value : null;
+};
+
+const configureSyntheticCollapseColors = (win: any, threshold: number): void => {
+  const commonService = win.commonService;
+  const widgets = commonService.session.style.widgets;
+  const metric = String(widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'distance');
+  const visibleNodes = commonService.getVisibleNodes();
+  const visibleIds = new Set(visibleNodes.map(getNodeId));
+  const parent = new Map<string, string>();
+
+  const find = (id: string): string => {
+    const current = parent.get(id) || id;
+    if (current === id) return current;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+
+  const union = (a: string, b: string): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) {
+      parent.set(rootB, rootA);
+    }
+  };
+
+  visibleIds.forEach((id) => parent.set(id, id));
+  (commonService.session.data.links || []).forEach((link: any) => {
+    const source = getEndpointId(link.source);
+    const target = getEndpointId(link.target);
+    const value = getNumericMetricValue(link, metric);
+
+    if (visibleIds.has(source) && visibleIds.has(target) && value !== null && value <= threshold) {
+      union(source, target);
+    }
+  });
+
+  const componentMembers = new Map<string, string[]>();
+  visibleIds.forEach((id) => {
+    const root = find(id);
+    componentMembers.set(root, [...(componentMembers.get(root) || []), id]);
+  });
+
+  const colorById = new Map<string, string>();
+  componentMembers.forEach((memberIds) => {
+    memberIds.sort().forEach((id, index) => {
+      colorById.set(id, memberIds.length > 1 && index % 2 === 1 ? 'Collapse B' : 'Collapse A');
+    });
+  });
+
+  [...commonService.session.data.nodes, ...commonService.session.data.nodeFilteredValues].forEach((node: any) => {
+    node.__twodCollapseColor = colorById.get(getNodeId(node)) || 'Collapse A';
+  });
+
+  widgets['node-color-variable'] = '__twodCollapseColor';
+  commonService.createNodeColorMap();
+  commonService.visuals.twoD.updateNodeColors();
+};
+
 // Selectors for key elements in the 2D component
 const selector : any = {
   canvas: '#cy',
@@ -49,6 +121,9 @@ const selector : any = {
   nodeLabelSize: '#node-label-size',
   nodeLabelOrientation: '#node-label-orientation',
   nodeRadiusVar: '#node-radius-variable',
+  nodeCollapseToggle: '#network-node-collapse-enabled',
+  nodeCollapseThreshold: '#network-node-collapse-threshold',
+  nodeCollapseThresholdInput: '#network-node-collapse-threshold-input',
   linkOpacity: '#link-opacity',
   groupLabelToggle: '#polygons-label-visibility',
   linkWidthVar: '#link-width-variable',
@@ -65,6 +140,48 @@ function leafNodes(cyInstance: Core) {
   return cyInstance
     .nodes(':visible')
     .filter((node) => node.children().length === 0 && !node.hasClass('parent') && !node.hasClass('hidden'));
+}
+
+function realLeafNodes(cyInstance: Core) {
+  return leafNodes(cyInstance).filter((node) => !node.data('isCollapsedAggregate'));
+}
+
+function aggregateNodes(cyInstance: Core) {
+  return cyInstance.nodes(':visible').filter((node) => node.data('isCollapsedAggregate') === true);
+}
+
+function openNodeCollapseSettings(): void {
+  cy.get('@dialogContainer').contains('p-accordion-panel', 'Collapse Related Nodes').click();
+}
+
+function getCollapseThresholdFromVisibleLinks(): Cypress.Chainable<{ raw: number; displayed: number }> {
+  return cy.window().then((win: any) => {
+    const commonService = win.commonService;
+    const widgets = commonService.session.style.widgets;
+    const metric = String(widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'distance');
+    const visibleIds = new Set(commonService.getVisibleNodes().map(getNodeId));
+    const values = (commonService.session.data.links || [])
+      .filter((link: any) => visibleIds.has(getEndpointId(link.source)) && visibleIds.has(getEndpointId(link.target)))
+      .map((link: any) => getNumericMetricValue(link, metric))
+      .filter((value: number | null): value is number => value !== null);
+    const raw = Math.max(...values);
+    const displayed = commonService.toDisplayedDistanceValue(raw, metric);
+
+    return { raw, displayed };
+  });
+}
+
+function setNumberInputValue(selector: string, value: number): void {
+  cy.get('@dialogContainer').find(selector)
+    .clear({ force: true })
+    .type(String(value), { delay: 0, force: true })
+    .blur({ force: true });
+}
+
+function waitForTwoDRenderIdle(): void {
+  cy.window({ timeout: 20000 })
+    .its('commonService.session.network.rendering')
+    .should('equal', false);
 }
 
 function expectVisibleEdgeRouting(curveStyle: string): void {
@@ -297,13 +414,150 @@ describe('2D Network - Settings Pane Interactions', () => {
     
         cy.window().its('commonService.session.style.widgets.node-border-width').should('equal', initialWidth);
     
-        cy.get('@dialogContainer').find(selector.nodeBorderWidth).clear().type(newWidth.toString()).blur();
+        setNumberInputValue(selector.nodeBorderWidth, newWidth);
     
         cy.window().its('commonService.session.style.widgets.node-border-width').should('equal', newWidth);
         getCy().then(cy => {
             const node = getFirstVisibleLeafNode(cy);
             expectCytoscapeElement(node, 'visible leaf node for border-width assertion');
             expect(parseFloat(node.style('border-width'))).to.be.closeTo(newWidth, 0.1);
+        });
+    });
+
+    it('should show collapse controls and synchronize distance slider and input', () => {
+        openNodeCollapseSettings();
+
+        cy.get('@dialogContainer').find(selector.nodeCollapseToggle).should('be.visible');
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('be.visible').and('be.disabled');
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).should('be.visible').and('be.disabled');
+        cy.window().then((win: any) => {
+          expect(win.commonService.session.style.widgets['network-node-collapse-enabled']).to.equal(false);
+        });
+
+        cy.get('@dialogContainer').find(selector.nodeCollapseToggle).contains('Show').click({ force: true });
+        waitForTwoDRenderIdle();
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('not.be.disabled');
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).should('not.be.disabled');
+
+        getCollapseThresholdFromVisibleLinks().then(({ raw, displayed }) => {
+          setNumberInputValue(selector.nodeCollapseThresholdInput, displayed);
+          cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).invoke('val').then((value) => {
+            expect(Number(value), 'slider value after input change').to.be.closeTo(displayed, 0.001);
+          });
+          cy.window().then((win: any) => {
+            expect(Number(win.commonService.session.style.widgets['network-node-collapse-threshold'])).to.be.closeTo(raw, 0.000001);
+          });
+
+          const nextDisplayed = Math.max(0, displayed - 1);
+          cy.get('@dialogContainer').find(selector.nodeCollapseThreshold)
+            .invoke('val', nextDisplayed)
+            .trigger('input', { force: true })
+            .trigger('change', { force: true });
+          cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+            expect(Number(value), 'input value after slider change').to.be.closeTo(nextDisplayed, 0.001);
+          });
+        });
+    });
+
+    it('should track global genetic distance metric and display format', () => {
+        openNodeCollapseSettings();
+
+        cy.window().then((win: any) => {
+          const widgets = win.commonService.session.style.widgets;
+          const twoD = win.commonService.visuals.twoD;
+
+          widgets['default-distance-metric'] = 'tn93';
+          widgets['link-sort-variable'] = 'distance';
+          widgets['tn93-distance-display-format'] = 'decimal';
+          widgets['network-node-collapse-threshold'] = 0.015;
+          twoD.refreshDistanceDisplayFormat();
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+          expect(Number(value), 'TN93 decimal collapse threshold').to.equal(0.015);
+        });
+
+        cy.window().then((win: any) => {
+          win.commonService.session.style.widgets['tn93-distance-display-format'] = 'percentage';
+          win.commonService.visuals.twoD.refreshDistanceDisplayFormat();
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+          expect(Number(value), 'TN93 percentage collapse threshold').to.equal(1.5);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('have.attr', 'step', '0.1');
+
+        cy.window().then((win: any) => {
+          const widgets = win.commonService.session.style.widgets;
+          widgets['default-distance-metric'] = 'snps';
+          widgets['link-threshold'] = 16;
+          widgets['tn93-distance-display-format'] = 'decimal';
+          win.commonService.visuals.twoD.refreshDistanceMetricSettings();
+        });
+        cy.window().then((win: any) => {
+          expect(Number(win.commonService.session.style.widgets['network-node-collapse-threshold']), 'SNP collapse threshold raw value').to.equal(16);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
+          expect(Number(value), 'SNP collapse threshold display').to.equal(16);
+        });
+        cy.get('@dialogContainer').find(selector.nodeCollapseThreshold).should('have.attr', 'step', '1');
+    });
+
+    it('should collapse related visible nodes into aggregate pie nodes and restore real nodes when disabled', () => {
+        let originalLeafCount = 0;
+        let baseRenderedWidth = 0;
+        getCy().then((cyInstance) => {
+          originalLeafCount = realLeafNodes(cyInstance).length;
+          baseRenderedWidth = parseFloat(realLeafNodes(cyInstance).first().style('width'));
+          expect(aggregateNodes(cyInstance).length, 'default aggregate nodes').to.equal(0);
+        });
+
+        openNodeCollapseSettings();
+        getCollapseThresholdFromVisibleLinks().then(({ raw, displayed }) => {
+          cy.window().then((win: any) => {
+            configureSyntheticCollapseColors(win, raw);
+            win.commonService.session.style.widgets['network-node-collapse-threshold'] = raw;
+            win.commonService.visuals.twoD.SelectedNodeCollapseThresholdDisplayedVariable = displayed;
+          });
+
+          cy.get('@dialogContainer').find(selector.nodeCollapseToggle).contains('Show').click({ force: true });
+          waitForTwoDRenderIdle();
+
+          getCy().should((cyInstance) => {
+            const aggregates = aggregateNodes(cyInstance);
+            const leaves = realLeafNodes(cyInstance);
+            const mixedPies = aggregates.filter((node) => {
+              const counts = node.data('counts') || [];
+              const image = String(node.data('pieBackgroundImage') || '');
+              return counts.length > 1 && image.startsWith('data:image/svg+xml;base64,');
+            });
+
+            expect(aggregates.length, 'aggregate node count').to.be.greaterThan(0);
+            expect(leaves.length, 'rendered real leaf count').to.be.lessThan(originalLeafCount);
+            expect(aggregates.toArray().some((node) => Number(node.data('totalCount')) > 1), 'aggregate totalCount').to.equal(true);
+            const sizedAggregate = aggregates
+              .toArray()
+              .find((node) => Number(node.data('totalCount')) > 1);
+            expect(parseFloat(sizedAggregate.style('width')), 'aggregate rendered size')
+              .to.be.closeTo(baseRenderedWidth * Math.sqrt(Number(sizedAggregate.data('totalCount'))), 1);
+            expect(mixedPies.length, 'mixed-color pie aggregate').to.be.greaterThan(0);
+          });
+
+          cy.window().then((win: any) => {
+            const exportedSvg = win.commonService.visuals.twoD['buildNetworkSvgExportContent']();
+            expect(exportedSvg, 'vector pie export marker')
+              .to.contain('data-microbetrace-collapsed-pie-export="true"');
+            expect(exportedSvg, 'vector pie slices').to.contain('<path');
+            expect(exportedSvg, 'vector pie border').to.contain('<circle');
+            expect(exportedSvg, 'no rasterized pie images').to.not.contain('data:image/png');
+          });
+
+          cy.get('@dialogContainer').find(selector.nodeCollapseToggle).contains('Hide').click({ force: true });
+          cy.window().then((win: any) => {
+            expect(win.commonService.session.style.widgets['network-node-collapse-enabled']).to.equal(false);
+          });
+          getCy().should((cyInstance) => {
+            expect(aggregateNodes(cyInstance).length, 'aggregate nodes after disable').to.equal(0);
+            expect(realLeafNodes(cyInstance).length, 'real leaf nodes after disable').to.equal(originalLeafCount);
+          });
         });
     });
 

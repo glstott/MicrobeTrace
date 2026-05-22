@@ -1739,6 +1739,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         } else {
             this.refreshThresholdStabilityPanel();
         }
+        this.commonService.visuals.twoD?.refreshDistanceDisplayFormat?.();
         // this.commonService._debouncedUpdateNetworkVisuals();
     
     }
@@ -5145,6 +5146,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
       this.commonService.updateThresholdHistogram(this.linkThresholdSparkline.nativeElement);
     }
 
+    this.commonService.visuals.twoD?.refreshDistanceMetricSettings?.();
     this.refreshThresholdStabilityPanel();
   }
 
