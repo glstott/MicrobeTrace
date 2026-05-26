@@ -3,6 +3,7 @@
 import { getProfile } from '../datasets/profile';
 import {
   assertAfterLaunchCounts,
+  assertMetricCount,
   launchProfileToTwoD,
 } from '../../../support/journey-helpers';
 
@@ -110,6 +111,8 @@ describe('Journey Flow - Uploaded node box select', () => {
         expect(selectedIds, 'cytoscape selected ids').to.deep.equal(expectedIds);
         expect(selectedInModel, 'app-model selected ids').to.deep.equal(expectedIds);
       });
+
+      assertMetricCount('#numberOfSelectedNodes', expectedIds.length);
     });
   });
 });

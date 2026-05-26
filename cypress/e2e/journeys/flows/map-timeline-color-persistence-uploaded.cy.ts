@@ -22,11 +22,6 @@ const normalizeColor = (value: string): string => String(value || '').replace(/\
 
 const getNodeId = (data: any): string => String(data?._id ?? data?.ID ?? data?.id ?? '');
 
-const selectPrimeOption = (selector: string, label: string): void => {
-  cy.get(selector).click({ force: true });
-  cy.contains('li[role="option"]:visible', label, { timeout: 15000 }).click({ force: true });
-};
-
 const assertRenderedNodeColor = (nodeId: string, expectedColor: string): void => {
   cy.window().should((win: unknown) => {
     const typedWindow = win as WinWithMap;
@@ -51,9 +46,84 @@ const assertRenderedLinkColor = (linkId: string, expectedColor: string): void =>
   });
 };
 
+const setColorVariable = (target: 'node' | 'link', variable: string): void => {
+  cy.window().then((win: unknown) => {
+    const typedWindow = win as WinWithMap;
+    const microbeTrace = typedWindow.commonService.visuals.microbeTrace;
+
+    if (target === 'node') {
+      microbeTrace.SelectedColorNodesByVariable = variable;
+      microbeTrace.onColorNodesByChanged();
+    } else {
+      microbeTrace.SelectedColorLinksByVariable = variable;
+      microbeTrace.onColorLinksByChanged();
+    }
+
+    microbeTrace.cdref?.detectChanges?.();
+  });
+
+  cy.window()
+    .its(`commonService.session.style.widgets.${target}-color-variable`)
+    .should('equal', variable);
+};
+
+const getColorTableCountTotal = ($rows: JQuery<HTMLElement>): number =>
+  $rows
+    .toArray()
+    .slice(1)
+    .reduce((total, row) => {
+      const countText = Cypress.$(row).find('td.tableCount').first().text().replace(/,/g, '').trim();
+      const count = Number(countText);
+      return total + (Number.isFinite(count) ? count : 0);
+    }, 0);
+
+const assertColorTableCountTotal = (tableSelector: string, expectedTotal: number): void => {
+  cy.get(`${tableSelector} tr`, { timeout: 15000 }).should(($rows) => {
+    expect($rows.length, `${tableSelector} has a header row`).to.be.greaterThan(0);
+    expect(getColorTableCountTotal($rows), `${tableSelector} count total`).to.equal(expectedTotal);
+  });
+};
+
+const assertColorTablesMatchVisibleTopology = (): void => {
+  cy.window().then((win: unknown) => {
+    const typedWindow = win as WinWithMap;
+    const summary = typedWindow.commonService.getVisibleTopologySummary();
+
+    assertColorTableCountTotal('#node-color-table', summary.nodeCount);
+    assertColorTableCountTotal('#link-color-table', summary.linkCount);
+  });
+};
+
 describe('Journey Flow - Map uploaded timeline color persistence', () => {
   const profile = getProfile('timeline-covid-node-link');
   const timeline = profile.expectations.timeline!;
+
+  it('updates Map node and link color tables as timeline visibility changes', () => {
+    const midCheckpoint = timeline.checkpoints.find((checkpoint) => checkpoint.id === 'timeline-mid') ?? timeline.checkpoints[0];
+    const startCheckpoint = timeline.checkpoints.find((checkpoint) => checkpoint.id === 'timeline-start') ?? timeline.checkpoints[0];
+
+    launchProfileToTwoD(profile);
+    assertAfterLaunchCounts(profile);
+    goToMapView();
+
+    openMapSettingsDialog();
+    selectMapField('map-field-zipcode', 'Zipcode', 'map-field-zipcode', 'Zip_code');
+    setMapNodeCollapsing('Off');
+    cy.closeSettingsPane('Geospatial Settings');
+
+    setTimelineField(timeline.field);
+    openGlobalStylingTab();
+    setColorVariable('node', 'cluster');
+    setColorVariable('link', 'cluster');
+
+    setTimelineDate(midCheckpoint.date);
+    assertColorTablesMatchVisibleTopology();
+
+    setTimelineDate(startCheckpoint.date);
+    assertColorTablesMatchVisibleTopology();
+
+    cy.closeGlobalSettings();
+  });
 
   it('keeps edited Map node and link colors after timeline mode is turned off', () => {
     const updatedNodeColor = '#777777';
@@ -84,8 +154,7 @@ describe('Journey Flow - Map uploaded timeline color persistence', () => {
     });
 
     openGlobalStylingTab();
-    selectPrimeOption('#node-color-variable', nodeColorVariable);
-    cy.window().its('commonService.session.style.widgets.node-color-variable').should('equal', nodeColorVariable);
+    setColorVariable('node', nodeColorVariable);
     cy.window().its('commonService.session.style.widgets.link-color-variable').should('equal', 'None');
 
     cy.get('#node-color-table tr', { timeout: 15000 })

@@ -39,13 +39,14 @@ const ensureMapToggleState = (
   selector: string,
   expectedPath: string,
   expectedValue: boolean,
+  visibleLabel = 'Show',
 ): void => {
   cy.window().its(expectedPath).then((currentValue) => {
     if (Boolean(currentValue) === expectedValue) return;
 
     cy.get('@mapSettings')
       .find(selector)
-      .contains(expectedValue ? 'Show' : 'Hide')
+      .contains(expectedValue ? visibleLabel : 'Hide')
       .click({ force: true });
   });
 
@@ -69,7 +70,7 @@ const assertLayerVisible = (layerKey: LayerKey, visible: boolean): void => {
 describe('Journey Flow - Map uploaded layer controls', () => {
   const profile = getProfile('map-covid-zipcode-threshold');
 
-  it('keeps the online basemap toggle deterministic on uploaded zipcode-mapped data', () => {
+  it('keeps the offline map as the default and lets the online basemap be enabled explicitly', () => {
     launchProfileToTwoD(profile);
     assertAfterLaunchCounts(profile);
     goToMapView();
@@ -79,13 +80,19 @@ describe('Journey Flow - Map uploaded layer controls', () => {
     setMapNodeCollapsing('Off');
     openMapSettingsTab('Components');
 
+    assertLayerVisible('basemap', false);
+    assertLayerVisible('satellite', false);
+    assertLayerVisible('countries', true);
+    assertLayerVisible('states', true);
+    assertLayerVisible('counties', false);
+
     expandMapAccordion('Online');
     ensureMapToggleState('#map-basemap-show-hide', 'commonService.session.style.widgets.map-basemap-show', true);
 
     assertLayerVisible('basemap', true);
     assertLayerVisible('satellite', false);
     assertLayerVisible('countries', false);
-    assertLayerVisible('states', true);
+    assertLayerVisible('states', false);
     assertLayerVisible('counties', false);
 
     cy.closeSettingsPane('Geospatial Settings');
@@ -114,22 +121,22 @@ describe('Journey Flow - Map uploaded layer controls', () => {
 
     expandMapAccordion('Offline');
 
-    ensureMapToggleState('#map-countries-show-hide', 'commonService.session.style.widgets.map-countries-show', true);
+    ensureMapToggleState('#map-countries-show-hide', 'commonService.session.style.widgets.map-countries-show', true, 'Labels + Borders');
     assertLayerVisible('countries', true);
 
-    ensureMapToggleState('#map-countries-show-hide', 'commonService.session.style.widgets.map-countries-show', false);
+    ensureMapToggleState('#map-countries-show-hide', 'commonService.session.style.widgets.map-countries-show', false, 'Labels + Borders');
     assertLayerVisible('countries', false);
 
-    ensureMapToggleState('#map-states-show-hide', 'commonService.session.style.widgets.map-states-show', true);
+    ensureMapToggleState('#map-states-show-hide', 'commonService.session.style.widgets.map-states-show', true, 'Labels + Borders');
     assertLayerVisible('states', true);
 
-    ensureMapToggleState('#map-states-show-hide', 'commonService.session.style.widgets.map-states-show', false);
+    ensureMapToggleState('#map-states-show-hide', 'commonService.session.style.widgets.map-states-show', false, 'Labels + Borders');
     assertLayerVisible('states', false);
 
-    ensureMapToggleState('#map-counties-show-hide', 'commonService.session.style.widgets.map-counties-show', true);
+    ensureMapToggleState('#map-counties-show-hide', 'commonService.session.style.widgets.map-counties-show', true, 'Labels + Borders');
     assertLayerVisible('counties', true);
 
-    ensureMapToggleState('#map-counties-show-hide', 'commonService.session.style.widgets.map-counties-show', false);
+    ensureMapToggleState('#map-counties-show-hide', 'commonService.session.style.widgets.map-counties-show', false, 'Labels + Borders');
     assertLayerVisible('counties', false);
 
     cy.closeSettingsPane('Geospatial Settings');

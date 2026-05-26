@@ -263,6 +263,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     timelineSpeedOptions: number[] = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
     timelineSpeed: number = 200;
     timelineSpeedIndex: number = this.timelineSpeedOptions.indexOf(this.timelineSpeed);
+    timelineRangeStartDate: Date | null = null;
+    timelineRangeEndDate: Date | null = null;
+    timelineDomainStartDate: Date | null = null;
+    timelineDomainEndDate: Date | null = null;
+    timelineRangeValidationMessage: string = '';
 
 
     LinkColorTableTypes: any = [
@@ -321,8 +326,14 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     public playBtnText: string = "Play";
 
     public handle: any;
+    public startHandle: any;
+    public endHandle: any;
+    public startHandleHitArea: any;
+    public endHandleHitArea: any;
+    public rangeTrack: any;
     
     public label: any;
+    public startLabel: any;
 
     public xAttribute: any;
 
@@ -331,6 +342,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     public currentTimelineValue: any;
 
     public currentTimelineTargetValue: any;
+    public currentTimelineStartValue: any;
 
     private previousTab: string = '';
 
@@ -2036,12 +2048,21 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
      * Updates visualization for each view that is available
      */
     publishUpdateVisualization() {
+        const updatedInstances = new Set<any>();
+
         this.homepageTabs.forEach(tab => {
             if (tab.componentRef &&
                 tab.componentRef.instance.updateVisualization) {
                 tab.componentRef.instance.updateVisualization();
+                updatedInstances.add(tab.componentRef.instance);
             }
         })
+
+        Object.values(this.commonService.visuals || {}).forEach((visual: any) => {
+            if (visual?.updateVisualization && !updatedInstances.has(visual)) {
+                visual.updateVisualization();
+            }
+        });
     }
 
     private publishDistanceDisplayFormatChanged(): void {
@@ -2087,6 +2108,21 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         }
 
         this.refreshKeyTablesView();
+    }
+
+    private refreshTimelineColorState(): void {
+        const nodeColorVariable = this.commonService.session.style.widgets['node-color-variable'];
+        const linkColorVariable = this.commonService.session.style.widgets['link-color-variable'];
+
+        if (nodeColorVariable && nodeColorVariable !== 'None') {
+            this.commonService.createNodeColorMap();
+        }
+
+        if (linkColorVariable && linkColorVariable !== 'None') {
+            this.commonService.createLinkColorMap();
+        }
+
+        this.refreshVisibleColorTables();
     }
 
     mapPreviousShapeNameToCurrent(name: string): string {
@@ -2570,7 +2606,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     const aggregates = this.commonService.createLinkColorMap();
     console.log('DEBUG: createLinkColorMap =>', aggregates);
 
-    const vlinks = this.commonService.getVisibleLinks();
+    const vlinks = this.commonService.getVisibleTopologySummary().links;
     console.log('DEBUG: getVisibleLinks =>', vlinks?.length);
 
     const aggregateValues = Object.keys(aggregates);
@@ -2781,39 +2817,282 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         $(`.duo-link-color-segment[data-duo-index="${index}"]`).css({ background: color, opacity: opacity })
     }
 
+    private parseTimelineDate(value: any): Date | null {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        const parsed = moment(value);
+        return parsed.isValid() ? parsed.toDate() : null;
+    }
+
+    private cloneTimelineDate(value: Date): Date {
+        return new Date(value.getTime());
+    }
+
+    private clampTimelineDate(value: Date): Date {
+        let timestamp = value.getTime();
+
+        if (this.timelineDomainStartDate) {
+            timestamp = Math.max(timestamp, this.timelineDomainStartDate.getTime());
+        }
+
+        if (this.timelineDomainEndDate) {
+            timestamp = Math.min(timestamp, this.timelineDomainEndDate.getTime());
+        }
+
+        return new Date(timestamp);
+    }
+
+    private getTimelineDomain(variable: string): [Date, Date] {
+        const times: Date[] = [];
+        const nodes = this.commonService.session.data.nodes || [];
+
+        nodes.forEach(node => {
+            const time = moment(node[variable]);
+            if (time.isValid()) {
+                times.push(time.toDate());
+            }
+        });
+
+        if (times.length < 2) {
+            return [new Date(2000, 1, 1), new Date()];
+        }
+
+        const minTime = Math.min(...times.map(time => time.getTime()));
+        const maxTime = Math.max(...times.map(time => time.getTime()));
+
+        return [new Date(minTime), new Date(maxTime)];
+    }
+
+    private clearTimelineRangeState(): void {
+        this.timelineRangeStartDate = null;
+        this.timelineRangeEndDate = null;
+        this.timelineDomainStartDate = null;
+        this.timelineDomainEndDate = null;
+        this.timelineRangeValidationMessage = '';
+        this.currentTimelineValue = 0;
+        this.currentTimelineStartValue = 0;
+        this.currentTimelineTargetValue = 0;
+        this.commonService.session.state.timeStart = new Date(0);
+        this.commonService.session.state.timeEnd = new Date();
+        this.commonService.session.state.timeTarget = null;
+        this.startHandle = null;
+        this.endHandle = null;
+        this.startHandleHitArea = null;
+        this.endHandleHitArea = null;
+        this.rangeTrack = null;
+        this.handle = null;
+        this.label = null;
+        this.startLabel = null;
+        this.cdref.detectChanges();
+    }
+
+    private stopTimelinePlayback(): void {
+        clearInterval(this.commonService.session.timeline);
+        this.playBtnText = "Play";
+    }
+
+    private getTimelineStartFromState(): Date | null {
+        return this.parseTimelineDate(this.commonService.session.state.timeStart);
+    }
+
+    private getTimelineEndFromState(): Date | null {
+        return this.parseTimelineDate(this.commonService.session.state.timeEnd);
+    }
+
+    private getTimelineTargetFromState(): Date | null {
+        return this.parseTimelineDate(this.commonService.session.state.timeTarget);
+    }
+
+    private syncTimelineRangeInputs(startDate: Date, endDate: Date): void {
+        this.timelineRangeStartDate = this.cloneTimelineDate(startDate);
+        this.timelineRangeEndDate = this.cloneTimelineDate(endDate);
+        this.cdref.detectChanges();
+    }
+
+    private refreshTimelineVisibility(): void {
+        this.commonService.setNodeVisibility(true);
+        this.commonService.setLinkVisibility(true);
+        this.refreshTimelineColorState();
+        this.commonService.updateStatistics();
+        $(document).trigger("node-visibility");
+    }
+
+    private applyTimelineRange(startDate: Date, endDate: Date, updatePlayhead = true): void {
+        if (!this.xAttribute) {
+            return;
+        }
+
+        const clampedStart = this.clampTimelineDate(startDate);
+        const clampedEnd = this.clampTimelineDate(endDate);
+
+        if (clampedStart.getTime() > clampedEnd.getTime()) {
+            this.timelineRangeValidationMessage = 'Start date must be on or before End date.';
+            const previousStart = this.getTimelineStartFromState() || this.timelineDomainStartDate;
+            const previousEnd = this.getTimelineTargetFromState() || this.getTimelineEndFromState() || this.timelineDomainEndDate;
+            if (previousStart && previousEnd) {
+                this.syncTimelineRangeInputs(previousStart, previousEnd);
+            }
+            return;
+        }
+
+        this.timelineRangeValidationMessage = '';
+        this.commonService.session.state.timeStart = this.cloneTimelineDate(clampedStart);
+        this.commonService.session.state.timeTarget = this.cloneTimelineDate(clampedEnd);
+        this.commonService.session.state.timeEnd = this.cloneTimelineDate(clampedEnd);
+        this.currentTimelineStartValue = this.xAttribute(clampedStart);
+        this.currentTimelineTargetValue = this.xAttribute(clampedEnd);
+        this.currentTimelineValue = this.currentTimelineTargetValue;
+        this.syncTimelineRangeInputs(clampedStart, clampedEnd);
+        this.renderTimelineRange(clampedEnd, updatePlayhead);
+        this.refreshTimelineVisibility();
+    }
+
+    private renderTimelineRange(currentDate: Date, updatePlayhead = true): void {
+        if (!this.xAttribute || !this.timelineRangeStartDate || !this.timelineRangeEndDate) {
+            return;
+        }
+
+        const startX = this.xAttribute(this.timelineRangeStartDate);
+        const endX = this.xAttribute(this.timelineRangeEndDate);
+        const currentX = this.xAttribute(currentDate);
+
+        if (this.rangeTrack) {
+            this.rangeTrack
+                .attr("x1", startX)
+                .attr("x2", endX);
+        }
+
+        if (this.startHandle) {
+            this.startHandle.attr("cx", startX);
+        }
+
+        if (this.startHandleHitArea) {
+            this.startHandleHitArea.attr("cx", startX);
+        }
+
+        if (this.endHandle) {
+            this.endHandle.attr("cx", endX);
+        }
+
+        if (this.endHandleHitArea) {
+            this.endHandleHitArea.attr("cx", endX);
+        }
+
+        if (this.startLabel) {
+            this.startLabel
+                .attr("x", startX)
+                .text(this.handleDateFormat(this.timelineRangeStartDate));
+        }
+
+        if (this.label) {
+            this.label
+                .attr("x", currentX)
+                .text(this.handleDateFormat(currentDate));
+        }
+
+        if (updatePlayhead && this.handle) {
+            this.handle.attr("cx", currentX);
+        }
+    }
+
+    private resolveInitialTimelineRange(loadingJsonFile: boolean, domainStart: Date, domainEnd: Date): [Date, Date] {
+        if (!loadingJsonFile) {
+            return [domainStart, domainEnd];
+        }
+
+        const savedStart = this.getTimelineStartFromState();
+        const savedTarget = this.getTimelineTargetFromState() || this.getTimelineEndFromState();
+        const startDate = savedStart ? this.clampTimelineDate(savedStart) : domainStart;
+        const endDate = savedTarget ? this.clampTimelineDate(savedTarget) : domainEnd;
+
+        if (startDate.getTime() > endDate.getTime()) {
+            return [domainStart, domainEnd];
+        }
+
+        return [startDate, endDate];
+    }
+
+    private setTimelineRangeFromEndDate(endDate: Date): void {
+        const startDate = this.getTimelineStartFromState() || this.timelineDomainStartDate;
+        if (!startDate) {
+            return;
+        }
+
+        const clampedEnd = this.clampTimelineDate(endDate);
+        const safeEnd = clampedEnd.getTime() < startDate.getTime()
+            ? this.cloneTimelineDate(startDate)
+            : clampedEnd;
+        this.applyTimelineRange(startDate, safeEnd);
+    }
+
+    private setTimelineRangeFromStartDate(startDate: Date): void {
+        const endDate = this.getTimelineTargetFromState() || this.getTimelineEndFromState() || this.timelineDomainEndDate;
+        if (!endDate) {
+            return;
+        }
+
+        const clampedStart = this.clampTimelineDate(startDate);
+        const safeStart = clampedStart.getTime() > endDate.getTime()
+            ? this.cloneTimelineDate(endDate)
+            : clampedStart;
+        this.applyTimelineRange(safeStart, endDate);
+    }
+
+    public onTimelineRangeInputChanged(): void {
+        if (this.SelectedTimelineVariable === 'None') {
+            this.clearTimelineRangeState();
+            return;
+        }
+
+        const startDate = this.parseTimelineDate(this.timelineRangeStartDate);
+        const endDate = this.parseTimelineDate(this.timelineRangeEndDate);
+
+        if (!startDate || !endDate) {
+            this.timelineRangeValidationMessage = 'Select valid Start and End dates.';
+            this.cdref.detectChanges();
+            return;
+        }
+
+        this.stopTimelinePlayback();
+        this.applyTimelineRange(startDate, endDate);
+    }
+
+    public resetTimelineRange(): void {
+        if (!this.timelineDomainStartDate || !this.timelineDomainEndDate || this.SelectedTimelineVariable === 'None') {
+            return;
+        }
+
+        this.stopTimelinePlayback();
+        this.applyTimelineRange(this.timelineDomainStartDate, this.timelineDomainEndDate);
+    }
+
     public onTimelineChanged(e) : void {
         this.SelectedTimelineVariable = e;
         if(this.commonService.debugMode) {
             console.log('timeline changed: ', e);
         }
         d3.select('#global-timeline svg').remove();
-        clearInterval(this.commonService.session.timeline);
-        let variable = e;  
+        this.stopTimelinePlayback();
+        let variable = e;
         let loadingJsonFile = this.commonService.session.style.widgets["node-timeline-variable"] == variable;
         if (this.commonService.session.style.widgets["node-timeline-variable"] != 'None' && !loadingJsonFile) {
             // change timeline variable when end time not reaching target time - redraw netwrok to start fresh
             if (moment(this.commonService.session.state.timeEnd).toDate() < moment(this.commonService.session.state.timeTarget).toDate()) {
                 this.commonService.session.state.timeEnd = this.commonService.session.state.timeTarget;
-            this.commonService.setNodeVisibility(false);
-            this.commonService.setLinkVisibility(false);
-            this.commonService.updateStatistics();
-            this.store.setNetworkUpdated(true);
+                this.refreshTimelineVisibility();
+                this.store.setNetworkUpdated(true);
             }
         }
         this.commonService.session.style.widgets["node-timeline-variable"] = variable;
         if (variable == "None") {
             $("#global-timeline-field").empty();
-            this.commonService.session.style.widgets["timeline-date-field"] = 'None'  
+            this.commonService.session.style.widgets["timeline-date-field"] = 'None';
             $("#global-timeline-wrapper").fadeOut();
-            // $('#pinbutton').prop("disabled", false);
-            // if(!this.commonService.session.network.timelinePinned) {
-            // $('#pinbutton').trigger('click');
-            // this.commonService.updatePinNodes(false);
-            // }
             this.commonService.session.network.timelineNodes = [];
-            this.commonService.setNodeVisibility(false);
-            this.commonService.setLinkVisibility(false);
-            this.commonService.updateStatistics();
+            this.clearTimelineRangeState();
+            this.refreshTimelineVisibility();
             this.store.setNetworkUpdated(true);
             return;
         }
@@ -2826,95 +3105,58 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         console.log('timeline variable: ', variable);
         if(!this.commonService.temp.style.nodeColor) $("#node-color-variable").trigger("change");
 
-        // let el: HTMLElement = this.pinBtn.nativeElement;
-        // console.log('pin : ', el);
-        // if (!$('#pinbutton').prop('disabled')){
-        //     if (!loadingJsonFile) {
-        //         this.commonService.session.network.timelinePinned = this.commonService.session.network.allPinned;
-        //     if(!this.commonService.session.network.allPinned) {
-        //         this.commonService.updatePinNodes(true);
-        //         this.openPinAllNodes(1);
-        //     }
-        //     this.commonService.session.network.timelineNodes = this.commonService.getNetworkNodes();
-        //     }
-        //     $('#pinbutton').prop("disabled", true);
-        // }
-
         if (!loadingJsonFile) {
             this.commonService.session.network.timelinePinned = this.commonService.session.network.allPinned;
-        // if(!this.commonService.session.network.allPinned) {
-        //     this.commonService.updatePinNodes(true);
-        // }
-
         }
         let globalTimelineField =  (this.commonService.session.style.overwrite && variable == this.commonService.session.style.overwrite['globalTimelineFieldVariable'] ? this.commonService.session.style.overwrite['globalTimelineField'] : this.commonService.titleize(variable));
         const encodedGlobalTimelineField = globalTimelineField.replace(/[\u00A0-\u9999<>\&]/g, function(i) {
             return '&#'+i.charCodeAt(0)+';';
         });
-        $("#global-timeline-field").html(encodedGlobalTimelineField);   
+        $("#global-timeline-field").html(encodedGlobalTimelineField);
         const formatDateIntoYear = d3.timeFormat("%Y");
         const formatDateIntoMonthYear = d3.timeFormat("%b %y");
         const formatDateIntoMonth = d3.timeFormat("%b");
         const formatDateMonthYear = d3.timeFormat("%b %Y");
         const formatDateDateMonth = d3.timeFormat("%b %_d");
 
-        // let timeDomainStart, timeDomainEnd;
         let field = variable;
-        let times = [],
-        vnodes = JSON.parse(JSON.stringify(this.commonService.session.data.nodes));
-        vnodes.forEach(d => {
-            let time = moment(d[field]); 
-            if (time.isValid()) {
-                console.log('time moment value: ', d[field]);
-                d[field] = time.toDate();
-                times.push(d[field]);
-            } else {
-                console.log('time moment not value: ', d[field]);
+        const [domainStart, domainEnd] = this.getTimelineDomain(field);
+        this.timelineDomainStartDate = domainStart;
+        this.timelineDomainEndDate = domainEnd;
+        const [startDate, endDate] = this.resolveInitialTimelineRange(loadingJsonFile, domainStart, domainEnd);
 
-                d[field] = null;
-            }
-        });
-        if (times.length < 2) {
-            times = [new Date(2000, 1, 1), new Date()];
-        }
-        const timeDomainStart = Math.min(...times);
-        const timeDomainEnd = Math.max(...times);
-
-        const days = moment(timeDomainEnd).diff(moment(timeDomainStart), 'days');
+        const days = moment(domainEnd).diff(moment(domainStart), 'days');
         const tickDateFormat = d => {
             if (days<184) return formatDateDateMonth(d);
             else if (days<367) return formatDateIntoMonth(d);
             else if (days<367*5) return formatDateIntoMonthYear(d);
-            else return formatDateIntoYear(d);		
+            else return formatDateIntoYear(d);
         }
         this.handleDateFormat = d => {
             if (days<367) return formatDateDateMonth(d);
-            else return formatDateMonthYear(d);		
+            else return formatDateMonthYear(d);
         }
-        const startDate = timeDomainStart;
-        const endDate = timeDomainEnd;
-        const margin = {top:50, right:50, bottom:0, left:50},
-            width = ($('#visualwrapper').width() * 4 / 5) - margin.left - margin.right,
-            height = 200 - margin.top - margin.bottom;
+        const margin = {top:50, right:50, bottom:0, left:50};
+        const wrapperWidth = $('#visualwrapper').width() || window.innerWidth;
+        const width = Math.max(1, (wrapperWidth * 4 / 5) - margin.left - margin.right);
+        const height = 200 - margin.top - margin.bottom;
 
         var svgTimeline = d3.select("#global-timeline")
             .append("svg")
             .attr("width", width + margin.left + margin.right)
-            .attr("height", 120);  
+            .attr("height", 120);
 
-            ////////// slider //////////
-        this.currentTimelineValue = 0;
+        this.currentTimelineStartValue = 0;
+        this.currentTimelineValue = width;
         this.currentTimelineTargetValue = width;
-        this.commonService.session.state.timeStart = startDate;
 
         const that = this;
         const playButton = d3.select("#timeline-play-button");
         if (playButton.text() == "Pause") playButton.text("Play");
         this.xAttribute = d3.scaleTime()
-            .domain([startDate, endDate])
-            .range([0, this.currentTimelineTargetValue])
-            .clamp(true)
-            .nice();
+            .domain([domainStart, domainEnd])
+            .range([0, width])
+            .clamp(true);
         const slider = svgTimeline.append("g")
             .attr("class", "slider")
             .attr("transform", "translate(30," + height/2 + ")");
@@ -2923,37 +3165,35 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             .attr("class", "track")
             .attr("x1", this.xAttribute.range()[0])
             .attr("x2", this.xAttribute.range()[1])
-            .attr("stroke", "#ddd")  // Ensure this is a visible color
-            .attr("stroke-width", "10px")  // Ensure this is a sufficient width
-            // Pre D3
-            // .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
-            //.each(function() { this.parentNode.appendChild(this.cloneNode(true)); })
+            .attr("stroke", "#ddd")
+            .attr("stroke-width", "10px");
+
         slider.append('line')
             .attr("class", "track-inset")
             .attr("x1", this.xAttribute.range()[0])
             .attr("x2", this.xAttribute.range()[1])
-            .attr("stroke", "#ddd")  // Ensure this is a visible color
-            .attr("stroke-width", "10px")  // Ensure this is a sufficient width
-            //.each(function() { this.parentNode.appendChild(this.cloneNode(true)); })
+            .attr("stroke", "#ddd")
+            .attr("stroke-width", "10px");
+
+        this.rangeTrack = slider.append('line')
+            .attr("class", "track-selected")
+            .attr("stroke-width", "8px");
+
         slider.append('line')
-            // Pre D3
-            // .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
             .attr("class", "track-overlay")
             .attr("x1", this.xAttribute.range()[0])
             .attr("x2", this.xAttribute.range()[1])
-            .attr("stroke", "#ddd")  // Ensure this is a visible color
-            .attr("stroke-width", "10px")  // Ensure this is a sufficient width
+            .attr("stroke", "#ddd")
+            .attr("stroke-width", "10px")
             .call(d3.drag()
                 .on("start.interrupt", function() { slider.interrupt(); })
                 .on("start drag", function() {
-                    that.currentTimelineValue = (d3 as any).event.x;
-                    that.update(that.xAttribute.invert(that.currentTimelineValue));
-                    if (that.playBtnText == "Pause") {
-                        that.playBtnText = "Play";
-                    clearInterval(that.commonService.session.timeline);
-                    }
+                    const eventX = (d3 as any).event.x;
+                    that.stopTimelinePlayback();
+                    that.setTimelineRangeFromEndDate(that.xAttribute.invert(eventX));
                 })
             );
+
         slider.insert("g", ".track-overlay")
             .attr("class", "ticks")
             .attr("transform", "translate(0," + 18 + ")")
@@ -2964,41 +3204,97 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             .attr("x", this.xAttribute)
             .attr("y", 10)
             .attr("text-anchor", "middle")
+            .attr("pointer-events", "none")
             .text(function(d) { return tickDateFormat(d); });
 
+        this.startLabel = slider.append("text")
+            .attr("class", "timeline-range-start-label")
+            .attr("text-anchor", "middle")
+            .attr("y", -42)
+            .attr("pointer-events", "none");
 
-        this.label = slider.append("text")  
+        this.label = slider.append("text")
             .attr("class", "label")
             .attr("text-anchor", "middle")
-            .text(this.handleDateFormat(startDate))
-            .attr("transform", "translate(25," + (-20) + ")")
+            .attr("y", -20)
+            .attr("pointer-events", "none");
 
-            this.handle = slider.insert("circle", ".track-overlay")
-            .attr("class", "handle")
-            .attr("r", 9);
+        const createStartHandleDrag = () => d3.drag()
+            .on("start.interrupt", function() { slider.interrupt(); })
+            .on("start drag", function() {
+                const eventX = (d3 as any).event.x;
+                that.stopTimelinePlayback();
+                that.setTimelineRangeFromStartDate(that.xAttribute.invert(eventX));
+            });
+
+        const createEndHandleDrag = () => d3.drag()
+            .on("start.interrupt", function() { slider.interrupt(); })
+            .on("start drag", function() {
+                const eventX = (d3 as any).event.x;
+                that.stopTimelinePlayback();
+                that.setTimelineRangeFromEndDate(that.xAttribute.invert(eventX));
+            });
+
+        this.startHandle = slider.append("circle")
+            .attr("class", "timeline-range-handle timeline-range-start-handle")
+            .attr("r", 9)
+            .call(createStartHandleDrag());
+
+        this.endHandle = slider.append("circle")
+            .attr("class", "timeline-range-handle timeline-range-end-handle")
+            .attr("r", 9)
+            .call(createEndHandleDrag());
+
+        this.handle = slider.append("circle")
+            .attr("class", "handle timeline-playhead-handle")
+            .attr("r", 6);
+
+        this.startHandleHitArea = slider.append("circle")
+            .attr("class", "timeline-range-hit-area timeline-range-start-hit-area")
+            .attr("r", 18)
+            .attr("fill", "transparent")
+            .attr("stroke", "transparent")
+            .attr("pointer-events", "all")
+            .call(createStartHandleDrag());
+
+        this.endHandleHitArea = slider.append("circle")
+            .attr("class", "timeline-range-hit-area timeline-range-end-hit-area")
+            .attr("r", 18)
+            .attr("fill", "transparent")
+            .attr("stroke", "transparent")
+            .attr("pointer-events", "all")
+            .call(createEndHandleDrag());
 
         this.commonService.session.style.widgets["timeline-date-field"] = field;
-        this.commonService.session.state.timeStart = startDate;
-        this.commonService.session.state.timeTarget = this.xAttribute.invert(this.currentTimelineTargetValue);
-        if (loadingJsonFile && moment(this.commonService.session.state.timeEnd).toDate() < moment(this.commonService.session.state.timeTarget).toDate()) {
-            let t = moment(this.commonService.session.state.timeEnd).toDate();
-            this.currentTimelineTargetValue = this.xAttribute(t);
-            this.handle.attr("cx", this.xAttribute(t));
-            this.label
-            .attr("x", this.xAttribute(t))
-            .text(this.handleDateFormat(t));
-        }
+        this.applyTimelineRange(startDate, endDate, false);
         $("#global-timeline-wrapper").fadeIn();
-       
+
     }
 
     public playTimeline() : void {
 
             if (this.playBtnText == "Pause") {
-                this.playBtnText = "Play";
-                clearInterval(this.commonService.session.timeline);
+                this.stopTimelinePlayback();
             } else {
+                const startDate = this.getTimelineStartFromState() || this.timelineDomainStartDate;
+                const targetDate = this.getTimelineTargetFromState() || this.timelineRangeEndDate || this.timelineDomainEndDate;
+                if (!startDate || !targetDate || !this.xAttribute) {
+                    return;
+                }
+
+                let resumeDate = this.getTimelineEndFromState() || startDate;
+                if (
+                    resumeDate.getTime() < startDate.getTime() ||
+                    resumeDate.getTime() >= targetDate.getTime()
+                ) {
+                    resumeDate = startDate;
+                }
+
+                this.currentTimelineStartValue = this.xAttribute(startDate);
+                this.currentTimelineTargetValue = this.xAttribute(targetDate);
+                this.currentTimelineValue = this.xAttribute(resumeDate);
                 this.playBtnText = "Pause";
+                this.update(resumeDate, { playbackOnly: true });
                 this.commonService.session.timeline = setInterval(this.step, this.timelineSpeed, this);
             }
 
@@ -3013,29 +3309,53 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.timelineSpeed = this.timelineSpeedOptions[safeIndex];
     }
 
-    update(h) {
+    update(h, options: { playbackOnly?: boolean } = {}) {
+
+        if (!this.xAttribute) {
+            return;
+        }
+
+        let currentDate = this.clampTimelineDate(moment(h).toDate());
+        const startDate = this.getTimelineStartFromState() || this.timelineDomainStartDate;
+        const targetDate = this.getTimelineTargetFromState() || this.timelineDomainEndDate;
+
+        if (startDate && currentDate.getTime() < startDate.getTime()) {
+            currentDate = this.cloneTimelineDate(startDate);
+        }
+
+        if (targetDate && currentDate.getTime() > targetDate.getTime()) {
+            currentDate = this.cloneTimelineDate(targetDate);
+        }
+
+        if (!options.playbackOnly) {
+            this.setTimelineRangeFromEndDate(currentDate);
+            return;
+        }
 
         // Timeline-aware views update from node-visibility; other views should
         // not treat playback ticks as generic network updates.
-        this.handle.attr("cx", this.xAttribute(h));
-        this.label
-        .attr("x", this.xAttribute(h))
-        .text(this.handleDateFormat(h));
-        this.commonService.session.state.timeEnd = h;
-        this.commonService.setNodeVisibility(false);
-        this.commonService.setLinkVisibility(false);
-        this.commonService.updateStatistics();
+        this.currentTimelineValue = this.xAttribute(currentDate);
+        this.commonService.session.state.timeEnd = this.cloneTimelineDate(currentDate);
+        this.renderTimelineRange(currentDate);
+        this.refreshTimelineVisibility();
   }
 
-    step(that : any) { 
-        that.update(that.xAttribute.invert(that.currentTimelineValue));
-        if (that.currentTimelineValue > that.currentTimelineTargetValue) { 
-            that.currentTimelineValue = 0;
-        clearInterval(that.commonService.session.timeline);
-        that.playBtnText = "Play";
-        return;
+    step(that : any) {
+        if (!that.xAttribute) {
+            that.stopTimelinePlayback();
+            return;
         }
-        that.currentTimelineValue = that.currentTimelineValue + (that.currentTimelineTargetValue/151);
+
+        if (that.currentTimelineValue > that.currentTimelineTargetValue) {
+            that.currentTimelineValue = that.currentTimelineStartValue;
+            that.stopTimelinePlayback();
+            that.update(that.xAttribute.invert(that.currentTimelineTargetValue), { playbackOnly: true });
+            return;
+        }
+
+        that.update(that.xAttribute.invert(that.currentTimelineValue), { playbackOnly: true });
+        const rangeWidth = Math.max(1, that.currentTimelineTargetValue - that.currentTimelineStartValue);
+        that.currentTimelineValue = that.currentTimelineValue + (rangeWidth / 151);
 
     }
 

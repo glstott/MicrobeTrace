@@ -10,6 +10,7 @@ import {
   openGlobalStylingTab,
   setTimelineDate,
   setTimelineField,
+  setTimelineRange,
 } from '../../../support/journey-helpers';
 
 type WinWithBubble = Window & {
@@ -127,6 +128,36 @@ const assertCollapsedBubbleTimelineAligned = (): void => {
         `collapsed Bubble nodeSize for ${aggregateNode.id}`,
       ).to.be.closeTo(bubble.nodeSize * Math.sqrt(Number(aggregateNode.totalCount || 0)), 0.001);
     });
+  });
+};
+
+const assertBubbleDateAxisMatchesSelectedTimelineRange = (field: string): void => {
+  cy.window().should((win: unknown) => {
+    const typedWindow = win as WinWithBubble;
+    const bubble = typedWindow.commonService.visuals.bubble;
+    const validDate = (value: unknown): boolean => !Number.isNaN(Date.parse(String(value || '')));
+    const sortDates = (left: string, right: string): number => Date.parse(left) - Date.parse(right);
+    const state = typedWindow.commonService.session.state;
+    const rangeStart = Date.parse(String(state.timeStart));
+    const rangeEnd = Date.parse(String(state.timeTarget || state.timeEnd));
+    const expectedDates = Array.from(new Set(
+      typedWindow.commonService.getVisibleNodesIgnoringTimeline()
+        .map((node: any) => String(node[field] || ''))
+        .filter((date: string) => {
+          const time = Date.parse(date);
+          return validDate(date) && time >= rangeStart && time <= rangeEnd;
+        }),
+    )).sort(sortDates);
+    const actualDates = bubble.X_categories
+      .map((value: unknown) => String(value || ''))
+      .filter(validDate);
+    const axisLabels = bubble.cy.nodes('.X_axis').map((node: any) => String(node.data('label') || ''));
+
+    expect(actualDates, 'Bubble X date categories follow the selected timeline range').to.deep.equal(expectedDates);
+    expect(actualDates, 'pre-range date buckets removed').not.to.include('6/28/2021');
+    expect(actualDates, 'post-range date buckets removed').not.to.include('8/21/2021');
+    expect(axisLabels, 'rendered Bubble axis labels omit pre-range dates').not.to.include('06/28/2021');
+    expect(axisLabels, 'rendered Bubble axis labels omit post-range dates').not.to.include('08/21/2021');
   });
 };
 
@@ -253,6 +284,40 @@ describe('Journey Flow - Bubble uploaded timeline controls', () => {
     setTimelineDate(midCheckpoint.date);
     assertMetricCount('#numberOfNodes', midCheckpoint.after.nodes!);
     assertCollapsedBubbleTimelineAligned();
+  });
+
+  it('removes filtered-out date buckets when a Bubble axis is date-based', () => {
+    launchProfileToTwoD(profile);
+    assertAfterLaunchCounts(profile);
+    goToBubbleView();
+
+    openBubbleSettingsDialog();
+    setBubbleAxis('#bubble-axis-x', 'Date of symptom onset Date', 'bubble-x', timeline.field);
+    setBubbleAxis('#bubble-axis-y', 'None', 'bubble-y', 'None');
+    cy.get('@bubbleSettings').find('#xVarDate').click({ force: true });
+    cy.window().its('commonService.visuals.bubble.xVarDate').should('equal', true);
+    cy.closeSettingsPane('Bubble Settings');
+
+    setTimelineField(timeline.field);
+    cy.openGlobalSettings();
+    cy.contains('#global-settings-modal .nav-link', 'Timeline').click({ force: true });
+    setTimelineRange('7/7/2021', midCheckpoint.date);
+    cy.closeGlobalSettings();
+    assertExpandedBubbleTimelineAligned();
+    assertBubbleDateAxisMatchesSelectedTimelineRange(timeline.field);
+
+    cy.get('#timeline-play-button').should('contain', 'Play').click();
+    cy.get('#timeline-play-button', { timeout: 15000 }).should('contain', 'Pause');
+    cy.window({ timeout: 15000 }).should((win: unknown) => {
+      const state = (win as WinWithBubble).commonService.session.state;
+      const currentTime = new Date(state.timeEnd as string | number | Date).getTime();
+      expect(currentTime, 'playhead advances inside selected range')
+        .to.be.greaterThan(new Date('7/7/2021').getTime())
+        .and.lessThan(new Date(midCheckpoint.date).getTime());
+    });
+    assertBubbleDateAxisMatchesSelectedTimelineRange(timeline.field);
+    cy.get('#timeline-play-button').should('contain', 'Pause').click();
+    cy.get('#timeline-play-button').should('contain', 'Play');
   });
 
   it('keeps edited Bubble node colors after timeline mode is turned off', () => {

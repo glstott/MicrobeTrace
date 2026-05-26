@@ -36,19 +36,6 @@
     font-size: calc((.5vmax));   
 }
 
-.OSM-credit {
-  position: absolute;
-  bottom: 7px;
-  left: 50px;
-  z-index: 2;
-}
-
-.OSM-credit a {
-  color: #4e8bb7 !important;
-  text-decoration: underline !important;
-  cursor: pointer !important;
-}
-
  /* Button appearance on hover */
  .btn-icon:hover {
   transform: scale(1.1); /* Slight enlarge on hover */
@@ -74,6 +61,29 @@
   background-color: #2196f3;
   border: 1px solid #2196f3;
   color: white
+}
+
+.map-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.map-user-geojson-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-manual-position-heading {
+  border-top: 1px solid #d9dee3;
+  color: #495057;
+  font-weight: 600;
+  padding-top: .5rem;
+}
+
+.map-manual-position-summary {
+  color: #495057;
+  line-height: 31px;
 }
 
 :host ::ng-deep .map-admin-label {

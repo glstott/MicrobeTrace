@@ -18,6 +18,16 @@ import { CommonStoreService } from '@app/contactTraceCommonServices/common-store
 import { relativeTimeThreshold } from 'moment';
 import { EmbedHandoffService } from '@app/embed/embed-handoff.service';
 import { ImportedEmbedFile } from '@app/embed/embed-handoff.types';
+import {
+  extractGeoJSONFeatureLocations,
+  GEOJSON_FEATURE_ID_FIELD,
+  GEOJSON_LATITUDE_FIELD,
+  GEOJSON_LONGITUDE_FIELD,
+  getGeoJSONIdFields,
+  isGeoJSONData,
+  parseGeoJSONContent,
+  validateGeoJSONLocationData
+} from '@app/contactTraceCommonServices/geojson-import';
 import { WorkerComputeService } from '@app/contactTraceCommonServices/worker-compute.service';
 // import { ComponentContainer } from 'golden-layout';
 // import { ConsoleReporter } from 'jasmine';
@@ -137,6 +147,91 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
   private refreshTemplateState(): void {
     this.ngZone.run(() => {
       this.cdr.markForCheck();
+    });
+  }
+
+  private getGeoJSONData(file: any): any {
+    return parseGeoJSONContent(file?.contents);
+  }
+
+  private resolveGeoJSONIdField(file: any, data: any): string {
+    const fields = getGeoJSONIdFields(data);
+    const selected = file?.field1;
+    if (selected && selected !== 'None' && fields.includes(selected)) {
+      return selected;
+    }
+
+    const preferredFields = ['_id', 'id', 'ID', 'Id', 'node_id', 'nodeId', 'Node ID', 'NodeID', 'Sample ID', 'SampleID', 'sample_id', 'name', 'Name'];
+    return preferredFields.find(field => fields.includes(field)) || fields[0] || 'id';
+  }
+
+  private ensureGeoJSONNodeFields(): void {
+    [GEOJSON_LATITUDE_FIELD, GEOJSON_LONGITUDE_FIELD, GEOJSON_FEATURE_ID_FIELD].forEach(field => {
+      if (!this.commonService.includes(this.commonService.session.data.nodeFields, field)) {
+        this.commonService.session.data.nodeFields.push(field);
+      }
+    });
+  }
+
+  private applyGeoJSONLocationFiles(): void {
+    const geoJSONFiles = this.commonService.session.files.filter(file => file.format === 'geojson');
+    if (!geoJSONFiles.length) {
+      return;
+    }
+
+    this.ensureGeoJSONNodeFields();
+
+    geoJSONFiles.forEach(file => {
+      let data: any;
+      try {
+        data = this.getGeoJSONData(file);
+        validateGeoJSONLocationData(data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to parse GeoJSON location data.';
+        this.showMessage(` - Skipped ${file.name}: ${message}`);
+        return;
+      }
+
+      const idField = this.resolveGeoJSONIdField(file, data);
+      file.field1 = idField;
+      file.field2 = 'None';
+      file.field3 = 'None';
+
+      const extracted = extractGeoJSONFeatureLocations(data, idField);
+      const nodesById = new Map<string, any>();
+      this.commonService.session.data.nodes.forEach(node => {
+        const id = String(node?._id ?? node?.id ?? '').trim();
+        if (id) {
+          nodesById.set(id, node);
+        }
+      });
+
+      let matchedNodes = 0;
+      extracted.locations.forEach(location => {
+        const node = nodesById.get(String(location.id).trim());
+        if (!node) {
+          return;
+        }
+
+        node[GEOJSON_LATITUDE_FIELD] = location.latitude;
+        node[GEOJSON_LONGITUDE_FIELD] = location.longitude;
+        node[GEOJSON_FEATURE_ID_FIELD] = this.commonService.filterXSS(location.id);
+
+        const existingOrigin = Array.isArray(node.origin) ? node.origin : [];
+        node.origin = this.commonService.uniq(existingOrigin.concat([file.name]));
+        matchedNodes++;
+      });
+
+      this.commonService.session.data.geoJSON = data;
+      this.commonService.session.data.geoJSONLayerName = this.commonService.filterXSS(file.name);
+      this.commonService.session.style.widgets['map-user-geojson-show'] = false;
+
+      if (matchedNodes > 0) {
+        this.commonService.session.style.widgets['map-field-lat'] = GEOJSON_LATITUDE_FIELD;
+        this.commonService.session.style.widgets['map-field-lon'] = GEOJSON_LONGITUDE_FIELD;
+      }
+
+      this.showMessage(` - Matched ${matchedNodes} of ${extracted.featureCount} GeoJSON features from ${file.name}.`);
     });
   }
 
@@ -832,8 +927,9 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     const nFiles = this.commonService.session.files.length - 1;
     const check = nFiles > 0;
 
-    // sorts files based on hierarchy
-    const hierarchy = ['auspice', 'newick', 'matrix', 'link', 'node', 'fasta'];
+    // sorts files based on hierarchy. GeoJSON location files are merged in processData()
+    // after the node-producing inputs have populated session.data.nodes.
+    const hierarchy = ['geojson', 'auspice', 'newick', 'matrix', 'link', 'node', 'fasta'];
     this.commonService.session.files.sort((a, b) => hierarchy.indexOf(a.format) - hierarchy.indexOf(b.format));
 
 
@@ -1476,6 +1572,30 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           //});
         }
 
+      } else if (file.format === 'geojson') {
+
+        this.showMessage(`Parsing ${file.name} as GeoJSON Location Data...`);
+        try {
+          const data = this.getGeoJSONData(file);
+          validateGeoJSONLocationData(data);
+          const idField = this.resolveGeoJSONIdField(file, data);
+          file.field1 = idField;
+          file.field2 = 'None';
+          file.field3 = 'None';
+          const extracted = extractGeoJSONFeatureLocations(data, idField);
+
+          this.commonService.session.data.geoJSON = data;
+          this.commonService.session.data.geoJSONLayerName = this.commonService.filterXSS(file.name);
+          this.commonService.session.style.widgets['map-user-geojson-show'] = false;
+
+          this.showMessage(` - Parsed ${extracted.featureCount} GeoJSON features from ${file.name}.`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unable to parse GeoJSON location data.';
+          this.showMessage(` - Skipped ${file.name}: ${message}`);
+        }
+
+        if (fileNum === nFiles) this.processData(loadGeneration);
+
       } else { // if(file.format === 'newick'){
 
         this.commonService.session.data.newickString = file.contents;
@@ -1579,6 +1699,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       return;
     }
 
+    this.applyGeoJSONLocationFiles();
     let nodes = this.commonService.session.data.nodes;
     if(this.commonService.debugMode) {
       console.log(nodes);
@@ -1835,12 +1956,25 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         reader.onerror = () => reject(reader.error);
         reader.onloadend = (out) => {
           try {
-            const output = JSON.parse(out.target['result'] as string);
+            const contents = out.target['result'] as string;
+            const output = JSON.parse(contents);
             console.log(output);
             if (output.meta && output.tree) {
               const auspiceFile = { contents: output, name: fileName, extension: extension};
               this.commonService.session.files.push(auspiceFile);
               this.addToTable(auspiceFile);
+            } else if (isGeoJSONData(output)) {
+              const geoJSONFile = {
+                contents,
+                name: fileName,
+                extension: extension,
+                format: 'geojson',
+                field1: this.resolveGeoJSONIdField({ field1: undefined }, output),
+                field2: 'None',
+                field3: 'None'
+              };
+              this.commonService.session.files.push(geoJSONFile);
+              this.addToTable(geoJSONFile);
             } else {
               this.commonService.processJSON(out.target, extension);
             }
@@ -1895,8 +2029,22 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     const isNewick = extension.indexOf('nwk') > -1 || extension.indexOf('newick') > -1;
     const isXL = (extension === 'xlsx' || extension === 'xls');
     const isJSON = (extension === 'json');
-    const isAuspice = (extension === 'json' && file.contents.meta && file.contents.tree);
-    const isNode = this.commonService.includes(file.name.toLowerCase(), 'node') || (file.format && file.format.toLowerCase() === 'node');
+    const isAuspice = (extension === 'json' && file.contents && typeof file.contents === 'object' && file.contents.meta && file.contents.tree);
+    let parsedGeoJSONData: any = null;
+    let isGeoJSON = false;
+
+    if (extension === 'geojson') {
+      isGeoJSON = true;
+    } else if (isJSON && !isAuspice) {
+      try {
+        parsedGeoJSONData = this.getGeoJSONData(file);
+        isGeoJSON = isGeoJSONData(parsedGeoJSONData);
+      } catch {
+        isGeoJSON = false;
+      }
+    }
+
+    const isNode = !isGeoJSON && (this.commonService.includes(file.name.toLowerCase(), 'node') || (file.format && file.format.toLowerCase() === 'node'));
     if (isXL) {
       try {
         const workbook = XLSX.read(file.contents, { type: 'array', cellDates: true, dateNF: 'mm/dd/yyyy' });
@@ -1914,6 +2062,25 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         addTableTile([file.field1, file.field2, file.field3], this);
         return;
       }
+    } else if (isGeoJSON) {
+      let headers = ['id'];
+      file.format = 'geojson';
+      file.field2 = 'None';
+      file.field3 = 'None';
+
+      try {
+        parsedGeoJSONData = parsedGeoJSONData ?? this.getGeoJSONData(file);
+        const fields = getGeoJSONIdFields(parsedGeoJSONData);
+        headers = fields.length ? fields : headers;
+        file.field1 = this.resolveGeoJSONIdField(file, parsedGeoJSONData);
+      } catch (error) {
+        console.log('Unable to read GeoJSON location file: ', file.name, error);
+        file.field1 = file.field1 || 'id';
+      }
+
+      addTableTile(headers, this);
+      this.nodeEdgeCheck();
+
     } else if (isJSON) {
         let data = [];
         console.log('This is a JSON file');
@@ -2002,11 +2169,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         .append('<span class="p-1">' + file.name + '</span>')
         .append(`
                     <div class="btn-group btn-group-toggle btn-group-sm float-right" data-toggle="buttons">
-                      <label class="btn btn-light${!isFasta && !isNewick && !isNode && !isAuspice ? ' active' : ''}">
-                        <input type="radio" name="options-${file.name}" data-type="link" autocomplete="off"${!isFasta && !isNewick && !isNode ? ' checked' : ''}>Link
+                      <label class="btn btn-light${!isFasta && !isNewick && !isNode && !isAuspice && !isGeoJSON ? ' active' : ''}">
+                        <input type="radio" name="options-${file.name}" data-type="link" autocomplete="off"${!isFasta && !isNewick && !isNode && !isAuspice && !isGeoJSON ? ' checked' : ''}>Link
                       </label>
-                      <label class="btn btn-light${!isFasta && !isNewick && isNode ? ' active' : ''}">
-                        <input type="radio" name="options-${file.name}" data-type="node" autocomplete="off"${!isFasta && !isNewick && isNode ? ' checked' : ''}>Node
+                      <label class="btn btn-light${!isFasta && !isNewick && isNode && !isGeoJSON ? ' active' : ''}">
+                        <input type="radio" name="options-${file.name}" data-type="node" autocomplete="off"${!isFasta && !isNewick && isNode && !isGeoJSON ? ' checked' : ''}>Node
                       </label>
                       <label class="btn btn-light">
                         <input type="radio" name="options-${file.name}" data-type="matrix" autocomplete="off">Matrix
@@ -2020,21 +2187,24 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
                       <label class="btn btn-light${isAuspice ? ' active' : ''}">
                         <input type="radio" name="options-${file.name}" data-type="auspice" autocomplete="off"${isAuspice ? ' checked' : ''}>Auspice
                       </label>
+                      <label class="btn btn-light${isGeoJSON ? ' active' : ''}">
+                        <input type="radio" name="options-${file.name}" data-type="geojson" autocomplete="off"${isGeoJSON ? ' checked' : ''}>GeoJSON
+                      </label>
                     </div>`).appendTo(fnamerow);
 
       fnamerow.appendTo(root);
       const optionsrow = $('<div class="row w-100"></div>');
-      const options = '<option>None</option>' + headers.map(h => `<option value="${h}">${parentContext.commonService.titleize(h)}</option>`).join('\n');
+      const options = (isGeoJSON ? '' : '<option>None</option>') + headers.map(h => `<option value="${h}">${parentContext.commonService.titleize(h)}</option>`).join('\n');
       optionsrow.append(`
-                  <div class='col-4 '${isFasta || isNewick ? ' style="display: none;"' : ''} data-file='${file.name}'>
-                    <label for="file-${file.name}-field-1">${isNode ? 'ID' : 'Source'}</label>
+                  <div class='col-4 '${isFasta || isNewick || isAuspice ? ' style="display: none;"' : ''} data-file='${file.name}'>
+                    <label for="file-${file.name}-field-1">${isNode || isGeoJSON ? 'ID' : 'Source'}</label>
                     <select id="file-${file.name}-field-1" class="form-control form-control-sm">${options}</select>
                   </div>
-                  <div class='col-4 '${isFasta || isNewick ? ' style="display: none;"' : ''} data-file='${file.name}'>
+                  <div class='col-4 '${isFasta || isNewick || isAuspice || isGeoJSON ? ' style="display: none;"' : ''} data-file='${file.name}'>
                     <label for="file-${file.name}-field-2">${isNode ? 'Sequence' : 'Target'}</label>
                     <select id="file-${file.name}-field-2" class="form-control form-control-sm">${options}</select>
                   </div>
-                  <div class='col-4 '${isFasta || isNewick ? ' style="display: none;"' : ''} data-file='${file.name}'>
+                  <div class='col-4 '${isFasta || isNewick || isAuspice || isGeoJSON ? ' style="display: none;"' : ''} data-file='${file.name}'>
                     <label for="file-${file.name}-field-3">Distance</label>
                     <select id="file-${file.name}-field-3" class="form-control form-control-sm">${options}</select>
                   </div>`);
@@ -2044,6 +2214,19 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       function matchHeaders(type) {
 
         const these = root.find('select');
+        if (type === 'geojson') {
+          const preferredFields = ['_id', 'id', 'ID', 'Id', 'node_id', 'nodeId', 'Node ID', 'NodeID', 'Sample ID', 'SampleID', 'sample_id', 'name', 'Name'];
+          const selected = file.field1;
+          const idField = selected && parentContext.commonService.includes(headers, selected)
+            ? selected
+            : preferredFields.find(field => parentContext.commonService.includes(headers, field)) || headers[0] || 'id';
+
+          $(these.get(0)).val(idField);
+          $(these.get(1)).val('None');
+          $(these.get(2)).val('None');
+          return;
+        }
+
         const a = type === 'node' ? ['ID', 'Id', 'id'] : ['SOURCE', 'Source', 'source'],
           b = type === 'node' ? ['SEQUENCE', 'SEQ', 'Sequence', 'sequence', 'seq'] : ['TARGET', 'Target', 'target'],
           c = ['length', 'Length', 'distance', 'Distance', 'snps', 'SNPs', 'tn93', 'TN93'];
@@ -2089,6 +2272,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           first.slideDown().find('label').text('ID');
           second.slideDown().find('label').text('Sequence');
           third.slideUp();
+          matchHeaders(type);
+        } else if (type === 'geojson') {
+          first.slideDown().find('label').text('ID');
+          second.slideUp().find('select').val('None');
+          third.slideUp().find('select').val('None');
           matchHeaders(type);
         } else if (type === 'link') {
           first.slideDown().find('label').text('Source');
@@ -2149,11 +2337,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       if (this.commonService.debugMode) {
         console.log(f);
       }
-      if (f && selects.length >= 3 && checkedFormat.length > 0) {
+      if (f && checkedFormat.length > 0) {
         f.format = checkedFormat.data('type');
-        f.field1 = selects.get(0).value;
-        f.field2 = selects.get(1).value;
-        f.field3 = selects.get(2).value;
+        f.field1 = (selects.get(0) as HTMLSelectElement)?.value || 'None';
+        f.field2 = (selects.get(1) as HTMLSelectElement)?.value || 'None';
+        f.field3 = (selects.get(2) as HTMLSelectElement)?.value || 'None';
       }
     });
 

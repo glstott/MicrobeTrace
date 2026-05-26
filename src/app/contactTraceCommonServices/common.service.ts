@@ -355,6 +355,13 @@ export class CommonService extends AppComponentBase implements OnInit {
             nodeTableColumns: [],
             linkTableColumns: [],
             clusterTableColumns: [],
+            geoJSON: null,
+            geoJSONLayerName: '',
+            floorplanImage: null,
+            floorplanImageLayerName: '',
+            floorplanImageBounds: null,
+            floorplanImageWidth: null,
+            floorplanImageHeight: null,
             tree: {},
             newickString: '',
             reference: REFERENCE
@@ -463,10 +470,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             'link-width-variable': 'None',
             'link-width-reciprocal': false,
             'link-origin-array-order': [],
-            'map-basemap-show': true,
+            'map-basemap-show': false,
             'map-collapsing-on': true,
             'map-counties-show': false,
-            'map-countries-show': false,
+            'map-countries-show': true,
             'map-field-lat': 'None',
             'map-field-lon': 'None',
             'map-field-tract': 'None',
@@ -474,6 +481,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'map-field-county': 'None',
             'map-field-state': 'None',
             'map-field-country': 'None',
+            'map-user-geojson-show': false,
             'map-link-show': true,
             'map-link-tooltip-variable': 'None',
             'map-link-transparency': 0,
@@ -620,7 +628,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 settingsLoaded: false,
             },
             state: {
-                timeStart: 0,
+                timeStart: new Date(0),
                 timeEnd: new Date(),
                 timeTarget: null
             },
@@ -2313,9 +2321,17 @@ export class CommonService extends AppComponentBase implements OnInit {
         // Set to false to indicate that the network is not fully loaded  as new network is launching
         this.session.network.isFullyLoaded = false;
 
-         if (oldSession.data.geoJSONLayerName !== "") {
+         if (oldSession.data.geoJSONLayerName) {
             this.session.data['geoJSON'] = oldSession.data.geoJSON;
             this.session.data['geoJSONLayerName'] = oldSession.data.geoJSONLayerName;
+        }
+
+        if (oldSession.data.floorplanImageLayerName || oldSession.data.floorplanImage) {
+            this.session.data['floorplanImage'] = oldSession.data.floorplanImage;
+            this.session.data['floorplanImageLayerName'] = oldSession.data.floorplanImageLayerName || '';
+            this.session.data['floorplanImageBounds'] = oldSession.data.floorplanImageBounds || null;
+            this.session.data['floorplanImageWidth'] = oldSession.data.floorplanImageWidth || null;
+            this.session.data['floorplanImageHeight'] = oldSession.data.floorplanImageHeight || null;
         }
 
         // previous versions of MT had bug where nodeColorsTableHistory stored jQuery events instead of color string in session file, this section resolves that bug
@@ -3592,6 +3608,49 @@ align(params): Promise<any> {
         return out;
     };
 
+    private getTopologyItemId(item: any): string {
+        if (item && typeof item === 'object') {
+            return String(item._id ?? item.id ?? '');
+        }
+
+        return String(item ?? '');
+    }
+
+    getVisibleTopologySummary(filterLinksByVisibleNodes: boolean = this.session.style.widgets["timeline-date-field"] !== 'None') {
+        const nodes = this.getVisibleNodes();
+        let links = this.getVisibleLinks();
+
+        if (filterLinksByVisibleNodes) {
+            const visibleNodeIds = new Set(nodes.map(node => this.getTopologyItemId(node)));
+            links = links.filter(link =>
+                visibleNodeIds.has(this.getTopologyItemId(link.source)) &&
+                visibleNodeIds.has(this.getTopologyItemId(link.target))
+            );
+        }
+
+        const metric = this.session.style.widgets["link-sort-variable"];
+        const summary = buildVisibleClusterSummary(
+            nodes,
+            links.map(link => ({
+                ...link,
+                source: this.getTopologyItemId(link.source),
+                target: this.getTopologyItemId(link.target),
+                visible: true,
+            })),
+            metric
+        );
+
+        return {
+            nodes,
+            links,
+            nodeCount: nodes.length,
+            selectedNodeCount: nodes.filter(node => node.selected).length,
+            linkCount: links.length,
+            clusterCount: summary.clusterCount,
+            singletonCount: summary.singletonCount,
+        };
+    }
+
     /**
      * updates the network statistics table with number of visible nodes, visible links, clusters, and selected links
      * @returns undefined
@@ -3599,38 +3658,27 @@ align(params): Promise<any> {
     updateStatistics() {
 
         if ($("#network-statistics-hide").is(":checked")) return;
-        let vnodes = this.getVisibleNodes();
-        let vlinks = this.getVisibleLinks();
+        const timelineActive = this.session.style.widgets["timeline-date-field"] !== 'None';
+        const topologySummary = this.getVisibleTopologySummary(timelineActive);
+        let vnodes = topologySummary.nodes;
+        let vlinks = topologySummary.links;
         console.log('vLinksStats', vlinks.length);
         let linkCount = 0;
         let clusterCount = 0;
         let singletons = 0;
-        if (this.session.style.widgets["timeline-date-field"] == 'None') {
+        if (!timelineActive) {
             linkCount = vlinks.length;
             // const minSize = this.session.style.widgets['cluster-minimum-size'];
             clusterCount = this.session.data.clusters.filter(
               cluster => cluster.visible && cluster.nodes > 1).length;
             singletons = vnodes.filter(d => d.degree == 0).length;
         } else {
-            const metric = this.session.style.widgets["link-sort-variable"];
-            const visibleNodeIds = new Set(
-                vnodes.map(node => String(node._id ?? node.id ?? ''))
-            );
-            const timelineLinks = vlinks.filter(link => {
-                return visibleNodeIds.has(String(link.source)) && visibleNodeIds.has(String(link.target));
-            });
-            const timelineSummary = buildVisibleClusterSummary(
-                vnodes,
-                timelineLinks.map(link => ({ ...link, visible: true })),
-                metric
-            );
-
-            linkCount = timelineLinks.length;
-            clusterCount = timelineSummary.clusterCount;
-            singletons = timelineSummary.singletonCount;
+            linkCount = topologySummary.linkCount;
+            clusterCount = topologySummary.clusterCount;
+            singletons = topologySummary.singletonCount;
         }
-        $("#numberOfSelectedNodes").text(vnodes.filter(d => d.selected).length.toLocaleString());
-        $("#numberOfNodes").text(vnodes.length.toLocaleString());
+        $("#numberOfSelectedNodes").text(topologySummary.selectedNodeCount.toLocaleString());
+        $("#numberOfNodes").text(topologySummary.nodeCount.toLocaleString());
         $("#numberOfVisibleLinks").text(linkCount.toLocaleString());
         $("#numberOfSingletonNodes").text(singletons.toLocaleString());
         $("#numberOfDisjointComponents").text(clusterCount);
@@ -3702,7 +3750,7 @@ align(params): Promise<any> {
             return [];
         }
 
-        const links = this.getVisibleLinks();
+        const links = this.getVisibleTopologySummary().links;
       
         let linkColors;
         if( this.session.style.linkColorsTable && this.session.style.linkColorsTable[linkColorVariable]) {
@@ -4140,6 +4188,12 @@ align(params): Promise<any> {
             clusters = this.session.data.clusters;
         let n = nodes.length;
         let visibleNodes = 0;
+        const timeStart = this.hasValidTimelineDateValue(this.session.state.timeStart)
+            ? moment(this.session.state.timeStart).toDate()
+            : null;
+        const timeEnd = this.hasValidTimelineDateValue(this.session.state.timeEnd)
+            ? moment(this.session.state.timeEnd).toDate()
+            : null;
         for (let i = 0; i < n; i++) {
             const node = nodes[i];
 
@@ -4156,9 +4210,11 @@ align(params): Promise<any> {
             if (dateField != "None") {
                 const rawDateValue = node[dateField];
                 if (this.hasValidTimelineDateValue(rawDateValue)) {
+                    const nodeDate = moment(rawDateValue).toDate();
                     node.visible =
                         node.visible &&
-                        moment(this.session.state.timeEnd).toDate() >= moment(rawDateValue).toDate();
+                        (timeStart == null || nodeDate >= timeStart) &&
+                        (timeEnd == null || nodeDate <= timeEnd);
                 }
             }
 

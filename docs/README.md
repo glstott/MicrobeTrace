@@ -15,5 +15,6 @@ This folder contains project documentation, test planning notes, QA trackers, pr
 ## Entry Points
 
 - `../testing-plan.md`: active testing strategy and Cypress coverage priorities.
+- `map-custom-geojson-floorplans.md`: user guide for custom Map View image and GeoJSON floorplans.
 - `testing/README.md`: testing documentation map.
 - `performance/README.md`: performance documentation map.

@@ -634,6 +634,60 @@
                       <p-select id="node-timeline-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [(ngModel)]="SelectedTimelineVariable" (onChange)="onTimelineChanged($event.value)"></p-select>
                     </div>
                   </div>
+                  <div class="form-group row" title="Start date for the active timeline range.">
+                    <div class="col-6"><label for="timeline-start-date-input">Start Date</label></div>
+                    <div class="col-6">
+                      <p-datepicker
+                        id="timeline-start-date"
+                        inputId="timeline-start-date-input"
+                        styleClass="width-percent-100"
+                        appendTo="body"
+                        dateFormat="m/d/yy"
+                        [showIcon]="true"
+                        [minDate]="timelineDomainStartDate"
+                        [maxDate]="timelineDomainEndDate"
+                        [disabled]="SelectedTimelineVariable === 'None'"
+                        [(ngModel)]="timelineRangeStartDate"
+                        (ngModelChange)="onTimelineRangeInputChanged()">
+                      </p-datepicker>
+                    </div>
+                  </div>
+                  <div class="form-group row" title="End date for the active timeline range.">
+                    <div class="col-6"><label for="timeline-end-date-input">End Date</label></div>
+                    <div class="col-6">
+                      <p-datepicker
+                        id="timeline-end-date"
+                        inputId="timeline-end-date-input"
+                        styleClass="width-percent-100"
+                        appendTo="body"
+                        dateFormat="m/d/yy"
+                        [showIcon]="true"
+                        [minDate]="timelineDomainStartDate"
+                        [maxDate]="timelineDomainEndDate"
+                        [disabled]="SelectedTimelineVariable === 'None'"
+                        [(ngModel)]="timelineRangeEndDate"
+                        (ngModelChange)="onTimelineRangeInputChanged()">
+                      </p-datepicker>
+                    </div>
+                  </div>
+                  @if (timelineRangeValidationMessage) {
+                    <div id="timeline-range-validation" class="form-group row">
+                      <div class="col-12 text-danger">{{ timelineRangeValidationMessage }}</div>
+                    </div>
+                  }
+                  <div class="form-group row" title="Reset the timeline range to the full dataset date span.">
+                    <div class="col-6"><label for="timeline-reset-range-button">Timeline Range</label></div>
+                    <div class="col-6">
+                      <button
+                        type="button"
+                        id="timeline-reset-range-button"
+                        class="btn btn-light btn-sm w-100"
+                        [disabled]="SelectedTimelineVariable === 'None'"
+                        (click)="resetTimelineRange()">
+                        Reset Range
+                      </button>
+                    </div>
+                  </div>
                   <div class="form-group row " title="How much time between ticks of the timeline (ms)?">
                     <div class="col-6"><label>Timeline Speed: {{ timelineSpeed }} ms</label></div>
                     <div class="col-6"><input type="range" class="custom-range" min="0" step="1" [max]="timelineSpeedOptions.length - 1" [ngModel]="timelineSpeedIndex" (ngModelChange)="onTimelineSpeedIndexChanged($event)"></div>
