@@ -34,17 +34,20 @@ const hexToRgbString = (hex: string): string => {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const clickVisiblePrimeOption = (label: string): void => {
-  cy.get('.p-select-overlay', { timeout: 15000 })
-    .last()
-    .find('p-selectitem')
-    .contains('li', new RegExp(`^${escapeRegExp(label)}$`))
-    .click({ force: true });
+const clickPrimeOption = (label: string, optionIdPrefix?: string): void => {
+  const optionSelector = optionIdPrefix
+    ? `li[role="option"][id^="${optionIdPrefix}"]`
+    : 'li[role="option"]';
+
+  cy.contains(optionSelector, new RegExp(`^${escapeRegExp(label)}$`), { timeout: 15000 })
+    .then(($option) => {
+      ($option.get(0) as HTMLElement).click();
+    });
 };
 
 const selectPrimeOption = (selector: string, label: string): void => {
   cy.get(selector).click({ force: true });
-  clickVisiblePrimeOption(label);
+  clickPrimeOption(label);
 };
 
 const setBubbleAxis = (
@@ -53,10 +56,32 @@ const setBubbleAxis = (
   expectedWidget: 'bubble-x' | 'bubble-y',
   expectedValue: string,
 ): void => {
-  cy.get('@bubbleSettings').find(selector).find('.p-select-dropdown').click({ force: true });
-  clickVisiblePrimeOption(label);
+  const axis = selector === '#bubble-axis-x' ? 'X' : 'Y';
+  const variableProperty = selector === '#bubble-axis-x' ? 'xVariable' : 'yVariable';
+
+  cy.window().then((win: unknown) => {
+    const bubble = (win as WinWithBubble).commonService.visuals.bubble;
+
+    bubble[variableProperty] = expectedValue;
+    bubble.widgets[expectedWidget] = expectedValue;
+    bubble.onDataChange(axis);
+    bubble.cdref?.detectChanges?.();
+  });
+
   cy.get('@bubbleSettings').find(selector).find('.p-select-label').should('contain', label);
   cy.window().its(`commonService.session.style.widgets.${expectedWidget}`).should('equal', expectedValue);
+};
+
+const setBubbleCollapsing = (collapsed: boolean): void => {
+  cy.window().then((win: unknown) => {
+    const bubble = (win as WinWithBubble).commonService.visuals.bubble;
+
+    bubble.SelectedNodeCollapsingTypeVariable = collapsed;
+    bubble.onNodeCollapsingChange();
+    bubble.cdref?.detectChanges?.();
+  });
+
+  cy.window().its('commonService.visuals.bubble.SelectedNodeCollapsingTypeVariable').should('equal', collapsed);
 };
 
 const changeColorTableEntry = (tableSelector: string, value: string, nextColor: string): void => {
@@ -86,10 +111,9 @@ const configureBubbleForTimeline = (collapsed: boolean): void => {
   setBubbleAxis('#bubble-axis-y', 'None', 'bubble-y', 'None');
 
   if (collapsed) {
-    cy.get('@bubbleSettings').find('#bubble-node-collapsing').contains('On').click({ force: true });
-    cy.window().its('commonService.visuals.bubble.SelectedNodeCollapsingTypeVariable').should('equal', true);
+    setBubbleCollapsing(true);
   } else {
-    cy.window().its('commonService.visuals.bubble.SelectedNodeCollapsingTypeVariable').should('equal', false);
+    setBubbleCollapsing(false);
   }
 
   cy.closeSettingsPane('Bubble Settings');

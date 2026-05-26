@@ -89,8 +89,8 @@ const assertColorTablesMatchVisibleTopology = (): void => {
     const typedWindow = win as WinWithMap;
     const summary = typedWindow.commonService.getVisibleTopologySummary();
 
-    assertColorTableCountTotal('#node-color-table', summary.nodeCount);
-    assertColorTableCountTotal('#link-color-table', summary.linkCount);
+    assertColorTableCountTotal('#key-tables-node-table', summary.nodeCount);
+    assertColorTableCountTotal('#key-tables-link-table', summary.linkCount);
   });
 };
 

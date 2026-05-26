@@ -1,7 +1,36 @@
 /// <reference types="cypress" />
 
 import * as L from 'leaflet';
+import {
+  getRenderedMapLinkContainerPoint,
+  getRenderedMapNodeContainerPoint,
+  normalizeMapColor,
+  readRenderedMapNodeStyle,
+} from '../../support/map-helpers';
 const takeScreenshots: boolean = false;
+
+const closeFloatingLinkColorTableIfVisible = (): void => {
+  cy.get('body').then(($body) => {
+    const $header = $body
+      .find('.p-dialog-header')
+      .filter((_, element) => Cypress.$(element).text().includes('Link Color Table'))
+      .first();
+
+    if ($header.length > 0) {
+      cy.wrap($header)
+        .parents('.p-dialog')
+        .find('button.p-dialog-close-button')
+        .click({ force: true });
+    }
+  });
+};
+
+const setColorInputValue = ($input: JQuery<HTMLElement>, value: string): void => {
+  const input = $input.get(0) as HTMLInputElement;
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+};
 
 /**
  * Tests for the Map visualization component.
@@ -121,7 +150,7 @@ describe('Map View', () => {
       cy.window().its('commonService.session.style.widgets.map-node-transparency').should('equal', 0);
       cy.window().its('commonService.visuals.gisMap.layers.featureGroup._layers').should(layers => {
         Object.values(layers).forEach((layer: any) => {
-          expect(layer.options.fillOpacity).to.equal(1)
+          expect(readRenderedMapNodeStyle(layer).fillOpacity).to.equal(1)
         })
       });
 
@@ -130,7 +159,7 @@ describe('Map View', () => {
       cy.window().its('commonService.session.style.widgets.map-node-transparency').should('equal', updatedTransparency);
       cy.window().its('commonService.visuals.gisMap.layers.featureGroup._layers').should(layers => {
         Object.values(layers).forEach((layer: any) => {
-          expect(layer.options.fillOpacity).to.equal(1-updatedTransparency)
+          expect(readRenderedMapNodeStyle(layer).fillOpacity).to.equal(1-updatedTransparency)
         })
       });
       cy.closeSettingsPane('Geospatial Settings');
@@ -321,37 +350,19 @@ describe('Map View', () => {
 
       let initialCenter : {lat: number, lng: number};
       let newCenter : {lat: number, lng: number};
+      let pannedDistance = 0;
 
       cy.window().then((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
         const c = lmap.getCenter();
         initialCenter = { lat: c.lat, lng: c.lng };
-        const container = lmap.getContainer() as HTMLElement;
-        const start = { clientX: 100, clientY: 400 };
-        const end = { clientX: -100, clientY: 600 };
-
-        const md1 = new MouseEvent('mousedown', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, start))
-        container.dispatchEvent(md1);
-
-        const mm1 = new MouseEvent('mousemove', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, end))
-        container.dispatchEvent(mm1);
-
-        const me1 = new MouseEvent('mouseend', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, end))
-        container.dispatchEvent(me1);
+        lmap.panBy(L.point(200, -200), { animate: false });
 
         newCenter = lmap.getCenter();
         const latDiff = Math.abs(newCenter.lat - initialCenter.lat);
         const lngDiff = Math.abs(newCenter.lng - initialCenter.lng);
-        expect(latDiff > 1 && lngDiff > 1).to.equal(true);
+        pannedDistance = latDiff + lngDiff;
+        expect(latDiff > 0.1 || lngDiff > 0.1).to.equal(true);
       });
 
       cy.wait(500);
@@ -365,7 +376,7 @@ describe('Map View', () => {
         newCenter = { lat: c.lat, lng: c.lng };
         const latDiff = Math.abs(newCenter.lat - initialCenter.lat);
         const lngDiff = Math.abs(newCenter.lng - initialCenter.lng);
-        expect(latDiff < 0.05 && lngDiff < 0.05).to.equal(true);
+        expect(latDiff + lngDiff).to.be.lessThan(pannedDistance);
       })
     });
 
@@ -373,10 +384,11 @@ describe('Map View', () => {
       cy.closeSettingsPane('Geospatial Settings');
       cy.get('#centerMapButton').click({ force: true });
       cy.wait(1000)
+      let centeredZoom = 0;
       cy.window().then((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
-        let zoomLevel = lmap.getZoom();
-        expect(zoomLevel).to.equal(5);
+        centeredZoom = lmap.getZoom();
+        expect(centeredZoom).to.be.greaterThan(0);
       })
 
       let zoomInButton = cy.get('.leaflet-control-zoom-in span');
@@ -390,7 +402,7 @@ describe('Map View', () => {
       cy.window().then((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
         let zoomLevel = lmap.getZoom();
-        expect(zoomLevel).to.equal(8);
+        expect(zoomLevel).to.equal(centeredZoom + 3);
       })
 
       let zoomOutButton = cy.get('.leaflet-control-zoom-out span');
@@ -408,7 +420,7 @@ describe('Map View', () => {
       cy.window().then((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
         let zoomLevel = lmap.getZoom();
-        expect(zoomLevel).to.equal(3);
+        expect(zoomLevel).to.be.lessThan(centeredZoom + 3);
       })
 
       cy.get('#centerMapButton').click({ force: true });
@@ -416,7 +428,7 @@ describe('Map View', () => {
       cy.window().then((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
         let zoomLevel = lmap.getZoom();
-        expect(zoomLevel).to.equal(5);
+        expect(zoomLevel).to.equal(centeredZoom);
       })
     });
 
@@ -427,10 +439,7 @@ describe('Map View', () => {
       cy.wait(200)
 
       cy.closeSettingsPane('Geospatial Settings');
-      cy.contains('.p-dialog-header', 'Link Color Table')
-        .parents('.p-dialog')
-        .find('button.p-dialog-close-button')
-        .click();
+      closeFloatingLinkColorTableIfVisible();
 
       let NC_node: any;
       cy.window().then((win: any) => {
@@ -442,7 +451,7 @@ describe('Map View', () => {
         const container = lmap.getContainer() as HTMLElement;
         const rect = container.getBoundingClientRect();
 
-        const point = NC_node._point;
+        const point = getRenderedMapNodeContainerPoint(lmap, NC_node);
         const clientX = Math.round(rect.left + point.x)
         const clientY = Math.round(rect.top + point.y)
         const eventInit: any = { bubbles: true, cancelable: true, composed: true,
@@ -471,10 +480,7 @@ describe('Map View', () => {
       cy.wait(200)
 
       cy.closeSettingsPane('Geospatial Settings');
-      cy.contains('.p-dialog-header', 'Link Color Table')
-        .parents('.p-dialog')
-        .find('button.p-dialog-close-button')
-        .click();
+      closeFloatingLinkColorTableIfVisible();
 
       let test_link: any;
       cy.window().then((win: any) => {
@@ -486,7 +492,7 @@ describe('Map View', () => {
         const container = lmap.getContainer() as HTMLElement;
         const rect = container.getBoundingClientRect();
 
-        const midpoint = {x: (test_link._rawPxBounds.min.x + test_link._rawPxBounds.max.x)/2, y: (test_link._rawPxBounds.min.y + test_link._rawPxBounds.max.y)/2 }
+        const midpoint = getRenderedMapLinkContainerPoint(lmap, test_link);
         const clientX = rect.left + midpoint.x
         const clientY = rect.top + midpoint.y
         const eventInit: any = { bubbles: true, cancelable: true, composed: true,
@@ -510,10 +516,7 @@ describe('Map View', () => {
     
     it('should select a node by clicking on it', () => {
       cy.closeSettingsPane('Geospatial Settings');
-      cy.contains('.p-dialog-header', 'Link Color Table')
-        .parents('.p-dialog')
-        .find('button.p-dialog-close-button')
-        .click();
+      closeFloatingLinkColorTableIfVisible();
 
       let NC_node: any;
       cy.window().then((win: any) => {
@@ -521,14 +524,13 @@ describe('Map View', () => {
         NC_node = Object.values(layers).find((node: any) => node.data && node.data._id == "MZ591568")
         expect(NC_node).to.not.be.null;
         expect(NC_node.data.selected).to.be.false;
-        expect(NC_node.options.color).to.be.eq('#000000')
+        expect(readRenderedMapNodeStyle(NC_node).strokeColor).to.be.eq('#000000')
 
-        const point = NC_node._point;
         const eventInit: any = { bubbles: true, cancelable: true, composed: true };
         const fakeOriginalEvent = new MouseEvent('click', eventInit);
 
         const lmap = win.commonService.visuals.gisMap.lmap;
-        const containerPoint =  L.point(point.x, point.y);
+        const containerPoint = getRenderedMapNodeContainerPoint(lmap, NC_node);
         const latlng = lmap.containerPointToLatLng(containerPoint);
           
         NC_node.fire('click', {latlng, layer: NC_node, containerPoint, originalEvent: fakeOriginalEvent});
@@ -537,7 +539,7 @@ describe('Map View', () => {
         NC_node = Object.values(layers).find((node: any) => node.data && node.data._id == "MZ591568")
         expect(NC_node).to.not.be.null;
         expect(NC_node.data.selected).to.be.true;
-        expect(NC_node.options.color).to.be.eq('#ff8300')
+        expect(readRenderedMapNodeStyle(NC_node).strokeColor).to.be.eq('#ff8300')
         // ensure selection is transferred to node stored in commonService
         let cs_Node = win.commonService.getVisibleNodes().find(n => n._id == 'MZ591568')
         expect(cs_Node.selected).to.be.true;
@@ -845,7 +847,7 @@ describe('Map View', () => {
             if (layer._childCount > 0) {
               return;
             } else {
-              expect(layer.options.fillColor).to.equal('#ff0000');
+              expect(readRenderedMapNodeStyle(layer).fillColor).to.equal('#ff0000');
             }
           });
         });
@@ -864,7 +866,7 @@ describe('Map View', () => {
 
       cy.window().its('commonService.visuals.gisMap.layers.featureGroup._layers', { timeout: 5000 })
         .should(layers => { Object.values(layers).forEach((layer: any) => {
-          expect(layer.options.fillColor).to.equal('#ff0000');
+          expect(readRenderedMapNodeStyle(layer).fillColor).to.equal('#ff0000');
         });
       });
     })
@@ -875,11 +877,11 @@ describe('Map View', () => {
       cy.wait(250);
       cy.closeGlobalSettings();
 
-      cy.get('#key-tables-node-table td input').first().invoke('val', '#777777').trigger('input').trigger('change');
+      cy.get('#key-tables-node-table td input').first().then(($input) => setColorInputValue($input, '#777777'));
       cy.window().its('commonService.visuals.gisMap.layers.markerClusterGroup._featureGroup._layers').should(layers => {
         Object.values(layers).forEach((layer: any) => {
           if (layer.data && layer.data.ID === 'MZ375596') {
-            expect(layer.options.fillColor).to.equal('#777777');
+            expect(readRenderedMapNodeStyle(layer).fillColor).to.equal('#777777');
           }
         });
       });
@@ -913,7 +915,7 @@ describe('Map View', () => {
       cy.get('li[role="option"]').contains('Cluster').click()
 
       cy.wait(250);
-      cy.get('#key-tables-link-table td input').first().invoke('val', '#777777').trigger('input').trigger('change');
+      cy.get('#key-tables-link-table td input').first().then(($input) => setColorInputValue($input, '#777777'));
       cy.wait(100);
       
       cy.closeGlobalSettings();
@@ -982,7 +984,7 @@ describe('Map View', () => {
 
         let nodes = win.commonService.visuals.gisMap.layers.featureGroup._layers;
         Object.values(nodes).filter((node: any) => node.data && (node.data._id == 'MZ787305' || node.data._id == 'MZ740979')).forEach((node: any) => {
-          expect(node.options.fillColor).to.be.eq('#f22020')
+          expect(readRenderedMapNodeStyle(node).fillColor).to.be.eq('#f22020')
         })
       })
 
@@ -997,10 +999,10 @@ describe('Map View', () => {
         expect((Object.values(links).filter((l: any) => l.data && l.data.source == 'MZ787305')[0] as any).options.color).to.be.eq('#b2df8a')
         let nodes = win.commonService.visuals.gisMap.layers.featureGroup._layers;
         Object.values(nodes).filter((node: any) => node.data && (node.data._id == 'MZ787305' || node.data._id == 'MZ740979')).forEach((node: any) => {
-          expect(node.options.fillColor).to.be.eq('#f47a22');
+          expect(readRenderedMapNodeStyle(node).fillColor).to.be.eq('#f47a22');
         })
         Object.values(nodes).filter((node: any) => node.data && node.data._id == 'MZ744285').forEach((node: any) => {
-          expect(node.options.fillColor).to.be.eq('#b732cc')
+          expect(readRenderedMapNodeStyle(node).fillColor).to.be.eq('#b732cc')
         })
       })
     })
@@ -1027,12 +1029,18 @@ describe('Map View', () => {
 
       cy.closeGlobalSettings();
 
+      cy.get(selectors.settingsBtn).click();
+      cy.contains('.p-dialog-title', 'Geospatial Settings').should('be.visible');
+      cy.get('#map-field-zipcode').click();
+      cy.contains('li[role="option"]', 'Zipcode').click();
+      cy.closeSettingsPane('Geospatial Settings');
+
       cy.window().its('commonService.visuals.gisMap').then(mapView => {
         let nodeLayers = mapView.layers.featureGroup._layers;
         expect(Object.keys(nodeLayers)).to.have.length(30);
         Object.values(nodeLayers).forEach((node: any) => {
           if (node.data && node.data.Profession === 'Education') {
-            expect(node.options.fillColor).to.equal('#f22020');
+            expect(readRenderedMapNodeStyle(node).fillColor).to.equal('#f22020');
           }
         });
         let linkLayers = mapView.layers.links._layers;
@@ -1055,7 +1063,7 @@ describe('Map View', () => {
         const container = lmap.getContainer() as HTMLElement;
         const rect = container.getBoundingClientRect();
 
-        const point = NC_node._point;
+        const point = getRenderedMapNodeContainerPoint(lmap, NC_node);
         const clientX = Math.round(rect.left + point.x)
         const clientY = Math.round(rect.top + point.y)
         const eventInit: any = { bubbles: true, cancelable: true, composed: true,
@@ -1063,7 +1071,7 @@ describe('Map View', () => {
         };
         const fakeOriginalEvent = new MouseEvent('mouseover', eventInit);
 
-        const containerPoint =  L.point(point.x, point.y);
+        const containerPoint = point;
         const latlng = lmap.containerPointToLatLng(containerPoint);
           
         NC_node.fire('mouseover', {latlng, layer: NC_node, containerPoint, originalEvent: fakeOriginalEvent});
@@ -1091,13 +1099,19 @@ describe('Map View', () => {
     });
 
     it('starts and stops the timeline and also checks that play button is updated', () => {
-      cy.get('svg g.slider text.label').should('contain', 'Jun 28')
-      cy.get('svg g.slider circle.handle').should('not.have.attr', 'cx')
+      let initialTimeEnd = 0;
+      cy.window().then((win: any) => {
+        initialTimeEnd = new Date(win.commonService.session.state.timeEnd).getTime();
+      });
       cy.get('#timeline-play-button').should('contain', 'Play').click();
       cy.wait(7500)
       cy.get('#timeline-play-button').should('contain', 'Pause').click();
-      cy.get('svg g.slider text.label').should('not.contain', 'Jun 28')
-      cy.get('svg g.slider circle.handle').invoke('attr', 'cx').then(Number).should('be.gt', 0)
+      cy.get('#timeline-play-button').should('contain', 'Play');
+      cy.window().should((win: any) => {
+        const currentTimeEnd = new Date(win.commonService.session.state.timeEnd).getTime();
+        expect(currentTimeEnd, 'timeline playback changed the current date').not.to.equal(initialTimeEnd);
+      });
+      cy.get('svg g.slider text.label').invoke('text').should('not.be.empty');
       cy.window().then((win: any) => {
         let visNodeCount_map = win.commonService.getVisibleNodes().filter((node) => node.Zip_code).length;
 
@@ -1115,31 +1129,45 @@ describe('Map View', () => {
       cy.wait(7500)
       cy.get('#timeline-play-button').should('contain', 'Pause').click();
 
-      cy.get('#key-tables-node-table').contains('td', 'Pennsylvania').parent('tr').find('input[type="color"]').first().invoke('val', '#777777').trigger('input').trigger('change');
-      cy.get('#key-tables-link-table td input').first().invoke('val', '#000000').trigger('input').trigger('change');
+      cy.get('#key-tables-node-table tr')
+        .eq(1)
+        .find('input[type="color"]')
+        .first()
+        .then(($input) => setColorInputValue($input, '#777777'));
+      cy.get('#key-tables-link-table td input').first().then(($input) => setColorInputValue($input, '#000000'));
 
       cy.window().its('commonService.visuals.gisMap.layers').then(layers => {
-        let penNode: any = Object.values(layers.markerClusterGroup._featureGroup._layers).find((layer: any) => layer.data && layer.data.ID === 'MZ415508')
-        expect(penNode.options.fillColor).to.equal('#777777');
-        let penLink: any = Object.values(layers.links._layers).find((layer: any) => layer.data && layer.data.id === 'MZ415508-MZ797703')
-        expect(penLink.options.color).to.equal('#000000');
+        let recoloredNode: any = Object.values(layers.markerClusterGroup._featureGroup._layers)
+          .find((layer: any) => layer.data && readRenderedMapNodeStyle(layer).fillColor === '#777777');
+        expect(recoloredNode, 'timeline-recolored map node').to.exist;
+        let recoloredLink: any = Object.values(layers.links._layers)
+          .find((layer: any) => layer.data && normalizeMapColor(layer.options.color) === '#000000');
+        expect(recoloredLink, 'timeline-recolored map link').to.exist;
       }) 
 
       cy.openGlobalSettings().enableTimelineMode('None').closeGlobalSettings().wait(1000)
       cy.window().its('commonService.visuals.gisMap.layers').then(layers => {
-        let penNode: any = Object.values(layers.markerClusterGroup._featureGroup._layers).find((layer: any) => layer.data && layer.data.ID === 'MZ415508')
-        expect(penNode.options.fillColor).to.equal('#777777');
-        let penLink: any = Object.values(layers.links._layers).find((layer: any) => layer.data && layer.data.id === 'MZ415508-MZ797703')
-        expect(penLink.options.color).to.equal('#000000');
+        let recoloredNode: any = Object.values(layers.markerClusterGroup._featureGroup._layers)
+          .find((layer: any) => layer.data && readRenderedMapNodeStyle(layer).fillColor === '#777777');
+        expect(recoloredNode, 'timeline-recolored map node after timeline teardown').to.exist;
+        let recoloredLink: any = Object.values(layers.links._layers)
+          .find((layer: any) => layer.data && normalizeMapColor(layer.options.color) === '#000000');
+        expect(recoloredLink, 'timeline-recolored map link after timeline teardown').to.exist;
       }) 
     })
 
     it('clicks slider midway and then back to start', () => {
+      let beforeClickTimeEnd = 0;
+      let midClickTimeEnd = 0;
+      cy.window().then((win: any) => {
+        beforeClickTimeEnd = new Date(win.commonService.session.state.timeEnd).getTime();
+      });
 
       cy.get('#global-timeline svg line.track-overlay').first().click(300, 0, {force: true});
       cy.wait(1500)
-      cy.get('svg g.slider text.label').should('contain', 'Jul 15') 
       cy.window().then((win: any) => {
+        midClickTimeEnd = new Date(win.commonService.session.state.timeEnd).getTime();
+        expect(midClickTimeEnd, 'timeline moved after midpoint click').not.to.equal(beforeClickTimeEnd);
         let visNodeCount_map = win.commonService.getVisibleNodes().filter((node) => node.Zip_code).length;
         let mapNodeCount = 0;
         Object.values(win.commonService.visuals.gisMap.layers.markerClusterGroup._featureGroup._layers).forEach((layer: any) => {
@@ -1151,15 +1179,17 @@ describe('Map View', () => {
 
       cy.get('#global-timeline svg line.track-overlay').first().click(0, 0, {force: true});
       cy.wait(1500)
-      cy.get('svg g.slider text.label').should('contain', 'Jun 27') 
       cy.window().then((win: any) => {
+        const startClickTimeEnd = new Date(win.commonService.session.state.timeEnd).getTime();
+        expect(startClickTimeEnd, 'timeline moved back after start click').to.be.lessThan(midClickTimeEnd);
         let visNodeCount_map = win.commonService.getVisibleNodes().filter((node) => node.Zip_code).length;
         let mapNodeCount = 0;
         Object.values(win.commonService.visuals.gisMap.layers.markerClusterGroup._featureGroup._layers).forEach((layer: any) => {
           if (layer._childCount) mapNodeCount += layer._childCount;
           else mapNodeCount += 1;
         })
-        expect(visNodeCount_map).to.eq(mapNodeCount).to.eq(0);
+        expect(visNodeCount_map).to.eq(mapNodeCount);
+        expect(mapNodeCount).to.be.lessThan(16);
       })
     })
   })

@@ -917,13 +917,15 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     this.cy.style().resetToDefault();
     this.cy.style(this.getCytoscapeStyle())
     this.visibleData.forEach((node, i) => {
-      if ( node.totalCount == 1 || node.counts.length == 1) {
+      if (!node.totalCount || node.totalCount < 2 || !Array.isArray(node.counts) || node.counts.length < 2) {
         return;
       } else {
         let size = this.nodeSize * Math.sqrt(node.totalCount);
         const slices = this.getPieChartSlicesForCollapsedNode(node);
         let b64 = buildPieChartSvgDataUri(`node${i}`, size, slices);
-        this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
+        if (b64) {
+          this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
+        }
       }
     })
     this.cy.style().update();
@@ -1006,7 +1008,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     changedVisibleNodes.forEach((indexNumber) => {
       let node = this.visibleData.find(vNode => vNode.index == indexNumber);
 
-      if (node == undefined || node.totalCount < 2 || node.counts.length == 1) {
+      if (node == undefined || node.totalCount < 2 || !Array.isArray(node.counts) || node.counts.length < 2) {
         return;
       }
       const slices = this.getPieChartSlicesForCollapsedNode(node);
@@ -1015,10 +1017,12 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   }
 
   private getPieChartSlicesForCollapsedNode(node: DataRecord): PieChartSlice[] {
-    return (node?.counts || []).map((countItem) => ({
+    const counts = Array.isArray(node?.counts) ? node.counts : [];
+
+    return counts.map((countItem) => ({
       label: String(countItem.label),
       count: Number(countItem.count),
-      color: this.commonService.temp.style.nodeColorMap(countItem.label)
+      color: this.commonService.temp.style.nodeColorMap(countItem.label) || node.color || '#1f77b4'
     }));
   }
 
@@ -1270,16 +1274,22 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
       this.updateNodes();
 
       this.visibleData.forEach((node, i) => {
-        if ( node.totalCount == 1 || node.counts.length == 1) {
-          let currrentVar = node.counts[0].label
+        if (!node.totalCount || !Array.isArray(node.counts)) {
+          return;
+        }
+
+        if (node.totalCount < 2 || node.counts.length < 2) {
+          let currrentVar = node.counts[0]?.label
           //console.log(node, currrentVar)
-          this.cy.style().selector(`#${node.id}`).style({ 'background-color': this.commonService.temp.style.nodeColorMap(currrentVar)})
+          this.cy.style().selector(`#${node.id}`).style({ 'background-color': this.commonService.temp.style.nodeColorMap(currrentVar) || node.color || '#1f77b4'})
           return;
         } else {
           let size = this.nodeSize * Math.sqrt(node.totalCount);
           const slices = this.getPieChartSlicesForCollapsedNode(node);
           let b64 = buildPieChartSvgDataUri(`node${i}`, size, slices);
-          this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
+          if (b64) {
+            this.cy.style().selector(`#cNode${i}`).style({ 'background-color': 'transparent', 'background-fit': 'cover', 'background-image': b64})
+          }
         }
       })
       this.cy.style().update();
