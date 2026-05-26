@@ -664,9 +664,23 @@ export function goTo2DNetworkView(): void {
   assertTwoDNetworkReady();
 }
 
+export function goToTransmissionChainView(): void {
+  cy.get(byTestId(testIds.appViewMenuButton), { timeout: 15000 }).click({ force: true });
+  cy.get(byTestId(testIds.appViewMenuTransmissionChain), { timeout: 15000 }).click({ force: true });
+
+  assertTransmissionChainReady();
+}
+
 export function assertTwoDNetworkReady(timeout = 30000): void {
   cy.get('#cy', { timeout }).should('be.visible');
   cy.window({ timeout }).should('have.property', 'cytoscapeInstance');
+}
+
+export function assertTransmissionChainReady(timeout = 30000): void {
+  cy.get('#transmission-chain-cy', { timeout }).should('be.visible');
+  cy.window({ timeout })
+    .its('commonService.visuals.transmissionChain.cy')
+    .should('exist');
 }
 
 export function assertPhyloTreeReady(timeout = 30000): void {

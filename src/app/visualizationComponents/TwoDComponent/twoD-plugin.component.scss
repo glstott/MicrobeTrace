@@ -171,6 +171,36 @@
   }
 }
 
+::ng-deep {
+  .transmission-chain-link-origin-select {
+    width: 100% !important;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .transmission-chain-link-origin-select .p-multiselect-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .transmission-chain-link-origin-panel {
+    max-width: 100%;
+  }
+
+  .transmission-chain-link-origin-panel .p-multiselect-items,
+  .transmission-chain-link-origin-panel .p-multiselect-item,
+  .transmission-chain-link-origin-panel .p-multiselect-header {
+    max-width: 100%;
+  }
+
+  .transmission-chain-link-origin-panel .p-multiselect-item span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
   /* Button appearance on hover */
 .btn-icon:hover {
   transform: scale(1.1); /* Slight enlarge on hover */

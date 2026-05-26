@@ -70,6 +70,7 @@ export class GoldenLayoutHostComponent implements OnDestroy {
 
     this.goldenLayoutComponentService.registerComponentType(FilesComponent.componentTypeName, FilesComponent);
     this.goldenLayoutComponentService.registerComponentType(TwoDComponent.componentTypeName, TwoDComponent);
+    this.goldenLayoutComponentService.registerComponentType(TwoDComponent.transmissionChainComponentTypeName, TwoDComponent);
     this.goldenLayoutComponentService.registerComponentType(TableComponent.componentTypeName, TableComponent);
     this.goldenLayoutComponentService.registerComponentType(MapComponent.componentTypeName, MapComponent);
     this.goldenLayoutComponentService.registerComponentType(PhylogeneticComponent.componentTypeName, PhylogeneticComponent);

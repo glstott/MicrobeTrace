@@ -1563,7 +1563,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
      * @param value - view selected
      */
      public updateLaunchView( value: string ) : void {
-        this.launchView = value;
+        this.launchView = this.normalizeDashboardLabel(value);
 
         this.commonService.localStorageService.setItem('default-view', this.launchView);
         this.commonService.session.style.widgets['default-view'] = this.launchView;
@@ -4443,7 +4443,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             const instance = this._goldenLayoutHostComponent.getComponentRef(container).instance as any;
             console.log('--- viewClick exisitng view - load settings');
 
-            if (viewName === '2D Network' && !instance.cy) {
+            if ((viewName === '2D Network' || viewName === 'Transmission Chain View') && !instance.cy) {
                 if (instance.onLoadNewData) {
                     instance.onLoadNewData();
                 }
@@ -4618,7 +4618,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                 break;
             }
-            case "2D Network": {
+            case "2D Network":
+            case "Transmission Chain View": {
 
                 this.showSettings = true;
                 this.showExport = true;

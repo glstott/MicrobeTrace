@@ -123,7 +123,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             name,
             this.getPerformanceNow() - startedAt,
             {
-                view: '2D Network',
+                view: this.viewName,
                 ...extra
             }
         );
@@ -477,12 +477,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     ];
     SelectedNetworkGridLineTypeVariable: string = "Hide";
     NetworkLayoutModes: any = [
-        { label: 'Standard Network', value: 'Force Directed' },
-        { label: 'Timeline', value: 'Timeline' }
+        { label: 'Standard Network', value: 'Force Directed' }
     ];
     SelectedNetworkLayoutModeVariable: NetworkLayoutMode = 'Force Directed';
     SelectedNetworkTimelineDateFieldVariable: string = 'None';
     SelectedNetworkTimelineVerticalSpacingVariable: number = 100;
+    TransmissionChainLinkOriginOptions: SelectItem[] = [];
+    SelectedTransmissionChainLinkOriginVariables: string[] = [];
+    private transmissionChainInitialSettingsOpened = false;
 
     SelecetedNetworkLinkStrengthVariable: any = 0.123;
     SelectedNetworkExportFilenameVariable: string = "";
@@ -550,6 +552,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     private timelineAxisResizeObservedElements = new Set<Element>();
     private goldenLayoutSize: { width: number; height: number } | null = null;
     private readonly windowResizeHandler = () => this.redrawTimelineAxisForResize();
+    public readonly viewName: string;
+    public readonly isTransmissionChainView: boolean;
+    public readonly settingsDialogHeader: string;
+    public readonly settingsDialogStyle: Record<string, string>;
+    public readonly settingsDialogContentStyle: Record<string, string>;
+    public readonly transmissionChainLinkOriginPanelStyle: Record<string, string>;
+    public readonly cyElementId: string;
 
     constructor(injector: Injector,
         private eventManager: EventManager,
@@ -569,6 +578,26 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         // this.setExpanded(this.mainSite);
 
         this.widgets = this.commonService.session.style.widgets;
+        this.viewName = String((this.container as any)?.componentType ?? TwoDComponent.componentTypeName);
+        this.isTransmissionChainView = this.viewName === TwoDComponent.transmissionChainComponentTypeName;
+        this.settingsDialogHeader = this.isTransmissionChainView
+            ? 'Transmission Chain View Settings'
+            : '2D Network Settings';
+        this.settingsDialogStyle = this.isTransmissionChainView
+            ? { width: '560px', 'max-width': 'calc(100vw - 2rem)' }
+            : {};
+        this.settingsDialogContentStyle = this.isTransmissionChainView
+            ? { 'max-height': '70vh', overflow: 'auto' }
+            : {};
+        this.transmissionChainLinkOriginPanelStyle = {
+            width: '360px',
+            'max-width': '100%'
+        };
+        this.cyElementId = this.isTransmissionChainView ? 'transmission-chain-cy' : 'cy';
+        this.Node2DNetworkExportDialogSettings = new DialogSettings(
+            this.isTransmissionChainView ? '#transmission-chain-settings-pane' : '#network-settings-pane',
+            false
+        );
         this.ensureTimelineLayoutWidgetDefaults();
         this.ensureNodeCollapseWidgetDefaults();
 
@@ -610,7 +639,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
     private ensureTimelineLayoutWidgetDefaults(): void {
         if (!this.widgets) return;
-        if (!this.widgets['network-layout-mode']) {
+        if (!this.widgets['network-layout-mode'] || this.widgets['network-layout-mode'] === 'Timeline') {
             this.widgets['network-layout-mode'] = 'Force Directed';
         }
         if (!this.widgets['network-timeline-date-field']) {
@@ -618,6 +647,15 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         }
         if (!this.widgets['network-timeline-vertical-spacing']) {
             this.widgets['network-timeline-vertical-spacing'] = 100;
+        }
+        if (!this.widgets['transmission-chain-date-field']) {
+            this.widgets['transmission-chain-date-field'] = 'None';
+        }
+        if (this.widgets['transmission-chain-link-origins'] === undefined) {
+            this.widgets['transmission-chain-link-origins'] = null;
+        }
+        if (!this.widgets['transmission-chain-vertical-spacing']) {
+            this.widgets['transmission-chain-vertical-spacing'] = 100;
         }
     }
 
@@ -633,26 +671,103 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
     private getNetworkLayoutMode(): NetworkLayoutMode {
         this.ensureTimelineLayoutWidgetDefaults();
+        if (this.isTransmissionChainView) {
+            return 'Timeline';
+        }
         return this.widgets['network-layout-mode'] === 'Timeline' ? 'Timeline' : 'Force Directed';
     }
 
     private getNetworkTimelineDateField(): string {
         this.ensureTimelineLayoutWidgetDefaults();
+        if (this.isTransmissionChainView) {
+            return String(this.widgets['transmission-chain-date-field'] || 'None');
+        }
         return String(this.widgets['network-timeline-date-field'] || 'None');
     }
 
     public isTimelineLayoutSelected(): boolean {
-        return this.getNetworkLayoutMode() === 'Timeline';
+        return this.isTransmissionChainView || this.getNetworkLayoutMode() === 'Timeline';
     }
 
     public isTimelineLayoutActive(): boolean {
         return this.isTimelineLayoutSelected() && this.getNetworkTimelineDateField() !== 'None';
     }
 
+    private shouldShowBlankTransmissionChainView(): boolean {
+        return this.isTransmissionChainView && this.getNetworkTimelineDateField() === 'None';
+    }
+
     private getNetworkTimelineVerticalSpacingScale(): number {
-        const rawSpacing = Number(this.widgets?.['network-timeline-vertical-spacing']);
+        const rawSpacing = Number(this.widgets?.[
+            this.isTransmissionChainView
+                ? 'transmission-chain-vertical-spacing'
+                : 'network-timeline-vertical-spacing'
+        ]);
         const spacing = Number.isFinite(rawSpacing) ? rawSpacing : 100;
         return Math.min(Math.max(spacing, 5), 180) / 100;
+    }
+
+    private getTransmissionChainLinkOrigins(): string[] {
+        const origins: string[] = [];
+        (this.commonService.session.data.links || []).forEach(link => {
+            const linkOrigins = Array.isArray(link?.origin)
+                ? link.origin
+                : link?.origin
+                    ? [link.origin]
+                    : [];
+
+            linkOrigins.forEach(origin => {
+                const normalizedOrigin = String(origin || '').trim();
+                if (normalizedOrigin && !origins.includes(normalizedOrigin)) {
+                    origins.push(normalizedOrigin);
+                }
+            });
+        });
+
+        return origins;
+    }
+
+    private syncTransmissionChainLinkOriginOptions(): void {
+        const origins = this.getTransmissionChainLinkOrigins();
+        this.TransmissionChainLinkOriginOptions = origins.map(origin => ({
+            label: origin,
+            value: origin
+        }));
+
+        const selected = this.widgets['transmission-chain-link-origins'];
+        if (!Array.isArray(selected)) {
+            this.widgets['transmission-chain-link-origins'] = [...origins];
+        } else {
+            this.widgets['transmission-chain-link-origins'] = selected
+                .map(origin => String(origin || '').trim())
+                .filter(origin => origins.includes(origin));
+        }
+
+        this.SelectedTransmissionChainLinkOriginVariables = [
+            ...(this.widgets['transmission-chain-link-origins'] || [])
+        ];
+    }
+
+    private filterTransmissionChainLinks(links: any[]): any[] {
+        if (!this.isTransmissionChainView) {
+            return links;
+        }
+
+        this.syncTransmissionChainLinkOriginOptions();
+        const selectedOrigins = new Set(this.SelectedTransmissionChainLinkOriginVariables);
+        if (selectedOrigins.size === 0) {
+            return [];
+        }
+
+        return links.filter(link => {
+            const linkOrigins = Array.isArray(link?.origin)
+                ? link.origin
+                : link?.origin
+                    ? [link.origin]
+                    : [];
+
+            return linkOrigins.some(origin => selectedOrigins.has(String(origin || '').trim()));
+        });
     }
 
     private getTimelineAwareEdgeRoutingStyle(): any {
@@ -735,7 +850,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
     private getVisibleNetworkDataForRender(filterLinksByVisibleNodes = this.isTimelineFilteringActive()) {
         const nodes = this.commonService.getVisibleNodes();
+
+        if (this.shouldShowBlankTransmissionChainView()) {
+            this.syncTransmissionChainLinkOriginOptions();
+            return { nodes: [], links: [] };
+        }
+
         let links = this.commonService.getVisibleLinks(true);
+        links = this.filterTransmissionChainLinks(links);
 
         if (filterLinksByVisibleNodes) {
             const visibleNodeIds = new Set(nodes.map(node => String(node._id ?? node.id ?? '')));
@@ -788,6 +910,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
     private isNodeCollapseEnabled(): boolean {
         this.ensureNodeCollapseWidgetDefaults();
+        if (this.isTransmissionChainView) {
+            return false;
+        }
         return this.widgets['network-node-collapse-enabled'] === true;
     }
 
@@ -1137,7 +1262,11 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
 
     ngOnInit() {
-        this.commonService.visuals.twoD = this;
+        if (this.isTransmissionChainView) {
+            this.commonService.visuals.transmissionChain = this;
+        } else {
+            this.commonService.visuals.twoD = this;
+        }
         
         // Console log this out to see what the window objetc has like temp
         // const windowKeys = Reflect.ownKeys(window);
@@ -1167,7 +1296,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         this.settingsLoadedSubscription = this.store.settingsLoaded$
         .pipe(takeUntil(this.destroy$))
         .subscribe(loaded => {
-            if(loaded && this.commonService.activeTab === '2D Network') {
+            if(loaded && this.commonService.activeTab === this.viewName) {
 
                  this._rerender();
 
@@ -1179,7 +1308,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         .subscribe(newThreshold => {
             if (!this.commonService.session.network.isFullyLoaded) return;
 
-            if(this.commonService.activeTab === '2D Network') {
+            if(this.commonService.activeTab === this.viewName) {
                 if (this.threshold !== newThreshold) {
                     console.log('--- TwoD partial threshold changed', newThreshold);
                     this._partialUpdate();
@@ -1841,8 +1970,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     const parentNodes = new Set();
 
     const edges = data.links.flatMap((link: any) => {
-        if ((this.widgets['link-color-variable'] == 'Origin' || this.widgets['link-color-variable'] == 'origin') && link.origin.length > 1) {
-            return link.origin.map((originItem: any, index) => ({
+        const linkOrigins = Array.isArray(link.origin)
+            ? link.origin
+            : link.origin
+                ? [link.origin]
+                : [];
+        if (!this.isTransmissionChainView && (this.widgets['link-color-variable'] == 'Origin' || this.widgets['link-color-variable'] == 'origin') && linkOrigins.length > 1) {
+            return linkOrigins.map((originItem: any, index) => ({
                 data: {
                     // Include any additional edge-specific data properties
                     ...link,
@@ -2151,7 +2285,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     attachCytoscapeEvents() {
         console.log('--- TwoD attachCytoscapeEvents called');
         this.ensureTimelineAxisResizeObserver();
-        $('#cy').off('contextmenu.twod').on('contextmenu.twod', (e) => e.preventDefault());
+        if (this.cyContainer?.nativeElement) {
+            $(this.cyContainer.nativeElement).off('contextmenu.twod').on('contextmenu.twod', (e) => e.preventDefault());
+        }
 
         // Debounced function to sync Cytoscape selections with the common service.
         const syncCySelectionToService = _.debounce(() => {
@@ -2631,8 +2767,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
         this.gtmService.pushTag({
             event: "page_view",
-            page_location: "/2d_network",
-            page_title: "2D Network View"
+            page_location: this.isTransmissionChainView ? "/transmission_chain" : "/2d_network",
+            page_title: this.isTransmissionChainView ? "Transmission Chain View" : "2D Network View"
         });
         this.IsDataAvailable = (this.commonService.session.data.nodes.length === 0 ? false : true);
         if (!this.widgets['default-distance-metric']) {
@@ -2786,7 +2922,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
               });
               
 
-            if (this.widgets['background-color']) $('#cy').css('background-color', this.widgets['background-color']);
+            if (this.widgets['background-color'] && this.cyContainer?.nativeElement) {
+                $(this.cyContainer.nativeElement).css('background-color', this.widgets['background-color']);
+            }
             
             console.log('--- TwoD InitView onStatisticsChanged');
             this.commonService.onStatisticsChanged();
@@ -2818,7 +2956,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
      */
     getRelativeMousePosition(event) {
         // Get position based on container
-        let rect =  document.getElementById('cy').getBoundingClientRect();
+        let rect =  this.cyContainer.nativeElement.getBoundingClientRect();
         const X = event['clientX'] - rect.left;
         const Y = event['clientY'] - rect.top;
         return [X, Y];
@@ -4889,13 +5027,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         let color = this.widgets['link-color'];
         let finalColor;
         let alphaValue;
+        const variableValue = Array.isArray(link?.[variable]) ? link[variable][0] : link?.[variable];
 
         //if ((variable == 'Origin' || variable == 'origin') && link.origin.length > 1) {
             //finalColor = this.commonService.temp.style.linkColorMap("Duo-Link");
             //alphaValue = this.commonService.temp.style.linkAlphaMap("Duo-Link");
         //} else {
-        finalColor = (variable == 'None') ? color : this.commonService.temp.style.linkColorMap(link[variable]);
-        alphaValue = this.commonService.temp.style.linkAlphaMap(link[variable])
+        finalColor = (variable == 'None') ? color : this.commonService.temp.style.linkColorMap(variableValue);
+        alphaValue = this.commonService.temp.style.linkAlphaMap(variableValue)
         //}
 
         if (this.overideTransparency) {
@@ -4910,6 +5049,10 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     }
 
     private shouldRenderSplitOriginLinks(): boolean {
+        if (this.isTransmissionChainView) {
+            return false;
+        }
+
         const linkColorVariable = String(this.widgets?.['link-color-variable'] ?? 'None').toLowerCase();
         if (linkColorVariable !== 'origin') {
             return false;
@@ -5221,6 +5364,11 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     reason: 'already-rendering',
                     timelineTick
                 });
+                if (this.viewActive && !this.isDestroyed) {
+                    setTimeout(() => void this._rerender(timelineTick), 50);
+                } else {
+                    this.rerenderOnActive = true;
+                }
                 return;
             }
 
@@ -5429,7 +5577,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 edges: el.edges.length
             });
             
-            if ((window as any).Cypress) {
+            if ((window as any).Cypress && !this.isTransmissionChainView) {
               (window as any).cytoscapeInstance = this.cy;
               
               // Create a dedicated namespace for all test functions
@@ -5652,14 +5800,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 console.log(`✅ Cytoscape initial ready in ${readyDurationMs.toFixed(2)}ms via ${source}`);
               }
               this.commonService.recordPerformanceDuration('render', 'twoDInitialReady', readyDurationMs, {
-                view: '2D Network',
+                view: this.viewName,
                 nodes: this.cy.nodes().length,
                 edges: this.cy.edges().length,
                 timelineTick,
                 source
               });
               this.commonService.recordPerformanceDuration('render', 'twoDLayout', readyDurationMs, {
-                view: '2D Network',
+                view: this.viewName,
                 nodes: this.cy.nodes().length,
                 edges: this.cy.edges().length,
                 timelineTick,
@@ -6218,7 +6366,7 @@ private updateArrowStyles(): void {
     }
 
     onNetworkLayoutModeChange(e: NetworkLayoutMode): void {
-        this.widgets['network-layout-mode'] = e === 'Timeline' ? 'Timeline' : 'Force Directed';
+        this.widgets['network-layout-mode'] = 'Force Directed';
         this.SelectedNetworkLayoutModeVariable = this.widgets['network-layout-mode'];
         this.updateTimelineStatisticsOffset();
 
@@ -6235,8 +6383,11 @@ private updateArrowStyles(): void {
     }
 
     onNetworkTimelineDateFieldChange(e: string): void {
-        this.widgets['network-timeline-date-field'] = e || 'None';
-        this.SelectedNetworkTimelineDateFieldVariable = this.widgets['network-timeline-date-field'];
+        const widgetKey = this.isTransmissionChainView
+            ? 'transmission-chain-date-field'
+            : 'network-timeline-date-field';
+        this.widgets[widgetKey] = e || 'None';
+        this.SelectedNetworkTimelineDateFieldVariable = this.widgets[widgetKey];
         this.updateTimelineStatisticsOffset();
 
         if (!this.isTimelineLayoutActive()) {
@@ -6250,12 +6401,26 @@ private updateArrowStyles(): void {
     onNetworkTimelineVerticalSpacingChange(e: number): void {
         const spacing = Number(e);
         const clampedSpacing = Number.isFinite(spacing) ? Math.min(Math.max(spacing, 5), 180) : 100;
-        this.widgets['network-timeline-vertical-spacing'] = clampedSpacing;
+        this.widgets[
+            this.isTransmissionChainView
+                ? 'transmission-chain-vertical-spacing'
+                : 'network-timeline-vertical-spacing'
+        ] = clampedSpacing;
         this.SelectedNetworkTimelineVerticalSpacingVariable = clampedSpacing;
 
         if (this.isTimelineLayoutActive()) {
             this.updateLayout();
         }
+    }
+
+    onTransmissionChainLinkOriginsChange(origins: string[]): void {
+        this.widgets['transmission-chain-link-origins'] = Array.isArray(origins)
+            ? origins.map(origin => String(origin || '').trim()).filter(origin => origin.length > 0)
+            : [];
+        this.SelectedTransmissionChainLinkOriginVariables = [
+            ...(this.widgets['transmission-chain-link-origins'] || [])
+        ];
+        this.updateLayout();
     }
 
     /**
@@ -6444,6 +6609,17 @@ scaleLinkWidth() {
         (this.Node2DNetworkExportDialogSettings.isVisible) ? this.Node2DNetworkExportDialogSettings.setVisibility(false) : this.Node2DNetworkExportDialogSettings.setVisibility(true);
         this.ShowStatistics = !this.Show2DSettingsPane;
         this.updateLinkWidthRows(this.SelectedLinkWidthByVariable);
+    }
+
+    private openTransmissionChainInitialSettingsIfNeeded(): void {
+        if (
+            this.isTransmissionChainView &&
+            !this.transmissionChainInitialSettingsOpened &&
+            this.getNetworkTimelineDateField() === 'None'
+        ) {
+            this.transmissionChainInitialSettingsOpened = true;
+            this.Node2DNetworkExportDialogSettings.setVisibility(true);
+        }
     }
 
     /**
@@ -6744,7 +6920,12 @@ scaleLinkWidth() {
         if (this.commonService.visuals.twoD === this) {
             (this.commonService.visuals as any).twoD = null;
         }
-        $('#cy').off('contextmenu.twod');
+        if (this.commonService.visuals.transmissionChain === this) {
+            (this.commonService.visuals as any).transmissionChain = null;
+        }
+        if (this.cyContainer?.nativeElement) {
+            $(this.cyContainer.nativeElement).off('contextmenu.twod');
+        }
         this.cyContainer = null;
 
 
@@ -6936,7 +7117,15 @@ scaleLinkWidth() {
         //Network|Layout
         this.SelectedNetworkLayoutModeVariable = this.getNetworkLayoutMode();
         this.SelectedNetworkTimelineDateFieldVariable = this.getNetworkTimelineDateField();
-        this.SelectedNetworkTimelineVerticalSpacingVariable = Number(this.widgets['network-timeline-vertical-spacing']);
+        this.SelectedNetworkTimelineVerticalSpacingVariable = Number(this.widgets[
+            this.isTransmissionChainView
+                ? 'transmission-chain-vertical-spacing'
+                : 'network-timeline-vertical-spacing'
+        ]);
+        if (this.isTransmissionChainView) {
+            this.syncTransmissionChainLinkOriginOptions();
+            this.openTransmissionChainInitialSettingsIfNeeded();
+        }
 
         //Network|Link Strength
         this.SelecetedNetworkLinkStrengthVariable = this.widgets['network-link-strength'];
@@ -7156,4 +7345,5 @@ scaleLinkWidth() {
 
 export namespace TwoDComponent {
     export const componentTypeName = '2D Network';
+    export const transmissionChainComponentTypeName = 'Transmission Chain View';
 }
