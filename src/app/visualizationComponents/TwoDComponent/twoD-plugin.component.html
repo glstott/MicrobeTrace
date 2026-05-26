@@ -294,7 +294,7 @@
     </p-accordion>
   </tab>
   <tab heading="{{'Network' | localize}}" [active]="isTransmissionChainView" customClass="m-tabs__item">
-    <p-accordion [value]="isTransmissionChainView ? ['transmission-chain-layout'] : null" [multiple]="true">
+    <p-accordion [value]="isTransmissionChainView ? ['network-display', 'transmission-chain-layout'] : null" [multiple]="true">
       <p-accordion-panel value="network-display" style="color:#495057">
         <p-accordion-header>Display</p-accordion-header>
         <p-accordion-content><div #networkcontrolslabels>
@@ -310,6 +310,14 @@
               <p-selectButton id="network-gridlines-show-hide" [options]="GridLineTypes" [allowEmpty]="false" fluid [(ngModel)]="SelectedNetworkGridLineTypeVariable" (ngModelChange)="onNetworkGridlinesShowHideChange($event)"></p-selectButton>
             </div>
           </div>
+          @if (isTransmissionChainView) {
+            <div class="form-group row" title="Choose how transmission chain links are routed.">
+              <div class="col-3"><label for="transmission-chain-line-style">Line Style</label></div>
+              <div class="col-9">
+                <p-select id="transmission-chain-line-style" [options]="TransmissionChainLineStyleOptions" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedTransmissionChainLineStyleVariable" (ngModelChange)="onTransmissionChainLineStyleChange($event)"></p-select>
+              </div>
+            </div>
+          }
         </div>
       </p-accordion-content>
     </p-accordion-panel>
@@ -326,22 +334,25 @@
             </div>
             <div class="form-group row" title="Choose which link lists are used to render and arrange the transmission chain.">
               <div class="col-3"><label for="transmission-chain-link-origins">Link Lists</label></div>
-              <div class="col-9">
-                <p-multiSelect
-                  id="transmission-chain-link-origins"
-                  [options]="TransmissionChainLinkOriginOptions"
-                  appendTo="self"
-                  [showToggleAll]="true"
-                  [maxSelectedLabels]="0"
-                  selectedItemsLabel="{0} link lists selected"
-                  placeholder="Select link lists"
-                  styleClass="width-percent-100 transmission-chain-link-origin-select"
-                  [panelStyle]="transmissionChainLinkOriginPanelStyle"
-                  panelStyleClass="transmission-chain-link-origin-panel"
-                  scrollHeight="120px"
-                  [(ngModel)]="SelectedTransmissionChainLinkOriginVariables"
-                  (onChange)="onTransmissionChainLinkOriginsChange($event.value)">
-                </p-multiSelect>
+              <div class="col-9" id="transmission-chain-link-origins">
+                <div class="transmission-chain-link-origin-actions">
+                  <button type="button" class="btn btn-sm btn-outline-primary" (click)="selectAllTransmissionChainLinkOrigins()">Select All</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearTransmissionChainLinkOrigins()">Clear</button>
+                  <span class="transmission-chain-link-origin-summary">{{ getTransmissionChainLinkOriginSelectionSummary() }}</span>
+                </div>
+                <div class="transmission-chain-link-origin-list" role="group" aria-label="Link Lists">
+                  @for (option of TransmissionChainLinkOriginOptions; track option.value) {
+                    <label class="transmission-chain-link-origin-option" [title]="option.label">
+                      <input
+                        type="checkbox"
+                        [checked]="isTransmissionChainLinkOriginSelected(option.value)"
+                        (change)="onTransmissionChainLinkOriginCheckboxChange(option.value, $event)">
+                      <span>{{ option.label }}</span>
+                    </label>
+                  } @empty {
+                    <div class="transmission-chain-link-origin-empty">No link lists available</div>
+                  }
+                </div>
               </div>
             </div>
             <div class="form-group row" title="Increase or decrease vertical spacing between nodes in the timeline layout.">

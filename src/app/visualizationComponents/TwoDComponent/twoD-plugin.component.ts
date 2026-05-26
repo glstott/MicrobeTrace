@@ -28,6 +28,7 @@ import { buildThresholdConnectedComponents } from '@app/contactTraceCommonServic
 import { buildPieChartPathSlices, buildPieChartSvgDataUri, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
 
 type NetworkLayoutMode = 'Force Directed' | 'Timeline';
+type TransmissionChainLineStyle = 'Stepped' | 'Straight' | 'Curved' | 'Fanout';
 
 interface CustomNodeSvgExportReplacement {
     exportHeight: number;
@@ -483,7 +484,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     SelectedNetworkTimelineDateFieldVariable: string = 'None';
     SelectedNetworkTimelineVerticalSpacingVariable: number = 100;
     TransmissionChainLinkOriginOptions: SelectItem[] = [];
+    TransmissionChainLineStyleOptions: SelectItem[] = [
+        { label: 'Stepped', value: 'Stepped' },
+        { label: 'Straight', value: 'Straight' },
+        { label: 'Curved', value: 'Curved' },
+        { label: 'Fan-out Curves', value: 'Fanout' }
+    ];
     SelectedTransmissionChainLinkOriginVariables: string[] = [];
+    SelectedTransmissionChainLineStyleVariable: TransmissionChainLineStyle = 'Stepped';
     private transmissionChainInitialSettingsOpened = false;
 
     SelecetedNetworkLinkStrengthVariable: any = 0.123;
@@ -557,7 +565,6 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     public readonly settingsDialogHeader: string;
     public readonly settingsDialogStyle: Record<string, string>;
     public readonly settingsDialogContentStyle: Record<string, string>;
-    public readonly transmissionChainLinkOriginPanelStyle: Record<string, string>;
     public readonly cyElementId: string;
 
     constructor(injector: Injector,
@@ -589,10 +596,6 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         this.settingsDialogContentStyle = this.isTransmissionChainView
             ? { 'max-height': '70vh', overflow: 'auto' }
             : {};
-        this.transmissionChainLinkOriginPanelStyle = {
-            width: '360px',
-            'max-width': '100%'
-        };
         this.cyElementId = this.isTransmissionChainView ? 'transmission-chain-cy' : 'cy';
         this.Node2DNetworkExportDialogSettings = new DialogSettings(
             this.isTransmissionChainView ? '#transmission-chain-settings-pane' : '#network-settings-pane',
@@ -654,9 +657,22 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         if (this.widgets['transmission-chain-link-origins'] === undefined) {
             this.widgets['transmission-chain-link-origins'] = null;
         }
+        if (!this.isTransmissionChainLineStyle(this.widgets['transmission-chain-line-style'])) {
+            this.widgets['transmission-chain-line-style'] = 'Stepped';
+        }
         if (!this.widgets['transmission-chain-vertical-spacing']) {
             this.widgets['transmission-chain-vertical-spacing'] = 100;
         }
+    }
+
+    private isTransmissionChainLineStyle(value: any): value is TransmissionChainLineStyle {
+        return value === 'Stepped' || value === 'Straight' || value === 'Curved' || value === 'Fanout';
+    }
+
+    private getTransmissionChainLineStyle(): TransmissionChainLineStyle {
+        this.ensureTimelineLayoutWidgetDefaults();
+        const style = this.widgets['transmission-chain-line-style'];
+        return this.isTransmissionChainLineStyle(style) ? style : 'Stepped';
     }
 
     private ensureNodeCollapseWidgetDefaults(): void {
@@ -774,6 +790,31 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         if (!this.isTimelineLayoutActive()) {
             return {
                 'curve-style': 'straight'
+            };
+        }
+
+        if (this.isTransmissionChainView) {
+            const lineStyle = this.getTransmissionChainLineStyle();
+            if (lineStyle === 'Stepped') {
+                return {
+                    'curve-style': 'taxi',
+                    'taxi-direction': 'horizontal',
+                    'taxi-turn': '50%',
+                    'taxi-turn-min-distance': 10
+                };
+            }
+
+            if (lineStyle === 'Straight') {
+                return {
+                    'curve-style': 'straight'
+                };
+            }
+
+            return {
+                'curve-style': 'unbundled-bezier',
+                'control-point-distances': (edge: any) => Number(edge.data('transmissionChainCurveDistance')) || 0,
+                'control-point-weights': (edge: any) => Number(edge.data('transmissionChainCurveWeight')) || 0.5,
+                'edge-distances': 'intersection'
             };
         }
 
@@ -1968,8 +2009,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     console.log('--- TwoD mapDataToCytoscapeElements called');
         // Create a set to track unique parent nodes
     const parentNodes = new Set();
+    const transmissionChainCurveData = this.getTransmissionChainEdgeCurveData(data.links, data.nodes);
 
-    const edges = data.links.flatMap((link: any) => {
+    const edges = data.links.flatMap((link: any, linkIndex: number) => {
+        const source = this.getLinkEndpointId(link.source);
+        const target = this.getLinkEndpointId(link.target);
+        const edgeId = String(link.id ?? `${source}-${target}-${linkIndex}`);
+        const curveData = transmissionChainCurveData.get(edgeId);
         const linkOrigins = Array.isArray(link.origin)
             ? link.origin
             : link.origin
@@ -1980,7 +2026,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 data: {
                     // Include any additional edge-specific data properties
                     ...link,
-                    id: index > 0 ? `${link.id}-2`: link.id,
+                    id: index > 0 ? `${edgeId}-2`: edgeId,
                     source: link.source,
                     target: link.target,
                     lineSelectedColor: this.widgets['selected-color'],
@@ -1989,14 +2035,17 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     lineOpacity: this.getLinkColor({origin: originItem}).opacity, // Default to fully opaque if not specified
                     width: this.getLinkWidth(link),
                     origin: [originItem],
-                    secondLink: index > 0 ? true: false
+                    secondLink: index > 0 ? true: false,
+                    transmissionChainCurveDistance: curveData?.distance ?? 0,
+                    transmissionChainCurveWeight: curveData?.weight ?? 0.5,
+                    transmissionChainFanoutGroupSize: curveData?.fanoutGroupSize ?? 1
                 }
             }));
         }
         return [{ data: {
             // Include any additional edge-specific data properties
             ...link,
-            id: link.id,
+            id: edgeId,
             source: link.source,
             target: link.target,
             lineSelectedColor: this.widgets['selected-color'],
@@ -2005,6 +2054,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             lineOpacity: this.getLinkColor(link).opacity, // Default to fully opaque if not specified
             width: this.getLinkWidth(link),
             secondLink: false,
+            transmissionChainCurveDistance: curveData?.distance ?? 0,
+            transmissionChainCurveWeight: curveData?.weight ?? 0.5,
+            transmissionChainFanoutGroupSize: curveData?.fanoutGroupSize ?? 1
         }}]
     });
 
@@ -6413,6 +6465,149 @@ private updateArrowStyles(): void {
         }
     }
 
+    private getStableFanoutSign(id: string): number {
+        let hash = 0;
+        for (let index = 0; index < id.length; index++) {
+            hash = ((hash << 5) - hash) + id.charCodeAt(index);
+            hash |= 0;
+        }
+
+        return hash % 2 === 0 ? 1 : -1;
+    }
+
+    private getTransmissionChainCurveDistance(index: number, total: number, id: string): number {
+        const baseDistance = total <= 1 ? 12 : 16;
+        const stepDistance = total <= 3 ? 18 : 14;
+        const centeredIndex = index - ((total - 1) / 2);
+
+        if (Math.abs(centeredIndex) < 0.001) {
+            return this.getStableFanoutSign(id) * baseDistance;
+        }
+
+        const distance = Math.sign(centeredIndex) * (baseDistance + (Math.abs(centeredIndex) * stepDistance));
+        return Math.max(-96, Math.min(96, distance));
+    }
+
+    private getTransmissionChainEdgeCurveData(links: any[], nodes: any[]): Map<string, { distance: number; weight: number; fanoutGroupSize: number }> {
+        const edgeCurveData = new Map<string, { distance: number; weight: number; fanoutGroupSize: number }>();
+        if (!this.isTransmissionChainView || !this.isTimelineLayoutActive()) {
+            return edgeCurveData;
+        }
+        const lineStyle = this.getTransmissionChainLineStyle();
+        if (lineStyle !== 'Curved' && lineStyle !== 'Fanout') {
+            return edgeCurveData;
+        }
+
+        const nodePositionById = new Map<string, { x: number; y: number }>();
+        nodes.forEach(node => {
+            nodePositionById.set(this.getNodeId(node), {
+                x: Number(node.x) || 0,
+                y: Number(node.y) || 0
+            });
+        });
+
+        const entries = links.map((link, index) => {
+            const source = this.getLinkEndpointId(link.source);
+            const target = this.getLinkEndpointId(link.target);
+            const id = String(link.id ?? `${source}-${target}-${index}`);
+            const pairKey = [source, target].sort().join('|');
+
+            return { link, id, source, target, pairKey };
+        });
+
+        if (lineStyle === 'Curved') {
+            entries.forEach(entry => {
+                edgeCurveData.set(entry.id, {
+                    distance: 24,
+                    weight: 0.5,
+                    fanoutGroupSize: 1
+                });
+            });
+
+            return edgeCurveData;
+        }
+
+        const endpointGroups = new Map<string, typeof entries>();
+        const pairGroups = new Map<string, typeof entries>();
+        entries.forEach(entry => {
+            endpointGroups.set(entry.source, [...(endpointGroups.get(entry.source) || []), entry]);
+            endpointGroups.set(entry.target, [...(endpointGroups.get(entry.target) || []), entry]);
+            pairGroups.set(entry.pairKey, [...(pairGroups.get(entry.pairKey) || []), entry]);
+        });
+
+        const fanoutGroups = new Map<string, { entries: typeof entries; weight: number; endpointId?: string }>();
+        entries.forEach(entry => {
+            const pairGroup = pairGroups.get(entry.pairKey) || [];
+            const sourceGroup = endpointGroups.get(entry.source) || [];
+            const targetGroup = endpointGroups.get(entry.target) || [];
+
+            if (pairGroup.length > 1) {
+                fanoutGroups.set(`pair:${entry.pairKey}`, {
+                    entries: pairGroup,
+                    weight: 0.5
+                });
+                return;
+            }
+
+            if (sourceGroup.length >= targetGroup.length) {
+                fanoutGroups.set(`source:${entry.source}`, {
+                    entries: sourceGroup,
+                    weight: 0.35,
+                    endpointId: entry.source
+                });
+                return;
+            }
+
+            fanoutGroups.set(`target:${entry.target}`, {
+                entries: targetGroup,
+                weight: 0.65,
+                endpointId: entry.target
+            });
+        });
+
+        fanoutGroups.forEach(group => {
+            const sortedEntries = [...group.entries].sort((a, b) => {
+                if (group.endpointId) {
+                    const aOtherId = a.source === group.endpointId ? a.target : a.source;
+                    const bOtherId = b.source === group.endpointId ? b.target : b.source;
+                    const aOther = nodePositionById.get(aOtherId) || { x: 0, y: 0 };
+                    const bOther = nodePositionById.get(bOtherId) || { x: 0, y: 0 };
+                    const xDiff = aOther.x - bOther.x;
+                    if (Math.abs(xDiff) > 0.001) return xDiff;
+                    const yDiff = aOther.y - bOther.y;
+                    if (Math.abs(yDiff) > 0.001) return yDiff;
+                }
+
+                return a.id.localeCompare(b.id);
+            });
+
+            sortedEntries.forEach((entry, index) => {
+                if (edgeCurveData.has(entry.id)) {
+                    return;
+                }
+
+                edgeCurveData.set(entry.id, {
+                    distance: this.getTransmissionChainCurveDistance(index, sortedEntries.length, entry.id),
+                    weight: group.weight,
+                    fanoutGroupSize: sortedEntries.length
+                });
+            });
+        });
+
+        return edgeCurveData;
+    }
+
+    onTransmissionChainLineStyleChange(style: TransmissionChainLineStyle): void {
+        const nextStyle = this.isTransmissionChainLineStyle(style) ? style : 'Stepped';
+        this.widgets['transmission-chain-line-style'] = nextStyle;
+        this.SelectedTransmissionChainLineStyleVariable = nextStyle;
+        this.updateEdgeRoutingStyles();
+
+        if (this.isTimelineLayoutActive()) {
+            this.updateLayout();
+        }
+    }
+
     onTransmissionChainLinkOriginsChange(origins: string[]): void {
         this.widgets['transmission-chain-link-origins'] = Array.isArray(origins)
             ? origins.map(origin => String(origin || '').trim()).filter(origin => origin.length > 0)
@@ -6421,6 +6616,45 @@ private updateArrowStyles(): void {
             ...(this.widgets['transmission-chain-link-origins'] || [])
         ];
         this.updateLayout();
+    }
+
+    isTransmissionChainLinkOriginSelected(origin: string): boolean {
+        return this.SelectedTransmissionChainLinkOriginVariables.includes(String(origin || '').trim());
+    }
+
+    onTransmissionChainLinkOriginCheckboxChange(origin: string, event: Event): void {
+        const normalizedOrigin = String(origin || '').trim();
+        const checked = Boolean((event.target as HTMLInputElement)?.checked);
+        const selectedOrigins = new Set(this.SelectedTransmissionChainLinkOriginVariables);
+
+        if (checked && normalizedOrigin) {
+            selectedOrigins.add(normalizedOrigin);
+        } else {
+            selectedOrigins.delete(normalizedOrigin);
+        }
+
+        this.onTransmissionChainLinkOriginsChange([...selectedOrigins]);
+    }
+
+    selectAllTransmissionChainLinkOrigins(): void {
+        this.onTransmissionChainLinkOriginsChange(
+            this.TransmissionChainLinkOriginOptions.map(option => String(option.value || '').trim()).filter(Boolean)
+        );
+    }
+
+    clearTransmissionChainLinkOrigins(): void {
+        this.onTransmissionChainLinkOriginsChange([]);
+    }
+
+    getTransmissionChainLinkOriginSelectionSummary(): string {
+        const selectedCount = this.SelectedTransmissionChainLinkOriginVariables.length;
+        const totalCount = this.TransmissionChainLinkOriginOptions.length;
+
+        if (totalCount === 0) {
+            return 'No link lists';
+        }
+
+        return `${selectedCount} of ${totalCount} selected`;
     }
 
     /**
@@ -7123,6 +7357,7 @@ scaleLinkWidth() {
                 : 'network-timeline-vertical-spacing'
         ]);
         if (this.isTransmissionChainView) {
+            this.SelectedTransmissionChainLineStyleVariable = this.getTransmissionChainLineStyle();
             this.syncTransmissionChainLinkOriginOptions();
             this.openTransmissionChainInitialSettingsIfNeeded();
         }

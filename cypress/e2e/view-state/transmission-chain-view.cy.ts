@@ -18,6 +18,9 @@ const leafNodes = (cyInstance: Core) =>
     .nodes(':visible')
     .filter((node) => node.children().length === 0 && !node.hasClass('parent') && !node.hasClass('hidden'));
 
+const getDataNodeId = (node: any): string =>
+  String(node?.id ?? node?.Id ?? node?.ID ?? node?.name ?? node?.Name ?? '');
+
 const openSettings = (): void => {
   cy.get('body').then(($body) => {
     const isAlreadyOpen = $body.find('.p-dialog-title:contains("Transmission Chain View Settings"):visible').length > 0;
@@ -37,6 +40,22 @@ const selectDateField = (): void => {
   cy.contains('li[role="option"]', dateField, { timeout: 10000 }).click({ force: true });
   cy.window().its('commonService.session.style.widgets.transmission-chain-date-field').should('equal', dateField);
   cy.get('.timeline-axis-overlay:not(.hidden)', { timeout: 20000 }).should('exist');
+};
+
+const openDisplayPanel = (): void => {
+  cy.get('@dialogContainer').then(($dialog) => {
+    if ($dialog.find('#transmission-chain-line-style:visible').length === 0) {
+      cy.wrap($dialog).contains('p-accordion-header', 'Display').click({ force: true });
+    }
+  });
+  cy.get('@dialogContainer').find('#transmission-chain-line-style', { timeout: 10000 }).should('be.visible');
+};
+
+const selectLineStyle = (label: string, value: string): void => {
+  openDisplayPanel();
+  cy.get('@dialogContainer').find('#transmission-chain-line-style').click({ force: true });
+  cy.contains('li[role="option"]', label, { timeout: 10000 }).click({ force: true });
+  cy.window().its('commonService.session.style.widgets.transmission-chain-line-style').should('equal', value);
 };
 
 const getFirstVisibleOrigin = (): Cypress.Chainable<string> =>
@@ -59,10 +78,20 @@ describe('Transmission Chain View', () => {
 
   it('opens as a dedicated view with transmission chain settings', () => {
     cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', 'Transmission Chain View');
-    cy.get('@dialogContainer').contains('p-accordion-panel', 'Layout').should('be.visible');
+    cy.get('@dialogContainer').contains('p-accordion-header', 'Layout').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-date-field').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-link-origins').should('exist');
+    cy.get('@dialogContainer').find('#transmission-chain-link-origins input[type="checkbox"]').should('have.length.greaterThan', 0);
     cy.get('@dialogContainer').find('#transmission-chain-vertical-spacing').should('exist');
+    openDisplayPanel();
+    cy.get('@dialogContainer').find('#transmission-chain-line-style').should('contain.text', 'Stepped');
+    cy.get('@dialogContainer').find('#transmission-chain-line-style').click({ force: true });
+    cy.contains('li[role="option"]', 'Stepped').should('be.visible');
+    cy.contains('li[role="option"]', 'Straight').should('be.visible');
+    cy.contains('li[role="option"]', 'Curved').should('be.visible');
+    cy.contains('li[role="option"]', 'Fan-out Curves').should('be.visible');
+    cy.get('body').type('{esc}');
+    cy.window().its('commonService.session.style.widgets.transmission-chain-line-style').should('equal', 'Stepped');
     cy.get('@dialogContainer').find('#network-layout-mode').should('not.exist');
     cy.get('@dialogContainer').find('#network-node-collapse-enabled').should('not.exist');
     getTransmissionCy().should((cyInstance) => {
@@ -90,7 +119,76 @@ describe('Transmission Chain View', () => {
       expect(datedNodes.length, 'dated nodes').to.be.greaterThan(1);
       expect(datedNodes[0].x, `${datedNodes[0].id} should be left of ${datedNodes[datedNodes.length - 1].id}`)
         .to.be.lessThan(datedNodes[datedNodes.length - 1].x);
-      expect(cyInstance.edges(':visible').first().style('curve-style'), 'edge routing').to.equal('taxi');
+      const visibleEdges = cyInstance.edges(':visible');
+      expect(visibleEdges.length, 'visible chain links').to.be.greaterThan(0);
+      expect(visibleEdges.first().style('curve-style'), 'edge routing').to.equal('taxi');
+    });
+  });
+
+  it('renders the curved line style with manual curve offsets', () => {
+    selectDateField();
+    selectLineStyle('Curved', 'Curved');
+
+    getTransmissionCy().should((cyInstance) => {
+      const visibleEdges = cyInstance.edges(':visible');
+      const firstEdge = visibleEdges.first() as any;
+
+      expect(visibleEdges.length, 'visible chain links').to.be.greaterThan(0);
+      expect(firstEdge.style('curve-style'), 'curved edge routing').to.equal('unbundled-bezier');
+      expect(Math.abs(Number(firstEdge.data('transmissionChainCurveDistance'))), 'curved chain link distance')
+        .to.be.greaterThan(0);
+    });
+  });
+
+  it('fans out shared-endpoint chain links', () => {
+    selectDateField();
+    selectLineStyle('Fan-out Curves', 'Fanout');
+
+    const syntheticOrigin = 'Synthetic Fanout Links';
+    cy.window().then((win: any) => {
+      const datedNodes = win.commonService.session.data.nodes
+        .filter((node: any) => getDataNodeId(node) && Number.isFinite(Date.parse(String(node[dateField]))));
+
+      expect(datedNodes.length, 'dated source and targets for fanout links').to.be.greaterThan(2);
+      const [sourceNode, firstTargetNode, secondTargetNode] = datedNodes;
+      const source = getDataNodeId(sourceNode);
+      const firstTarget = getDataNodeId(firstTargetNode);
+      const secondTarget = getDataNodeId(secondTargetNode);
+
+      win.commonService.session.data.links.push(
+        {
+          id: 'transmission-chain-fanout-a',
+          source,
+          target: firstTarget,
+          origin: [syntheticOrigin],
+          visible: true,
+          distance: 0,
+        },
+        {
+          id: 'transmission-chain-fanout-b',
+          source,
+          target: secondTarget,
+          origin: [syntheticOrigin],
+          visible: true,
+          distance: 0,
+        },
+      );
+      win.commonService.visuals.transmissionChain.onTransmissionChainLinkOriginsChange([syntheticOrigin]);
+    });
+
+    getTransmissionCy().should((cyInstance) => {
+      const fannedEdges = cyInstance.edges(':visible')
+        .filter((edge) => String(edge.id()).startsWith('transmission-chain-fanout-'));
+      const distances = fannedEdges.toArray()
+        .map((edge) => Number(edge.data('transmissionChainCurveDistance')));
+
+      expect(fannedEdges.length, 'synthetic fanout edges').to.equal(2);
+      expect(distances.every((distance) => Math.abs(distance) > 0), 'nonzero fanout distances').to.equal(true);
+      expect(new Set(distances).size, 'distinct fanout distances').to.be.greaterThan(1);
+      fannedEdges.forEach((edge) => {
+        expect(edge.style('curve-style'), `${edge.id()} routing`).to.equal('unbundled-bezier');
+        expect(edge.data('transmissionChainFanoutGroupSize'), `${edge.id()} fanout group size`).to.equal(2);
+      });
     });
   });
 

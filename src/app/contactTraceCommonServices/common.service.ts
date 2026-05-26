@@ -494,6 +494,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'network-timeline-vertical-spacing': 100,
             'transmission-chain-date-field': 'None',
             'transmission-chain-link-origins': null,
+            'transmission-chain-line-style': 'Stepped',
             'transmission-chain-vertical-spacing': 100,
             'node-charge': 200,
             'node-border-width' : 2.0,
