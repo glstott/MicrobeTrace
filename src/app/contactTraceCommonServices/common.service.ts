@@ -1,5 +1,5 @@
 import { Injectable, OnInit, Output, EventEmitter, Injector, Directive } from '@angular/core';
-import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import * as d3 from 'd3';
 import * as patristic from 'patristic';
 import * as Papa from 'papaparse';
@@ -168,23 +168,6 @@ export class CommonService extends AppComponentBase implements OnInit {
     // Set this to true to enable the debug mode/console logs to appear
     public debugMode: boolean = false;
 
-    private linkElementSource = new BehaviorSubject<HTMLElement | null>(null);
-    private nodeElementSource = new BehaviorSubject<HTMLElement | null>(null);
-
-    currentLinkTableElement = this.linkElementSource.asObservable();
-
-    currentNodeTableElement = this.nodeElementSource.asObservable();
-
-
-    setLinkTableElement(element: HTMLElement | null) {
-        this.linkElementSource.next(element);
-    }
-
-    setNodeTableElement(element: HTMLElement | null) {
-        this.nodeElementSource.next(element);
-    }
-
-
     // Using lodash's debounce, for example
     public _debouncedUpdateNetworkVisuals = _.debounce(() => {
         this.updateNetworkVisuals();
@@ -202,9 +185,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         SelectedLinkSortVariable: 'Distance',
         SelectedLinkThresholdVariable: 0.015,
         SelectedDistanceMetricVariable: 'tn93',
-        SelectedLinkColorTableTypesVariable: 'Hide',
-        SelectedNodeColorTableTypesVariable: 'Hide',
-        SelectedNodeShapeTableTypesVariable: 'Hide',
+        SelectedLinkColorTableTypesVariable: 'Dock',
+        SelectedNodeColorTableTypesVariable: 'Dock',
+        SelectedNodeShapeTableTypesVariable: 'Dock',
 
         SelectedColorVariable: '#ff8300',
         SelectedBackgroundColorVariable: '#ffffff',
@@ -523,7 +506,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'node-symbol-table-counts': true,
             'node-symbol-table-frequencies': false,
             'node-symbol-variable': 'None',
-            'node-symbol-table-visible': 'Hide',
+            'node-symbol-table-visible': 'Dock',
             'node-timeline-variable' : 'None',
             'node-tooltip-variable': ['_id'],
             'physics-tree-branch-type': 'Straight',
@@ -547,7 +530,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'polygon-label-orientation' : 'top',
             'polygons-label-size' : 16,
             'polygons-show' : false,
-            'polygon-color-table-visible': false,
+            'polygon-color-table-visible': 'Dock',
             'reference-source-file': true,
             'reference-source-first': false,
             'reference-source-consensus': false,
@@ -2962,6 +2945,8 @@ align(params): Promise<any> {
     } else {
       this.session.warnings.push(warning);
     }
+
+    this.store.triggerWarningsChanged();
   }
 
   // Compute links using a fresh links worker
@@ -3847,7 +3832,9 @@ align(params): Promise<any> {
             }));
 
             this.temp.polygonGroups = polygonGroups;
-            this.session.style.widgets['polygon-color-table-visible'] = true;
+            if (this.session.style.widgets['polygon-color-table-visible'] == null) {
+                this.session.style.widgets['polygon-color-table-visible'] = 'Dock';
+            }
         }
 
         const result = this.colorMappingService.createPolygonColorMap(

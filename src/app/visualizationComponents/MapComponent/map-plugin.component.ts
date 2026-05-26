@@ -46,6 +46,11 @@ class LongLatClass implements LongLatInterface {
 type AdministrativeMapLayer = 'countries' | 'states' | 'counties';
 type FloorplanBackgroundKind = 'geojson' | 'image' | 'none';
 type ManualPositionMode = 'floorplan' | 'map';
+type SelectedMapNodeExpansionGroup = {
+    key: string;
+    parentCluster: any;
+    selectedMarkers: MarkerWithData[];
+};
 
 const MAPBOX_TOKEN = 'sk.eyJ1IjoicndhdHR5IiwiYSI6ImNrY2RuMWlzcDAwMmUyc3A5ejl3ODEzMXoifQ.qpXOouVsI6P8-HOHUWofuQ';
 const MAPBOX_ATTRIBUTION = [
@@ -131,6 +136,8 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
     private initialSettingsLoaded = false;
     private initialSettingsLoadScheduled = false;
     private applyingSettings = false;
+    private markerClusterReady = false;
+    private pendingMapRedraw = false;
 
     SelectedNetworkExportScaleVariable: any = 1;
     SelectedNetworkExportQualityVariable: any = 0.92;
@@ -292,6 +299,12 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
     private readonly manualMapClickHandler = (event: L.LeafletMouseEvent) => this.onManualPositionMapClick(event);
     private readonly selectedNodeAutoExpandMaxAttempts: number = 10;
     private readonly selectedNodeAutoExpandRetryDelayMs: number = 50;
+    private readonly selectedNodeExpansionCircleFootSeparation: number = 25;
+    private readonly selectedNodeExpansionCircleStartAngle: number = 0;
+    private readonly selectedNodeExpansionSpiralFootSeparation: number = 28;
+    private readonly selectedNodeExpansionSpiralLengthStart: number = 11;
+    private readonly selectedNodeExpansionSpiralLengthFactor: number = 5;
+    private readonly selectedNodeExpansionCircleSpiralSwitchover: number = 9;
 
     nodesWithoutLoc: {index: number, ID: string}[] = [];
     showPopupMessage: boolean = false;
@@ -306,6 +319,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
     private readonly mapNodeIconSize: number = 24;
     private mapNodeIconCache: Record<string, L.Icon> = {};
     private mapNodeMarkersById: Record<string, MarkerWithData> = Object.create(null);
+    private selectedNodeExpansionGroup: FeatureGroup = featureGroup();
+    private selectedNodeExpansionMarkerIdsByCluster: Record<string, string[]> = Object.create(null);
+    private selectedNodeExpansionParentClusters: any[] = [];
 
     public NodeMapSettingsExportDialogSettings: DialogSettings;
 
@@ -406,7 +422,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             that.syncManualPositionSelectionFromNodeSelection();
             that.refreshManualPositionControls();
             that.drawNodes(false);
-            that.autoExpandSelectedNode();
+            that.autoExpandSelectedNodes();
         });
 
          // Used for timeline mode, TODO: update to use an RxJS Observable
@@ -518,16 +534,19 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         this.lmap.on('click', this.manualMapClickHandler);
         this.ensureAdminLabelPane();
         this.tryLoadInitialSettings();
+        this.flushPendingMapRedraw();
     }
 
     onMarkerClusterReady(markerCluster: MarkerClusterGroup) {
         this.layers.markerClusterGroup = markerCluster;
+        this.markerClusterReady = true;
         this.tryLoadInitialSettings();
-        this.autoExpandSelectedNode();
+        this.flushPendingMapRedraw();
+        this.autoExpandSelectedNodes();
     }
 
     private tryLoadInitialSettings(): void {
-        if (this.initialSettingsLoaded || this.initialSettingsLoadScheduled || !this.lmap || !this.layers.markerClusterGroup) {
+        if (this.initialSettingsLoaded || this.initialSettingsLoadScheduled || !this.isMapReadyForDrawing()) {
             return;
         }
 
@@ -540,9 +559,47 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             } finally {
                 this.applyingSettings = false;
                 this.initialSettingsLoadScheduled = false;
+                this.flushPendingMapRedraw();
                 this.cdref.detectChanges();
             }
         }, 0);
+    }
+
+    private isMapReadyForDrawing(): boolean {
+        return !!this.lmap && this.markerClusterReady && !!this.layers.markerClusterGroup;
+    }
+
+    private deferMapRedraw(): void {
+        this.pendingMapRedraw = true;
+    }
+
+    private flushPendingMapRedraw(): void {
+        if (!this.pendingMapRedraw || !this.initialSettingsLoaded || !this.isMapReadyForDrawing()) {
+            return;
+        }
+
+        this.pendingMapRedraw = false;
+        this.updateVisualization();
+    }
+
+    private addLayerToMap(layer?: Layer): boolean {
+        if (!layer || !this.isMapReadyForDrawing()) {
+            this.deferMapRedraw();
+            return false;
+        }
+
+        this.lmap.addLayer(layer);
+        return true;
+    }
+
+    private addMarkerClusterLayers(features: Layer[]): boolean {
+        if (!this.isMapReadyForDrawing()) {
+            this.deferMapRedraw();
+            return false;
+        }
+
+        this.layers.markerClusterGroup.addLayers(features);
+        return true;
     }
 
     private markMapRendered(): void {
@@ -600,7 +657,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         }
     }
 
-    private canAutoExpandSelectedNode(): boolean {
+    private canAutoExpandSelectedNodes(): boolean {
         this.ensureMapAutoExpandSelectedSetting();
 
         return !!this.lmap
@@ -608,6 +665,30 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             && this.commonService.session.style.widgets['map-node-show'] === true
             && this.commonService.session.style.widgets['map-collapsing-on'] === true
             && this.commonService.session.style.widgets['map-auto-expand-selected'] === true;
+    }
+
+    private clearSelectedNodeExpansionOverlay(clearNativeCluster: boolean = false): void {
+        this.selectedNodeExpansionMarkerIdsByCluster = Object.create(null);
+        this.selectedNodeExpansionParentClusters.forEach(parentCluster => {
+            if (parentCluster && parentCluster.setOpacity) {
+                parentCluster.setOpacity(1);
+            }
+        });
+        this.selectedNodeExpansionParentClusters = [];
+
+        const markerClusterGroupState = this.layers.markerClusterGroup as any;
+        if (clearNativeCluster && markerClusterGroupState?._spiderfied && markerClusterGroupState.unspiderfy) {
+            markerClusterGroupState.unspiderfy();
+        }
+
+        if (!this.selectedNodeExpansionGroup) {
+            return;
+        }
+
+        this.selectedNodeExpansionGroup.clearLayers();
+        if (this.lmap && this.lmap.hasLayer(this.selectedNodeExpansionGroup)) {
+            this.lmap.removeLayer(this.selectedNodeExpansionGroup);
+        }
     }
 
     private syncMapNodeSelectionFromSessionNodes(): void {
@@ -653,77 +734,215 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         this.SelectedManualPositionNodeId = String(selectedNodes[0]._id);
     }
 
-    private autoExpandSelectedNode(): void {
-        if (!this.canAutoExpandSelectedNode()) {
-            return;
-        }
-
-        const selectedNode = this.nodes.find(node =>
-            node.selected
-            && node.visible !== false
-            && this.isFiniteMapCoordinate(node._jlat)
-            && this.isFiniteMapCoordinate(node._jlon)
-            && node._id !== undefined
-            && this.mapNodeMarkersById[String(node._id)]
-        );
-
-        if (!selectedNode) {
-            return;
-        }
-
-        const selectedNodeId = String(selectedNode._id);
-        this.scheduleSelectedNodeClusterExpansion(selectedNodeId, 0);
+    private getSelectedExpandableMapNodeIds(): string[] {
+        return this.nodes
+            .filter(node =>
+                node.selected
+                && node.visible !== false
+                && this.isFiniteMapCoordinate(node._jlat)
+                && this.isFiniteMapCoordinate(node._jlon)
+                && node._id !== undefined
+                && this.mapNodeMarkersById[String(node._id)]
+            )
+            .map(node => String(node._id));
     }
 
-    private scheduleSelectedNodeClusterExpansion(nodeId: string, attempt: number): void {
+    private autoExpandSelectedNodes(): void {
+        this.clearSelectedNodeExpansionOverlay(true);
+
+        if (!this.canAutoExpandSelectedNodes()) {
+            return;
+        }
+
+        const selectedNodeIds = this.getSelectedExpandableMapNodeIds();
+
+        if (selectedNodeIds.length === 0) {
+            return;
+        }
+
+        this.scheduleSelectedNodeClusterExpansion(selectedNodeIds, 0);
+    }
+
+    private scheduleSelectedNodeClusterExpansion(nodeIds: string[], attempt: number): void {
         const delay = attempt === 0 ? 0 : this.selectedNodeAutoExpandRetryDelayMs;
-        window.setTimeout(() => this.expandSelectedMapNodeCluster(nodeId, attempt), delay);
+        const uniqueNodeIds = Array.from(new Set(nodeIds));
+        window.setTimeout(() => this.expandSelectedMapNodeClusters(uniqueNodeIds, attempt), delay);
     }
 
-    private retrySelectedNodeClusterExpansion(nodeId: string, attempt: number): void {
+    private retrySelectedNodeClusterExpansion(nodeIds: string[], attempt: number): void {
         if (attempt >= this.selectedNodeAutoExpandMaxAttempts) {
             return;
         }
 
-        this.scheduleSelectedNodeClusterExpansion(nodeId, attempt + 1);
+        this.scheduleSelectedNodeClusterExpansion(nodeIds, attempt + 1);
     }
 
-    private expandSelectedMapNodeCluster(nodeId: string, attempt: number = 0): void {
-        if (!this.canAutoExpandSelectedNode()) {
+    private expandSelectedMapNodeClusters(nodeIds: string[], attempt: number = 0): void {
+        if (!this.canAutoExpandSelectedNodes()) {
+            this.clearSelectedNodeExpansionOverlay();
             return;
         }
 
-        const marker = this.mapNodeMarkersById[nodeId];
         const markerClusterGroup = this.layers.markerClusterGroup;
         const markerClusterGroupState = markerClusterGroup as any;
 
-        if (!marker || !markerClusterGroupState._map || !markerClusterGroup.hasLayer(marker)) {
-            this.retrySelectedNodeClusterExpansion(nodeId, attempt);
+        if (!markerClusterGroupState._map) {
+            this.retrySelectedNodeClusterExpansion(nodeIds, attempt);
             return;
         }
 
         if (markerClusterGroupState._inZoomAnimation) {
-            this.retrySelectedNodeClusterExpansion(nodeId, attempt);
+            this.retrySelectedNodeClusterExpansion(nodeIds, attempt);
             return;
         }
 
-        const visibleParent = markerClusterGroup.getVisibleParent(marker);
-        if (!visibleParent) {
-            this.retrySelectedNodeClusterExpansion(nodeId, attempt);
+        const collapsedGroupsByKey: Record<string, SelectedMapNodeExpansionGroup> = Object.create(null);
+
+        for (const nodeId of nodeIds) {
+            const marker = this.mapNodeMarkersById[nodeId];
+            if (!marker || !markerClusterGroup.hasLayer(marker)) {
+                this.retrySelectedNodeClusterExpansion(nodeIds, attempt);
+                return;
+            }
+
+            const visibleParent = markerClusterGroup.getVisibleParent(marker);
+            if (!visibleParent) {
+                this.retrySelectedNodeClusterExpansion(nodeIds, attempt);
+                return;
+            }
+
+            const parentCluster = visibleParent !== marker && (visibleParent as any).spiderfy
+                ? visibleParent as any
+                : null;
+
+            if (!parentCluster) {
+                continue;
+            }
+
+            const groupKey = String(L.stamp(parentCluster));
+            if (!collapsedGroupsByKey[groupKey]) {
+                collapsedGroupsByKey[groupKey] = {
+                    key: groupKey,
+                    parentCluster,
+                    selectedMarkers: []
+                };
+            }
+            collapsedGroupsByKey[groupKey].selectedMarkers.push(marker);
+        }
+
+        const collapsedGroups = Object.values(collapsedGroupsByKey);
+
+        if (collapsedGroups.length === 0) {
             return;
         }
 
-        const parentCluster = visibleParent !== marker && (visibleParent as any).spiderfy
-            ? visibleParent as any
-            : null;
-
-        if (!parentCluster) {
+        if (collapsedGroups.length === 1) {
+            const parentCluster = collapsedGroups[0].parentCluster;
+            parentCluster.spiderfy();
+            if (markerClusterGroupState._spiderfied !== parentCluster) {
+                this.retrySelectedNodeClusterExpansion(nodeIds, attempt);
+            }
             return;
         }
 
-        parentCluster.spiderfy();
-        if (markerClusterGroupState._spiderfied !== parentCluster) {
-            this.retrySelectedNodeClusterExpansion(nodeId, attempt);
+        if (markerClusterGroupState._spiderfied) {
+            markerClusterGroupState.unspiderfy();
+        }
+        this.renderSelectedNodeExpansionOverlay(collapsedGroups);
+    }
+
+    private getSelectedNodeExpansionPoints(count: number, center: L.Point): L.Point[] {
+        const multiplier = (this.layers.markerClusterGroup.options as any).spiderfyDistanceMultiplier || 1;
+
+        if (count >= this.selectedNodeExpansionCircleSpiralSwitchover) {
+            const separation = multiplier * this.selectedNodeExpansionSpiralFootSeparation;
+            const lengthFactor = multiplier * this.selectedNodeExpansionSpiralLengthFactor * Math.PI * 2;
+            const points: L.Point[] = [];
+            let angle = 0;
+            let length = multiplier * this.selectedNodeExpansionSpiralLengthStart;
+
+            for (let i = count; i >= 0; i--) {
+                if (i < count) {
+                    points[i] = new L.Point(
+                        center.x + length * Math.cos(angle),
+                        center.y + length * Math.sin(angle)
+                    ).round();
+                }
+                angle += separation / length + 0.0005 * i;
+                length += lengthFactor / angle;
+            }
+
+            return points;
+        }
+
+        const adjustedCenter = center.clone();
+        adjustedCenter.y += 10;
+        const circumference = Math.PI * 2;
+        const legLength = Math.max(
+            multiplier * this.selectedNodeExpansionCircleFootSeparation * (2 + count) / circumference,
+            35
+        );
+        const angleStep = circumference / count;
+        const points: L.Point[] = [];
+
+        for (let i = 0; i < count; i++) {
+            const angle = this.selectedNodeExpansionCircleStartAngle + i * angleStep;
+            points[i] = new L.Point(
+                adjustedCenter.x + legLength * Math.cos(angle),
+                adjustedCenter.y + legLength * Math.sin(angle)
+            ).round();
+        }
+
+        return points;
+    }
+
+    private renderSelectedNodeExpansionOverlay(groups: SelectedMapNodeExpansionGroup[]): void {
+        if (!this.lmap) {
+            return;
+        }
+
+        this.clearSelectedNodeExpansionOverlay();
+
+        const manualPositioningActive = this.isManualPositioningActive();
+        groups.forEach(group => {
+            const center = this.lmap.latLngToLayerPoint(group.parentCluster.getLatLng());
+            const childMarkers = (group.parentCluster.getAllChildMarkers
+                ? group.parentCluster.getAllChildMarkers()
+                : group.selectedMarkers
+            ).filter((marker: MarkerWithData) => marker && marker.data && marker.data._id !== undefined);
+            if (childMarkers.length === 0) {
+                return;
+            }
+
+            const points = this.getSelectedNodeExpansionPoints(childMarkers.length, center);
+            this.selectedNodeExpansionMarkerIdsByCluster[group.key] = childMarkers.map(marker => String(marker.data?._id));
+
+            if (group.parentCluster.setOpacity) {
+                group.parentCluster.setOpacity(0.3);
+                this.selectedNodeExpansionParentClusters.push(group.parentCluster);
+            }
+
+            childMarkers.forEach((sourceMarker, index) => {
+                const node = sourceMarker.data;
+                const isManualPositionTarget = manualPositioningActive
+                    && node
+                    && String(this.SelectedManualPositionNodeId) === String(node._id);
+                const expandedMarker = this.createMapNodeMarker(
+                    node,
+                    this.lmap.layerPointToLatLng(points[index]),
+                    isManualPositionTarget || node.selected === true,
+                    false,
+                    manualPositioningActive
+                );
+                (expandedMarker as any).selectedExpansionClusterId = group.key;
+                expandedMarker.setZIndexOffset(1000000);
+                this.selectedNodeExpansionGroup.addLayer(expandedMarker);
+            });
+        });
+
+        if (this.selectedNodeExpansionGroup.getLayers().length > 0) {
+            this.lmap.addLayer(this.selectedNodeExpansionGroup);
+            this.selectedNodeExpansionGroup.bringToFront();
         }
     }
 
@@ -1198,7 +1417,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             if (centerMap) {
                 this.centerMap();
             }
-            this.autoExpandSelectedNode();
+            this.autoExpandSelectedNodes();
         }, false);
     }
 
@@ -1446,6 +1665,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
      * Removes all nodes from map and remove _jlat and _jlon value for each node
      */
     clearAllMarkers_Leaflet() {
+        this.clearSelectedNodeExpansionOverlay();
         this.layers.removeNodes();
         this.nodes.forEach(node => {
             node._jlat = undefined;
@@ -1490,7 +1710,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             that.resetStack();
             that.refreshManualPositionControls();
             that.centerMap()
-            that.autoExpandSelectedNode();
+            that.autoExpandSelectedNodes();
             that.markMapRendered();
             }, false);
 
@@ -1545,18 +1765,20 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             this.onSatelliteChange('Hide', true);
             this.onBasemapChange('Hide', true);
             if (this.layers.countries.getLayers().length > 0) {
-                this.layers.countries.addTo(this.lmap);
-                this.updateAdminLabelLayer('countries', showLabels);
-                this.resetStack();
+                if (this.addLayerToMap(this.layers.countries)) {
+                    this.updateAdminLabelLayer('countries', showLabels);
+                    this.resetStack();
+                }
             } else {
                 //this.commonService.getMapData('countries.json', () => $(this).trigger('click'));
                 this.getMapData('countries.json', () => {
                     if (!this.commonService.session.style.widgets['map-countries-show']) {
                         return;
                     }
-                    this.layers.countries.addTo(this.lmap);
-                    this.updateAdminLabelLayer('countries', this.commonService.session.style.widgets['map-countries-labels-show']);
-                    this.resetStack();
+                    if (this.addLayerToMap(this.layers.countries)) {
+                        this.updateAdminLabelLayer('countries', this.commonService.session.style.widgets['map-countries-labels-show']);
+                        this.resetStack();
+                    }
                 });
 
             }
@@ -1578,17 +1800,19 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
 
         if (showStates) {
             if (this.layers.states.getLayers().length > 0) {
-                this.layers.states.addTo(this.lmap);
-                this.updateAdminLabelLayer('states', showLabels);
-                this.resetStack();
+                if (this.addLayerToMap(this.layers.states)) {
+                    this.updateAdminLabelLayer('states', showLabels);
+                    this.resetStack();
+                }
             } else {
                 this.getMapData('states.json', () => {
                     if (!this.commonService.session.style.widgets['map-states-show']) {
                         return;
                     }
-                    this.layers.states.addTo(this.lmap);
-                    this.updateAdminLabelLayer('states', this.commonService.session.style.widgets['map-states-labels-show']);
-                    this.resetStack();
+                    if (this.addLayerToMap(this.layers.states)) {
+                        this.updateAdminLabelLayer('states', this.commonService.session.style.widgets['map-states-labels-show']);
+                        this.resetStack();
+                    }
                 });
             }
         }
@@ -1608,17 +1832,19 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
 
         if (showCounties) {
             if (this.layers.counties.getLayers().length > 0) {
-                this.layers.counties.addTo(this.lmap);
-                this.updateAdminLabelLayer('counties', showLabels);
-                this.resetStack();
+                if (this.addLayerToMap(this.layers.counties)) {
+                    this.updateAdminLabelLayer('counties', showLabels);
+                    this.resetStack();
+                }
             } else {
                 this.getMapData('counties.json', () => {
                     if (!this.commonService.session.style.widgets['map-counties-show']) {
                         return;
                     }
-                    this.layers.counties.addTo(this.lmap);
-                    this.updateAdminLabelLayer('counties', this.commonService.session.style.widgets['map-counties-labels-show']);
-                    this.resetStack();
+                    if (this.addLayerToMap(this.layers.counties)) {
+                        this.updateAdminLabelLayer('counties', this.commonService.session.style.widgets['map-counties-labels-show']);
+                        this.resetStack();
+                    }
                 });
             }
         }
@@ -1641,15 +1867,17 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         if (!this.lmap) return;
 
         if (this.getAdminLabelLayer(name).getLayers().length > 0) {
-            this.getAdminLabelLayer(name).addTo(this.lmap);
-            this.resetStack();
+            if (this.addLayerToMap(this.getAdminLabelLayer(name))) {
+                this.resetStack();
+            }
             return;
         }
 
         this.getMapData(`${name}.json`, () => {
             if (this.commonService.session.style.widgets[widgetKey]) {
-                this.getAdminLabelLayer(name).addTo(this.lmap);
-                this.resetStack();
+                if (this.addLayerToMap(this.getAdminLabelLayer(name))) {
+                    this.resetStack();
+                }
             }
         });
     }
@@ -1685,8 +1913,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         if (e == "Show") {
             this.commonService.session.style.widgets['map-basemap-show'] = true;
 
-            this.layers.basemap.addTo(this.lmap);
-            this.layers.basemap.bringToFront();
+            if (this.addLayerToMap(this.layers.basemap)) {
+                this.layers.basemap.bringToFront();
+            }
 
             if (!isReload) {
                 this.onUserGeoJSONChange('Hide');
@@ -1719,8 +1948,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         if (e == "Show") {
             this.commonService.session.style.widgets['map-satellite-show'] = true;
 
-            this.layers.satellite.addTo(this.lmap);
-            this.layers.satellite.bringToFront();
+            if (this.addLayerToMap(this.layers.satellite)) {
+                this.layers.satellite.bringToFront();
+            }
 
             if (!isReload) {
                 this.onUserGeoJSONChange('Hide');
@@ -2120,7 +2350,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         }
 
         if (!this.lmap.hasLayer(this.layers.userGeoJSON)) {
-            this.layers.userGeoJSON.addTo(this.lmap);
+            if (!this.addLayerToMap(this.layers.userGeoJSON)) {
+                return;
+            }
         }
         this.layers.userGeoJSON.bringToBack();
     }
@@ -2146,7 +2378,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         }
 
         if (this.layers.floorplanImage && !this.lmap.hasLayer(this.layers.floorplanImage)) {
-            this.layers.floorplanImage.addTo(this.lmap);
+            if (!this.addLayerToMap(this.layers.floorplanImage)) {
+                return;
+            }
         }
         if (this.layers.floorplanImage) {
             this.layers.floorplanImage.bringToBack();
@@ -2332,9 +2566,10 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         if (this.SelectedNodeCollapsingTypeVariable == "On") {
             this.commonService.session.style.widgets['map-collapsing-on'] = true;
             this.drawNodes(false);
-            this.autoExpandSelectedNode();
+            this.autoExpandSelectedNodes();
         }
         else {
+            this.clearSelectedNodeExpansionOverlay(true);
             this.commonService.session.style.widgets['map-collapsing-on'] = false;
             this.drawNodes(false);
         }
@@ -2348,7 +2583,9 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         this.commonService.session.style.widgets['map-auto-expand-selected'] = this.SelectedNodeAutoExpandTypeVariable == "On";
 
         if (this.commonService.session.style.widgets['map-auto-expand-selected']) {
-            this.autoExpandSelectedNode();
+            this.autoExpandSelectedNodes();
+        } else {
+            this.clearSelectedNodeExpansionOverlay(true);
         }
     }
 
@@ -2585,7 +2822,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         this.setAdminLabelLayer(name, labelLayer);
 
         if (this.lmap && this.commonService.session.style.widgets[this.getAdminLabelWidgetKey(name)]) {
-            labelLayer.addTo(this.lmap);
+            this.addLayerToMap(labelLayer);
         }
     }
 
@@ -2913,6 +3150,11 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
      * Calls drawLeafletMapNodes() which removes all previous nodes from map, updates _j, _theta, _jlat, _jlon for each node
      */
     drawNodes(rerollNodes=true) {
+        if (!this.isMapReadyForDrawing()) {
+            this.deferMapRedraw();
+            return;
+        }
+
         this.drawLeafletMapNodes(rerollNodes);
     }
 
@@ -2921,6 +3163,8 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
      * @param rerollNodes if true rerolls node positioning
      */
     drawLeafletMapNodes(rerollNodes) {
+        this.clearSelectedNodeExpansionOverlay();
+
         if (rerollNodes) {
             this.clearAllMarkers();
             this.rerollNodes();
@@ -2939,6 +3183,49 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         // else {
             this.drawLeafletMapNodesList();
         //}
+    }
+
+    private createMapNodeMarker(
+        d: any,
+        latlng: L.LatLng,
+        isSelectedMarker: boolean,
+        draggable: boolean,
+        manualPositioningActive: boolean
+    ): MarkerWithData {
+        const fillcolor = this.commonService.session.style.widgets['node-color'];
+        const colorVariable = this.commonService.session.style.widgets['node-color-variable'];
+        const selectedColor = this.commonService.session.style.widgets['selected-color'];
+        const opacity = 1 - this.commonService.session.style.widgets['map-node-transparency'];
+        const nodeFillColor = colorVariable == 'None'
+            ? fillcolor
+            : this.commonService.temp.style.nodeColorMap(d[colorVariable]);
+        const shapeKey = this.getNodeShapeKey(d);
+
+        let nodeMarker: MarkerWithData = L.marker(latlng, {
+            icon: this.getMapNodeIcon(shapeKey, nodeFillColor, isSelectedMarker ? selectedColor : '#000000', isSelectedMarker),
+            opacity,
+            draggable
+        });
+
+        nodeMarker.data = d;
+
+        if (draggable) {
+            nodeMarker.on('dragend', (e) => this.onManualPositionMarkerDragEnd(e));
+        }
+
+        nodeMarker
+            .on('mouseover', (e) => this.showNodeTooltip(e))
+            .on('mouseout', (e) => this.hideTooltip())
+            .on('click', (e) => {
+                if (manualPositioningActive) {
+                    this.onManualPositionMarkerClick(e);
+                    return;
+                }
+
+                this.clickHandler(e);
+            });
+
+        return nodeMarker;
     }
 
     /*drawLeafletMapNodesGeospatial() {
@@ -2973,11 +3260,6 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
      * Draws nodes on the map
      */
     drawLeafletMapNodesList() {
-        var fillcolor = this.commonService.session.style.widgets['node-color'],
-            colorVariable = this.commonService.session.style.widgets['node-color-variable'],
-            selectedColor = this.commonService.session.style.widgets['selected-color'],
-            opacity = 1 - this.commonService.session.style.widgets['map-node-transparency'];
-
         var features: Layer[] = [];
         const manualPositioningActive = this.isManualPositioningActive();
 
@@ -2986,50 +3268,29 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             var d = this.nodes[i];
             if (!this.isFiniteMapCoordinate(d._jlat) || !this.isFiniteMapCoordinate(d._jlon) || d.visible === false) continue;
 
-            const nodeFillColor = colorVariable == 'None'
-                ? fillcolor
-                : this.commonService.temp.style.nodeColorMap(d[colorVariable]);
-            const shapeKey = this.getNodeShapeKey(d);
             const isManualPositionTarget = manualPositioningActive
                 && String(this.SelectedManualPositionNodeId) === String(d._id);
             const isSelectedMarker = isManualPositionTarget || d.selected === true;
 
-            let nodeMarker: MarkerWithData = L.marker(this.getRenderedMapLatLng(d._jlat, d._jlon), {
-                icon: this.getMapNodeIcon(shapeKey, nodeFillColor, isSelectedMarker ? selectedColor : '#000000', isSelectedMarker),
-                opacity: opacity,
-                draggable: manualPositioningActive
-            });
-
-            nodeMarker.data = d;
+            let nodeMarker = this.createMapNodeMarker(
+                d,
+                this.getRenderedMapLatLng(d._jlat, d._jlon),
+                isSelectedMarker,
+                manualPositioningActive,
+                manualPositioningActive
+            );
             if (d._id !== undefined) {
                 this.mapNodeMarkersById[String(d._id)] = nodeMarker;
             }
-
-            if (manualPositioningActive) {
-                nodeMarker.on('dragend', (e) => this.onManualPositionMarkerDragEnd(e));
-            }
-
-            nodeMarker
-                .on('mouseover', (e) => this.showNodeTooltip(e))
-                .on('mouseout', (e) => this.hideTooltip())
-                .on('click', (e) => {
-                    if (manualPositioningActive) {
-                        this.onManualPositionMarkerClick(e);
-                        return;
-                    }
-
-                    this.clickHandler(e);
-                });
-
 
             features.push(nodeMarker);
         }
 
         if (this.commonService.session.style.widgets['map-collapsing-on']) {
-            this.layers.markerClusterGroup.addLayers(features);
+            this.addMarkerClusterLayers(features);
         } else {
             this.layers.featureGroup = featureGroup(features);
-            this.lmap.addLayer(this.layers.featureGroup);
+            this.addLayerToMap(this.layers.featureGroup);
         }
     }
 
@@ -3037,6 +3298,11 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
      * Draws links on the map
     */
     drawLinks() {
+        if (!this.isMapReadyForDrawing()) {
+            this.deferMapRedraw();
+            return;
+        }
+
         this.layers.removeLinks();
     
         if (!this.commonService.session.style.widgets['map-link-show']) return;
@@ -3107,12 +3373,15 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         });
     
         this.layers.links = featureGroup(features);
-        if (this.lmap != undefined) this.lmap.addLayer(this.layers.links);
+        if (!this.addLayerToMap(this.layers.links)) {
+            return;
+        }
 
         if (this.commonService.session.style.widgets['map-node-show']) {
             if (this.commonService.session.style.widgets['map-collapsing-on']) {
                 // Not sure how to move collapsed nodes to front with bringToFront(), they use markerClusterGroup (from leaflet.markercluster plugin) instead of featureGroup (from base leaflet)
                 this.drawNodes(false)
+                this.autoExpandSelectedNodes();
             } else {
                 this.layers.featureGroup.bringToFront();
             }
@@ -3531,6 +3800,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
     }
 
     ngOnDestroy(): void {
+        this.clearSelectedNodeExpansionOverlay();
         if (this.lmap) {
             this.lmap.off('click', this.manualMapClickHandler);
         }
