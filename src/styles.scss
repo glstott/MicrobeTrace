@@ -37,10 +37,16 @@ p-dialog {
 }
 
 #global-settings-modal {
-    z-index: 1000;
+    z-index: 2200;
 }
 
-#global-settings-modal .p-dialog-content {
+#global-settings-modal .global-settings-dialog,
+.global-settings-dialog {
+    z-index: 2200 !important;
+}
+
+#global-settings-modal .p-dialog-content,
+#global-settings-modal .global-settings-dialog .p-dialog-content {
     max-height: calc(100vh - 120px);
     overflow-y: auto;
 }

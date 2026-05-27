@@ -36,6 +36,7 @@ const openSettings = (): void => {
 };
 
 const selectDateField = (): void => {
+  cy.get('@dialogContainer').contains('.nav-link', 'Layout').click({ force: true });
   cy.get('@dialogContainer').find('#transmission-chain-date-field', { timeout: 10000 }).click({ force: true });
   cy.contains('li[role="option"]', dateField, { timeout: 10000 }).click({ force: true });
   cy.window().its('commonService.session.style.widgets.transmission-chain-date-field').should('equal', dateField);
@@ -43,6 +44,7 @@ const selectDateField = (): void => {
 };
 
 const openDisplayPanel = (): void => {
+  cy.get('@dialogContainer').contains('.nav-link', 'Network').click({ force: true });
   cy.get('@dialogContainer').then(($dialog) => {
     if ($dialog.find('#transmission-chain-line-style:visible').length === 0) {
       cy.wrap($dialog).contains('p-accordion-header', 'Display').click({ force: true });
@@ -78,7 +80,7 @@ describe('Transmission Chain View', () => {
 
   it('opens as a dedicated view with transmission chain settings', () => {
     cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', 'Transmission Chain View');
-    cy.get('@dialogContainer').contains('p-accordion-header', 'Layout').should('exist');
+    cy.get('@dialogContainer').contains('.nav-link', 'Layout').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-date-field').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-link-origins').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-link-origins input[type="checkbox"]').should('have.length.greaterThan', 0);

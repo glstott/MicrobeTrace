@@ -308,6 +308,13 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     GlobalSettingsLinkColorDialogSettings: DialogSettings;
     GlobalSettingsNodeColorDialogSettings: DialogSettings;
     GlobalSettingsNodeShapeDialogSettings: DialogSettings;
+    GlobalSettingsDialogStyle: Record<string, string> = {};
+    readonly globalSettingsDialogBaseZIndex = 2200;
+    private readonly globalSettingsDialogDefaultWidth = 470;
+    private readonly globalSettingsDialogMinimumWidth = 400;
+    private readonly globalSettingsDialogDefaultHeight = 720;
+    private readonly globalSettingsDialogViewportMargin = 12;
+    private readonly globalSettingsDialogGap = 16;
 
     cachedGlobalSettingsVisibility: boolean = false;
     cachedGlobalSettingsLinkColorVisibility: boolean = false;
@@ -4147,6 +4154,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
         if (this.commonService.pendingDashboardRestore?.dashboardLayout?.root) {
             setTimeout(() => this.schedulePendingDashboardRestore(), 0);
+        } else {
+            setTimeout(() => this.ensureDockedKeyTablesViewOpenIfNeeded(), 0);
         }
         // }, 500);
         
@@ -4759,15 +4768,134 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
     }
 
+    private getVisibleSettingsDialogRect(): DOMRect | null {
+        const dialogs = Array.from(document.querySelectorAll<HTMLElement>('.p-dialog'));
+        const visibleSettingsDialogs = dialogs
+            .map((dialog, index) => {
+                const title = dialog.querySelector<HTMLElement>('.p-dialog-title')?.textContent?.trim() || '';
+                const rect = dialog.getBoundingClientRect();
+                const zIndex = Number.parseInt(window.getComputedStyle(dialog).zIndex || '0', 10) || 0;
+
+                return { dialog, index, rect, title, zIndex };
+            })
+            .filter(({ rect, title }) => (
+                title.endsWith('Settings') &&
+                title !== 'Global Settings' &&
+                rect.width > 0 &&
+                rect.height > 0
+            ));
+
+        if (visibleSettingsDialogs.length === 0) {
+            return null;
+        }
+
+        visibleSettingsDialogs.sort((a, b) => (b.zIndex - a.zIndex) || (b.index - a.index));
+
+        return visibleSettingsDialogs[0].rect;
+    }
+
+    private getGlobalSettingsDialogSize(anchorRect?: DOMRect): { width: number, height: number } {
+        const margin = this.globalSettingsDialogViewportMargin;
+        const availableWidth = Math.max(320, window.innerWidth - (margin * 2));
+        const availableHeight = Math.max(320, window.innerHeight - (margin * 2));
+        const currentDialog = document.querySelector<HTMLElement>('#global-settings-modal .p-dialog');
+        const currentRect = currentDialog?.getBoundingClientRect();
+        const measuredWidth = currentRect && currentRect.width > 0 ? currentRect.width : this.globalSettingsDialogDefaultWidth;
+        const measuredHeight = currentRect && currentRect.height > 0 ? currentRect.height : this.globalSettingsDialogDefaultHeight;
+        let width = Math.min(measuredWidth, availableWidth);
+
+        if (anchorRect) {
+            const rightSpace = window.innerWidth - anchorRect.right - margin - this.globalSettingsDialogGap;
+            const leftSpace = anchorRect.left - margin - this.globalSettingsDialogGap;
+            const usableSideSpace = Math.max(leftSpace, rightSpace);
+
+            if (usableSideSpace >= this.globalSettingsDialogMinimumWidth && width > usableSideSpace) {
+                width = usableSideSpace;
+            }
+        }
+
+        return {
+            width,
+            height: Math.min(measuredHeight, availableHeight)
+        };
+    }
+
+    private clampDialogPlacement(left: number, top: number, width: number, height: number): { left: number, top: number, right: number, bottom: number, width: number, height: number } {
+        const margin = this.globalSettingsDialogViewportMargin;
+        const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+        const maxTop = Math.max(margin, window.innerHeight - height - margin);
+        const clampedLeft = Math.max(margin, Math.min(left, maxLeft));
+        const clampedTop = Math.max(margin, Math.min(top, maxTop));
+
+        return {
+            left: clampedLeft,
+            top: clampedTop,
+            right: clampedLeft + width,
+            bottom: clampedTop + height,
+            width,
+            height
+        };
+    }
+
+    private getRectOverlapArea(
+        first: { left: number, top: number, right: number, bottom: number },
+        second: { left: number, top: number, right: number, bottom: number }
+    ): number {
+        const overlapWidth = Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left));
+        const overlapHeight = Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top));
+
+        return overlapWidth * overlapHeight;
+    }
+
+    private positionGlobalSettingsDialogNearOpenSettings(): void {
+        const anchorRect = this.getVisibleSettingsDialogRect();
+
+        if (!anchorRect) {
+            this.GlobalSettingsDialogStyle = {};
+            return;
+        }
+
+        const { width, height } = this.getGlobalSettingsDialogSize(anchorRect);
+        const gap = this.globalSettingsDialogGap;
+        const candidates = [
+            { left: anchorRect.right + gap, top: anchorRect.top },
+            { left: anchorRect.left - width - gap, top: anchorRect.top },
+            { left: anchorRect.left, top: anchorRect.bottom + gap },
+            { left: anchorRect.left, top: anchorRect.top - height - gap }
+        ].map((candidate) => this.clampDialogPlacement(candidate.left, candidate.top, width, height));
+
+        const bestCandidate = candidates.find((candidate) => this.getRectOverlapArea(candidate, anchorRect) === 0)
+            || candidates.reduce((best, candidate) => (
+                this.getRectOverlapArea(candidate, anchorRect) < this.getRectOverlapArea(best, anchorRect)
+                    ? candidate
+                    : best
+            ));
+
+        this.GlobalSettingsDialogStyle = {
+            position: 'fixed',
+            left: `${Math.round(bestCandidate.left)}px`,
+            top: `${Math.round(bestCandidate.top)}px`,
+            width: `${Math.round(width)}px`,
+            maxWidth: `calc(100vw - ${this.globalSettingsDialogViewportMargin * 2}px)`,
+            margin: '0',
+            zIndex: String(this.globalSettingsDialogBaseZIndex)
+        };
+    }
+
     DisplayGlobalSettingsDialog(activeTab = "Styling") {
 
         this.getGlobalSettingsData();
         // TODO: May need to refacor this
         this.updateGlobalSettingsModel();
 
+        this.positionGlobalSettingsDialogNearOpenSettings();
 
         this.GlobalSettingsDialogSettings.setVisibility(true);
         this.cachedGlobalSettingsVisibility = this.GlobalSettingsDialogSettings.isVisible;
+        setTimeout(() => {
+            this.positionGlobalSettingsDialogNearOpenSettings();
+            this.cdref.detectChanges();
+        }, 0);
         this.syncThresholdDisplayFromStoredValue();
         setTimeout(() => this.syncThresholdDisplayFromStoredValue(), 0);
         this.thresholdStabilityExpanded = false;

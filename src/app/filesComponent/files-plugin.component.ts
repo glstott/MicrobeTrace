@@ -154,6 +154,40 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     return parseGeoJSONContent(file?.contents);
   }
 
+  private getFileExtension(file: any): string {
+    return String(file?.extension || this.commonService.filterXSS(file?.name || '').split('.').pop() || '').toLowerCase();
+  }
+
+  private hasFastaSignature(contents: any): boolean {
+    if (typeof contents !== 'string') {
+      return false;
+    }
+
+    const lines = contents
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    if (!lines[0]?.startsWith('>')) {
+      return false;
+    }
+
+    return lines.slice(1).some(line => !line.startsWith('>') && /^[A-Za-z.*-]+$/.test(line));
+  }
+
+  private isFastaFile(file: any): boolean {
+    const extension = this.getFileExtension(file);
+    const format = String(file?.format || '').toLowerCase();
+
+    if (format) {
+      return format === 'fasta';
+    }
+
+    return extension === 'fa'
+      || extension.indexOf('fas') > -1
+      || this.hasFastaSignature(file?.contents);
+  }
+
   private resolveGeoJSONIdField(file: any, data: any): string {
     const fields = getGeoJSONIdFields(data);
     const selected = file?.field1;
@@ -2025,8 +2059,8 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     }
 
     //debugger;
-    const extension = file.extension ? file.extension : this.commonService.filterXSS(file.name).split('.').pop().toLowerCase();
-    const isFasta = extension.indexOf('fas') > -1;
+    const extension = this.getFileExtension(file);
+    const isFasta = this.isFastaFile(file);
     const isNewick = extension.indexOf('nwk') > -1 || extension.indexOf('newick') > -1;
     const isXL = (extension === 'xlsx' || extension === 'xls');
     const isJSON = (extension === 'json');
@@ -2285,7 +2319,14 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       root.appendTo(fileTable);
       matchHeaders(root.find('input[type="radio"]:checked').data('type'));
 
+      function syncFileTypeToggleState() {
+        const checkedInput = root.find('input[type="radio"]:checked');
+        root.find('label.btn').removeClass('active');
+        checkedInput.closest('label.btn').addClass('active');
+      }
+
       function refit(e: any = null) {
+        syncFileTypeToggleState();
         const type = $(e ? e.target : root.find('input[type="radio"]:checked')).data('type'),
           these = root.find('[data-file]'),
           first = $(these.get(0)),
@@ -2487,7 +2528,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
    * @returns An array of sequencing objects [{id, seq},]
    */
   async readFastas() {
-    const fastas = this.commonService.session.files.filter(f => this.commonService.includes(f.extension, 'fas'));
+    const fastas = this.commonService.session.files.filter(f => this.isFastaFile(f));
     const nodeFilesWithSeqs = this.commonService.session.files.filter(f => f.format === "node" && !!f.field2 && f.field2 != "None" && f.field2 != "");
     if (fastas.length === 0 && nodeFilesWithSeqs.length === 0) return [];
     let data = [];

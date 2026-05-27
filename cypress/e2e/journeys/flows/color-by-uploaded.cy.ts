@@ -3,13 +3,24 @@
 import { getProfile } from '../datasets/profile';
 import {
   assertAfterLaunchCounts,
+  expandAccordionTabByHeader,
   launchProfileToTwoD,
   openGlobalStylingTab,
+  openTwoDSettingsDialog,
 } from '../../../support/journey-helpers';
 
 type WinWithCy = Window & {
   commonService?: any;
   cytoscapeInstance?: any;
+};
+
+type DialogRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
 };
 
 const normalizeColor = (value: string): string => String(value || '').replace(/\s+/g, '').toLowerCase();
@@ -30,6 +41,24 @@ const hexToRgbString = (hex: string): string => {
 const selectPrimeOption = (selector: string, label: string): void => {
   cy.get(selector).click({ force: true });
   cy.contains('li[role="option"]', label, { timeout: 15000 }).click({ force: true });
+};
+
+const rectsOverlap = (first: DialogRect, second: DialogRect): boolean => {
+  return Math.max(0, Math.min(first.right, second.right) - Math.max(first.left, second.left)) > 0
+    && Math.max(0, Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top)) > 0;
+};
+
+const toDialogRect = (element: Element): DialogRect => {
+  const rect = element.getBoundingClientRect();
+
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  };
 };
 
 const closeColorTables = (): void => {
@@ -150,6 +179,55 @@ describe('Journey Flow - Uploaded color-by controls', () => {
       if (hasVisibleGlobalSettings) {
         cy.closeGlobalSettings();
       }
+    });
+
+    cy.get('body').then(($body) => {
+      const hasVisibleTwoDSettings =
+        $body.find('.p-dialog:visible .p-dialog-title:contains("2D Network Settings")').length > 0;
+
+      if (hasVisibleTwoDSettings) {
+        cy.closeSettingsPane('2D Network Settings');
+      }
+    });
+  });
+
+  it('opens Global Settings beside and above the open 2D settings dialog', () => {
+    cy.viewport(1280, 800);
+    launchProfileToTwoD(profile);
+    assertAfterLaunchCounts(profile);
+
+    openTwoDSettingsDialog();
+    cy.get('@twoDSettings').contains('.nav-link', 'Nodes').click({ force: true });
+    cy.get('@twoDSettings')
+      .find('.tab-pane:visible', { timeout: 15000 })
+      .should('exist')
+      .as('nodesTab');
+
+    expandAccordionTabByHeader('@nodesTab', 'Colors');
+    cy.get('@nodesTab').contains('button', 'Show Colors').click({ force: true });
+
+    cy.contains('.p-dialog-title', 'Global Settings', { timeout: 15000 })
+      .should('be.visible')
+      .parents('.p-dialog')
+      .as('globalSettings');
+
+    cy.get('@twoDSettings').should('be.visible');
+
+    cy.get('@globalSettings').should(($globalSettings) => {
+      const globalElement = $globalSettings.get(0);
+      const twoDSettingsElement = [...Cypress.$('.p-dialog:visible')]
+        .find((dialog) => dialog.querySelector('.p-dialog-title')?.textContent?.trim() === '2D Network Settings');
+
+      expect(twoDSettingsElement, '2D settings dialog').to.exist;
+
+      const globalZIndex = Number.parseInt(window.getComputedStyle(globalElement).zIndex || '0', 10);
+      const twoDZIndex = Number.parseInt(window.getComputedStyle(twoDSettingsElement as Element).zIndex || '0', 10);
+
+      expect(globalZIndex, 'Global Settings z-index').to.be.greaterThan(twoDZIndex);
+      expect(
+        rectsOverlap(toDialogRect(globalElement), toDialogRect(twoDSettingsElement as Element)),
+        'Global Settings avoids 2D settings on desktop'
+      ).to.equal(false);
     });
   });
 

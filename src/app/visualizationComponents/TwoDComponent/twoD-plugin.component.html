@@ -181,13 +181,13 @@
                       <div class="form-group row" title="Maximum genetic distance for nodes to collapse into aggregate pie nodes.">
                         <div class="col-4"><label for="network-node-collapse-threshold">Distance</label></div>
                         <div class="col-8">
-                          <input type="range" class="custom-range" id="network-node-collapse-threshold" [min]="NodeCollapseThresholdMinDisplayed" [max]="NodeCollapseThresholdMaxDisplayed" [step]="NodeCollapseThresholdStepDisplayed" [disabled]="!SelectedNodeCollapseTypeVariable" [(ngModel)]="SelectedNodeCollapseThresholdDisplayedVariable" (ngModelChange)="onNodeCollapseThresholdDisplayedChange($event)">
+                          <input type="range" class="custom-range" id="network-node-collapse-threshold" [min]="NodeCollapseThresholdMinDisplayed" [max]="NodeCollapseThresholdMaxDisplayed" [step]="NodeCollapseThresholdStepDisplayed" [disabled]="!SelectedNodeCollapseTypeVariable" [(ngModel)]="SelectedNodeCollapseThresholdDisplayedVariable" (change)="onNodeCollapseThresholdDisplayedChange($event)">
                         </div>
                       </div>
                       <div class="form-group row" title="Exact genetic distance used for collapse.">
                         <div class="col-4"><label for="network-node-collapse-threshold-input">Distance Value</label></div>
                         <div class="col-8">
-                          <input type="number" class="form-control form-control-sm" id="network-node-collapse-threshold-input" [min]="NodeCollapseThresholdMinDisplayed" [max]="NodeCollapseThresholdMaxDisplayed" [step]="NodeCollapseThresholdStepDisplayed" [disabled]="!SelectedNodeCollapseTypeVariable" [(ngModel)]="SelectedNodeCollapseThresholdDisplayedVariable" (ngModelChange)="onNodeCollapseThresholdDisplayedChange($event)">
+                          <input type="number" class="form-control form-control-sm" id="network-node-collapse-threshold-input" [min]="NodeCollapseThresholdMinDisplayed" [max]="NodeCollapseThresholdMaxDisplayed" [step]="NodeCollapseThresholdStepDisplayed" [disabled]="!SelectedNodeCollapseTypeVariable" [(ngModel)]="SelectedNodeCollapseThresholdDisplayedVariable" (change)="onNodeCollapseThresholdDisplayedChange($event)">
                         </div>
                       </div>
                     </p-accordion-content>
@@ -293,8 +293,8 @@
       </p-accordion-panel>
     </p-accordion>
   </tab>
-  <tab heading="{{'Network' | localize}}" [active]="isTransmissionChainView" customClass="m-tabs__item">
-    <p-accordion [value]="isTransmissionChainView ? ['network-display', 'transmission-chain-layout'] : null" [multiple]="true">
+  <tab heading="{{'Network' | localize}}" customClass="m-tabs__item">
+    <p-accordion [value]="isTransmissionChainView ? ['network-display'] : null" [multiple]="true">
       <p-accordion-panel value="network-display" style="color:#495057">
         <p-accordion-header>Display</p-accordion-header>
         <p-accordion-content><div #networkcontrolslabels>
@@ -321,53 +321,48 @@
         </div>
       </p-accordion-content>
     </p-accordion-panel>
-    @if (isTransmissionChainView) {
-      <p-accordion-panel value="transmission-chain-layout" style="color:#495057">
-        <p-accordion-header>Layout</p-accordion-header>
-        <p-accordion-content>
-          @if (isTransmissionChainView) {
-            <div class="form-group row" title="Choose the node date field used to place nodes along the timeline layout.">
-              <div class="col-3"><label for="transmission-chain-date-field">Date Field</label></div>
-              <div class="col-9">
-                <p-select id="transmission-chain-date-field" [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedNetworkTimelineDateFieldVariable" (ngModelChange)="onNetworkTimelineDateFieldChange($event)"></p-select>
-              </div>
-            </div>
-            <div class="form-group row" title="Choose which link lists are used to render and arrange the transmission chain.">
-              <div class="col-3"><label for="transmission-chain-link-origins">Link Lists</label></div>
-              <div class="col-9" id="transmission-chain-link-origins">
-                <div class="transmission-chain-link-origin-actions">
-                  <button type="button" class="btn btn-sm btn-outline-primary" (click)="selectAllTransmissionChainLinkOrigins()">Select All</button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearTransmissionChainLinkOrigins()">Clear</button>
-                  <span class="transmission-chain-link-origin-summary">{{ getTransmissionChainLinkOriginSelectionSummary() }}</span>
-                </div>
-                <div class="transmission-chain-link-origin-list" role="group" aria-label="Link Lists">
-                  @for (option of TransmissionChainLinkOriginOptions; track option.value) {
-                    <label class="transmission-chain-link-origin-option" [title]="option.label">
-                      <input
-                        type="checkbox"
-                        [checked]="isTransmissionChainLinkOriginSelected(option.value)"
-                        (change)="onTransmissionChainLinkOriginCheckboxChange(option.value, $event)">
-                      <span>{{ option.label }}</span>
-                    </label>
-                  } @empty {
-                    <div class="transmission-chain-link-origin-empty">No link lists available</div>
-                  }
-                </div>
-              </div>
-            </div>
-            <div class="form-group row" title="Increase or decrease vertical spacing between nodes in the timeline layout.">
-              <div class="col-3"><label for="transmission-chain-vertical-spacing">Y Spacing</label></div>
-              <div class="col-7">
-                <input type="range" class="custom-range" id="transmission-chain-vertical-spacing" min="5" max="180" step="5" [(ngModel)]="SelectedNetworkTimelineVerticalSpacingVariable" (ngModelChange)="onNetworkTimelineVerticalSpacingChange($event)">
-              </div>
-              <div class="col-2">{{ SelectedNetworkTimelineVerticalSpacingVariable }}%</div>
-            </div>
-          }
-        </p-accordion-content>
-      </p-accordion-panel>
-    }
   </p-accordion>
 </tab>
+@if (isTransmissionChainView) {
+  <tab heading="{{'Layout' | localize}}" [active]="isTransmissionChainView" customClass="m-tabs__item">
+    <div class="form-group row" title="Choose the node date field used to place nodes along the timeline layout.">
+      <div class="col-3"><label for="transmission-chain-date-field">Date Field</label></div>
+      <div class="col-9">
+        <p-select id="transmission-chain-date-field" [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedNetworkTimelineDateFieldVariable" (ngModelChange)="onNetworkTimelineDateFieldChange($event)"></p-select>
+      </div>
+    </div>
+    <div class="form-group row" title="Choose which link lists are used to render and arrange the transmission chain.">
+      <div class="col-3"><label for="transmission-chain-link-origins">Link Lists</label></div>
+      <div class="col-9" id="transmission-chain-link-origins">
+        <div class="transmission-chain-link-origin-actions">
+          <button type="button" class="btn btn-sm btn-outline-primary" (click)="selectAllTransmissionChainLinkOrigins()">Select All</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearTransmissionChainLinkOrigins()">Clear</button>
+          <span class="transmission-chain-link-origin-summary">{{ getTransmissionChainLinkOriginSelectionSummary() }}</span>
+        </div>
+        <div class="transmission-chain-link-origin-list" role="group" aria-label="Link Lists">
+          @for (option of TransmissionChainLinkOriginOptions; track option.value) {
+            <label class="transmission-chain-link-origin-option" [title]="option.label">
+              <input
+                type="checkbox"
+                [checked]="isTransmissionChainLinkOriginSelected(option.value)"
+                (change)="onTransmissionChainLinkOriginCheckboxChange(option.value, $event)">
+              <span>{{ option.label }}</span>
+            </label>
+          } @empty {
+            <div class="transmission-chain-link-origin-empty">No link lists available</div>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="form-group row" title="Increase or decrease vertical spacing between nodes in the timeline layout.">
+      <div class="col-3"><label for="transmission-chain-vertical-spacing">Y Spacing</label></div>
+      <div class="col-7">
+        <input type="range" class="custom-range" id="transmission-chain-vertical-spacing" min="5" max="180" step="5" [(ngModel)]="SelectedNetworkTimelineVerticalSpacingVariable" (ngModelChange)="onNetworkTimelineVerticalSpacingChange($event)">
+      </div>
+      <div class="col-2">{{ SelectedNetworkTimelineVerticalSpacingVariable }}%</div>
+    </div>
+  </tab>
+}
 <tab heading="{{'Grouping' | localize}}" customClass="m-tabs__item">
   <p-accordion [value]="null" [multiple]="true">
     <p-accordion-panel value="grouping-controls" style="color:#495057">

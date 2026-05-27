@@ -672,10 +672,20 @@ describe('2D Network - Settings Pane Interactions', () => {
           const nextDisplayed = Math.max(0, displayed - 1);
           cy.get('@dialogContainer').find(selector.nodeCollapseThreshold)
             .invoke('val', nextDisplayed)
-            .trigger('input', { force: true })
-            .trigger('change', { force: true });
+            .trigger('input', { force: true });
           cy.get('@dialogContainer').find(selector.nodeCollapseThresholdInput).invoke('val').then((value) => {
-            expect(Number(value), 'input value after slider change').to.be.closeTo(nextDisplayed, 0.001);
+            expect(Number(value), 'input value while dragging slider').to.be.closeTo(nextDisplayed, 0.001);
+          });
+          cy.window().then((win: any) => {
+            expect(Number(win.commonService.session.style.widgets['network-node-collapse-threshold']), 'collapse threshold before slider commit').to.be.closeTo(raw, 0.000001);
+          });
+          cy.get('@dialogContainer').find(selector.nodeCollapseThreshold)
+            .trigger('change', { force: true });
+          cy.window().then((win: any) => {
+            const widgets = win.commonService.session.style.widgets;
+            const metric = String(widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'distance');
+            const nextRaw = win.commonService.fromDisplayedDistanceValue(nextDisplayed, metric);
+            expect(Number(widgets['network-node-collapse-threshold']), 'collapse threshold after slider commit').to.be.closeTo(nextRaw, 0.000001);
           });
         });
     });

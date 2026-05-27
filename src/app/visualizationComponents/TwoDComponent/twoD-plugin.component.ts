@@ -1080,7 +1080,10 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     public onNodeCollapseThresholdDisplayedChange(value: any): void {
         this.ensureNodeCollapseWidgetDefaults();
         const metric = this.getNodeCollapseMetric();
-        const displayedValue = Number(value);
+        const rawDisplayedValue = value && typeof value === 'object' && 'target' in value
+            ? (value.target as HTMLInputElement)?.value
+            : value;
+        const displayedValue = Number(rawDisplayedValue);
 
         if (!Number.isFinite(displayedValue)) {
             return;
