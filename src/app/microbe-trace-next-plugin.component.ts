@@ -311,7 +311,6 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     GlobalSettingsDialogStyle: Record<string, string> = {};
     readonly globalSettingsDialogBaseZIndex = 2200;
     private readonly globalSettingsDialogDefaultWidth = 470;
-    private readonly globalSettingsDialogMinimumWidth = 400;
     private readonly globalSettingsDialogDefaultHeight = 720;
     private readonly globalSettingsDialogViewportMargin = 12;
     private readonly globalSettingsDialogGap = 16;
@@ -4794,7 +4793,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         return visibleSettingsDialogs[0].rect;
     }
 
-    private getGlobalSettingsDialogSize(anchorRect?: DOMRect): { width: number, height: number } {
+    private getGlobalSettingsDialogSize(): { width: number, height: number } {
         const margin = this.globalSettingsDialogViewportMargin;
         const availableWidth = Math.max(320, window.innerWidth - (margin * 2));
         const availableHeight = Math.max(320, window.innerHeight - (margin * 2));
@@ -4802,20 +4801,9 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         const currentRect = currentDialog?.getBoundingClientRect();
         const measuredWidth = currentRect && currentRect.width > 0 ? currentRect.width : this.globalSettingsDialogDefaultWidth;
         const measuredHeight = currentRect && currentRect.height > 0 ? currentRect.height : this.globalSettingsDialogDefaultHeight;
-        let width = Math.min(measuredWidth, availableWidth);
-
-        if (anchorRect) {
-            const rightSpace = window.innerWidth - anchorRect.right - margin - this.globalSettingsDialogGap;
-            const leftSpace = anchorRect.left - margin - this.globalSettingsDialogGap;
-            const usableSideSpace = Math.max(leftSpace, rightSpace);
-
-            if (usableSideSpace >= this.globalSettingsDialogMinimumWidth && width > usableSideSpace) {
-                width = usableSideSpace;
-            }
-        }
 
         return {
-            width,
+            width: Math.min(measuredWidth, availableWidth),
             height: Math.min(measuredHeight, availableHeight)
         };
     }
@@ -4855,7 +4843,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             return;
         }
 
-        const { width, height } = this.getGlobalSettingsDialogSize(anchorRect);
+        const { width, height } = this.getGlobalSettingsDialogSize();
         const gap = this.globalSettingsDialogGap;
         const candidates = [
             { left: anchorRect.right + gap, top: anchorRect.top },
@@ -4875,7 +4863,6 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             position: 'fixed',
             left: `${Math.round(bestCandidate.left)}px`,
             top: `${Math.round(bestCandidate.top)}px`,
-            width: `${Math.round(width)}px`,
             maxWidth: `calc(100vw - ${this.globalSettingsDialogViewportMargin * 2}px)`,
             margin: '0',
             zIndex: String(this.globalSettingsDialogBaseZIndex)

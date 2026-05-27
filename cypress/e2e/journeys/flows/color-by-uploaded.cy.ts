@@ -192,7 +192,7 @@ describe('Journey Flow - Uploaded color-by controls', () => {
   });
 
   it('opens Global Settings beside and above the open 2D settings dialog', () => {
-    cy.viewport(1280, 800);
+    cy.viewport(1440, 800);
     launchProfileToTwoD(profile);
     assertAfterLaunchCounts(profile);
 
@@ -222,11 +222,13 @@ describe('Journey Flow - Uploaded color-by controls', () => {
 
       const globalZIndex = Number.parseInt(window.getComputedStyle(globalElement).zIndex || '0', 10);
       const twoDZIndex = Number.parseInt(window.getComputedStyle(twoDSettingsElement as Element).zIndex || '0', 10);
+      const globalRect = toDialogRect(globalElement);
 
       expect(globalZIndex, 'Global Settings z-index').to.be.greaterThan(twoDZIndex);
+      expect(globalRect.width, 'Global Settings keeps its standard desktop width').to.be.greaterThan(450);
       expect(
-        rectsOverlap(toDialogRect(globalElement), toDialogRect(twoDSettingsElement as Element)),
-        'Global Settings avoids 2D settings on desktop'
+        rectsOverlap(globalRect, toDialogRect(twoDSettingsElement as Element)),
+        'Global Settings avoids 2D settings on a wide desktop'
       ).to.equal(false);
     });
   });
