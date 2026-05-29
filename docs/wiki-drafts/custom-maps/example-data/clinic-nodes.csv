@@ -1,0 +1,5 @@
+id,status,role,floor_x,floor_y
+case-001,Confirmed,Patient,6,5
+case-002,Probable,Patient,16,12
+staff-101,Exposed,Staff,24,15
+visitor-201,Contact,Visitor,12,17

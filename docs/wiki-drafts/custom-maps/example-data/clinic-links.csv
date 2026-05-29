@@ -1,0 +1,4 @@
+source,target,exposure_type
+case-001,case-002,Shared room
+case-002,staff-101,Care team
+case-001,visitor-201,Visitor contact

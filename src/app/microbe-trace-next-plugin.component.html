@@ -375,7 +375,7 @@
                   <div class="form-group row" title="By what variable would you like to prune links from the network?">
                     <div class="col-4"><label for="link-sort-variable">Filter Links on</label></div>
                     <div class="col-8">
-                      <p-select id="link-sort-variable" class="width-percent-100" [options]="ToolTipFieldList" appendTo="body" [(ngModel)]="SelectedLinkSortVariable" (onChange)="onLinkSortChanged()"></p-select>
+                      <p-select id="link-sort-variable" class="width-percent-100" [options]="ToolTipFieldList" appendTo="body" [overlayOptions]="globalSettingsOverlayOptions" [(ngModel)]="SelectedLinkSortVariable" (onChange)="onLinkSortChanged()"></p-select>
                     </div>
                   </div>
                   <div class="form-group row" id="filtering-threshold" title="Set the maximum genetic distance allowed for threshold-controlled links. Black bars show the distance distribution. The orange line shows how the cluster count changes as the threshold increases.">
@@ -508,7 +508,7 @@
                   <div class="form-group row" title="By what variable nodes be colored?">
                     <div class="col-5"><label for="node-color-variable">Color Nodes By</label></div>
                     <div class="col-7">
-                      <p-select id="node-color-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [(ngModel)]="SelectedColorNodesByVariable" (onChange)="onColorNodesByChanged()"></p-select>
+                      <p-select id="node-color-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [overlayOptions]="globalSettingsOverlayOptions" [(ngModel)]="SelectedColorNodesByVariable" (onChange)="onColorNodesByChanged()"></p-select>
                     </div>
                   </div>
 
@@ -530,7 +530,7 @@
                   <div class="form-group row" title="Which variable should determine node shape?">
                     <div class="col-5"><label for="node-symbol-variable">Shape By</label></div>
                     <div class="col-7">
-                      <p-select id="node-symbol-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [(ngModel)]="SelectedNodeSymbolVariable" (onChange)="onNodeShapeByChanged(false, true, $event.value)"></p-select>
+                      <p-select id="node-symbol-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [overlayOptions]="globalSettingsOverlayOptions" [(ngModel)]="SelectedNodeSymbolVariable" (onChange)="onNodeShapeByChanged(false, true, $event.value)"></p-select>
                     </div>
                   </div>
                   @if (SelectedNodeSymbolVariable === 'None') {
@@ -541,6 +541,7 @@
                           [options]="symbolMappingTree"
                           [panelStyle]="{ width: '23rem' }"
                           panelStyleClass="shapeTreeSelectPanel"
+                          [overlayOptions]="globalSettingsOverlayOptions"
                           selectionMode="single"
                           appendTo="body"
                           class="width-percent-100"
@@ -579,7 +580,7 @@
                   <div class="form-group row" title="By what variable should links be colored?">
                     <div class="col-5"><label for="link-color-variable">Color Links By</label></div>
                     <div class="col-7">
-                      <p-select id="link-tooltip-variable" class="width-percent-100" [options]="ToolTipFieldList" appendTo="body" [(ngModel)]="SelectedColorLinksByVariable" (onChange)="onColorLinksByChanged()"></p-select>
+                      <p-select id="link-tooltip-variable" class="width-percent-100" [options]="ToolTipFieldList" appendTo="body" [overlayOptions]="globalSettingsOverlayOptions" [(ngModel)]="SelectedColorLinksByVariable" (onChange)="onColorLinksByChanged()"></p-select>
                     </div>
                   </div>
                   @if (SelectedColorLinksByVariable !== 'None') {
@@ -635,7 +636,7 @@
                   <div class="form-group row" title="By what variable timeline applied?">
                     <div class="col-6"><label for="node-timeline-variable">Timeline By</label></div>
                     <div class="col-6">
-                      <p-select id="node-timeline-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [(ngModel)]="SelectedTimelineVariable" (onChange)="onTimelineChanged($event.value)"></p-select>
+                      <p-select id="node-timeline-variable" class="width-percent-100" [options]="FieldList" appendTo="body" [overlayOptions]="globalSettingsOverlayOptions" [(ngModel)]="SelectedTimelineVariable" (onChange)="onTimelineChanged($event.value)"></p-select>
                     </div>
                   </div>
                   <div class="form-group row" title="Start date for the active timeline range.">
@@ -646,6 +647,7 @@
                         inputId="timeline-start-date-input"
                         styleClass="width-percent-100"
                         appendTo="body"
+                        [baseZIndex]="globalSettingsChildOverlayBaseZIndex"
                         dateFormat="m/d/yy"
                         [showIcon]="true"
                         [minDate]="timelineDomainStartDate"
@@ -664,6 +666,7 @@
                         inputId="timeline-end-date-input"
                         styleClass="width-percent-100"
                         appendTo="body"
+                        [baseZIndex]="globalSettingsChildOverlayBaseZIndex"
                         dateFormat="m/d/yy"
                         [showIcon]="true"
                         [minDate]="timelineDomainStartDate"

@@ -1,0 +1,49 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "case-001",
+      "properties": {
+        "room": "Exam 1"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [6, 5]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "case-002",
+      "properties": {
+        "room": "Exam 2"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [16, 12]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "staff-101",
+      "properties": {
+        "room": "Nurse Station"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [24, 15]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "visitor-201",
+      "properties": {
+        "room": "Waiting Area"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [12, 17]
+      }
+    }
+  ]
+}

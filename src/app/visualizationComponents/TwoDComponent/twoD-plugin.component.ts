@@ -840,6 +840,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             .update();
     }
 
+    private refreshRenderedSizeStyles(): void {
+        if (!this.cy) return;
+
+        this.updateNodeSizes();
+        this.scaleLinkWidth();
+    }
+
     private shouldLockTimelineNodeX(node: cytoscape.NodeSingular): boolean {
         return (
             this.isTimelineLayoutActive() &&
@@ -6652,7 +6659,7 @@ private updateArrowStyles(): void {
         this.updateEdgeRoutingStyles();
 
         if (this.isTimelineLayoutActive()) {
-            this.updateLayout();
+            void this.updateLayout().then(() => this.refreshRenderedSizeStyles());
         }
     }
 
@@ -6815,18 +6822,28 @@ scaleLinkWidth() {
     const variable = this.widgets['link-width-variable'];
     if (!this.cy) return;
     if (variable === 'None') {
+        const width = Number(this.widgets['link-width']);
+        this.cy.edges().forEach(edge => {
+            edge.data('width', width);
+        });
+
         // Apply a default width to all links
         this.cy.style().selector('edge').style({
-            'width': this.widgets['link-width']
+            'width': width
         }).update();
         return;
     }
 
     const scaleValues = this.calculateLinkWidthScale();
     if (!scaleValues) {
+        const width = Number(this.widgets['link-width']);
+        this.cy.edges().forEach(edge => {
+            edge.data('width', width);
+        });
+
         // If scaling isn't applicable, set a default width
         this.cy.style().selector('edge').style({
-            'width': this.widgets['link-width']
+            'width': width
         }).update();
         return;
     }
@@ -7005,16 +7022,10 @@ scaleLinkWidth() {
         links: networkData.links.length
     });
 
-    // Add nodeSize to each node so that infomration can be used with calcuating node position
-    if (this.SelectedNodeRadiusVariable == 'None') {
-        networkData.nodes.forEach(node => {
-            node.nodeSize = Number(this.widgets['node-radius']);
-        })
-    } else {
-        networkData.nodes.forEach(node => {
-            node.nodeSize = Number(cy.nodes().getElementById(node._id).data('nodeSize'));
-        })
-    }
+    // Keep layout collision sizing in sync with current style widgets.
+    networkData.nodes.forEach(node => {
+        node.nodeSize = Number(this.getNodeSize(node));
+    });
     this.normalizeNetworkDataForCytoscape(networkData, false);
     networkData = this.applyNodeCollapseToNetworkData(networkData);
     this.normalizeNetworkDataForCytoscape(networkData);

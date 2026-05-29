@@ -1,0 +1,67 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "North Clinic Floor"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [30, 0],
+            [30, 20],
+            [0, 20],
+            [0, 0]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Exam Room Divider"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [10, 0],
+          [10, 20]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Ward Divider"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [20, 0],
+          [20, 20]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Nurse Station"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [11, 7],
+            [19, 7],
+            [19, 13],
+            [11, 13],
+            [11, 7]
+          ]
+        ]
+      }
+    }
+  ]
+}

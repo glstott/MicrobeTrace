@@ -60,6 +60,49 @@ const selectLineStyle = (label: string, value: string): void => {
   cy.window().its('commonService.session.style.widgets.transmission-chain-line-style').should('equal', value);
 };
 
+const openNodeSizePanel = (): void => {
+  cy.get('@dialogContainer').contains('.nav-link', 'Nodes').click({ force: true });
+  cy.get('@dialogContainer').find('.tab-pane.active')
+    .contains('p-accordion-header', 'Shapes and Sizes')
+    .click({ force: true });
+  cy.get('@dialogContainer').find('.tab-pane.active #node-radius').then(($input) => {
+    if ($input.css('visibility') === 'hidden' || !$input.is(':visible')) {
+      cy.get('@dialogContainer').find('.tab-pane.active #node-radius-variable').click({ force: true });
+      cy.contains('li[role="option"]', 'None', { timeout: 10000 }).click({ force: true });
+    }
+  });
+  cy.get('@dialogContainer').find('.tab-pane.active #node-radius', { timeout: 10000 }).should('be.visible');
+};
+
+const openLinkSizePanel = (): void => {
+  cy.get('@dialogContainer').contains('.nav-link', 'Links').click({ force: true });
+  cy.get('@dialogContainer').find('.tab-pane.active')
+    .contains('p-accordion-header', 'Shapes and Sizes')
+    .click({ force: true });
+  cy.get('@dialogContainer').find('.tab-pane.active #link-width').then(($input) => {
+    if ($input.css('visibility') === 'hidden' || !$input.is(':visible')) {
+      cy.get('@dialogContainer').find('.tab-pane.active #link-width-variable').click({ force: true });
+      cy.contains('li[role="option"]', 'None', { timeout: 10000 }).click({ force: true });
+    }
+  });
+  cy.get('@dialogContainer').find('.tab-pane.active #link-width', { timeout: 10000 }).should('be.visible');
+};
+
+const expectTransmissionChainSizing = (
+  cyInstance: Core,
+  expectedNodeSize: number,
+  expectedLinkWidth: number,
+): void => {
+  const node = leafNodes(cyInstance).first() as any;
+  const edge = cyInstance.edges(':visible').first() as any;
+  const expectedRenderedNodeWidth = (expectedNodeSize / 100 * 40) + 10;
+
+  expect(Number(node.data('nodeSize')), 'node size data').to.equal(expectedNodeSize);
+  expect(parseFloat(node.style('width')), 'rendered node width').to.be.closeTo(expectedRenderedNodeWidth, 0.5);
+  expect(Number(edge.data('width')), 'link width data').to.equal(expectedLinkWidth);
+  expect(parseFloat(edge.style('width')), 'rendered link width').to.be.closeTo(expectedLinkWidth, 0.5);
+};
+
 const getFirstVisibleOrigin = (): Cypress.Chainable<string> =>
   cy.window().then((win: any) => {
     const origins = (win.commonService.getVisibleLinks(true) || [])
@@ -139,6 +182,38 @@ describe('Transmission Chain View', () => {
       expect(firstEdge.style('curve-style'), 'curved edge routing').to.equal('unbundled-bezier');
       expect(Math.abs(Number(firstEdge.data('transmissionChainCurveDistance'))), 'curved chain link distance')
         .to.be.greaterThan(0);
+    });
+  });
+
+  it('preserves node size and link width when changing line style', () => {
+    const nodeSize = 75;
+    const linkWidth = 15;
+
+    selectDateField();
+    openNodeSizePanel();
+    cy.get('@dialogContainer').find('.tab-pane.active #node-radius')
+      .invoke('val', nodeSize)
+      .trigger('change', { force: true });
+    cy.window().its('commonService.session.style.widgets.node-radius').should('equal', nodeSize);
+
+    openLinkSizePanel();
+    cy.get('@dialogContainer').find('.tab-pane.active #link-width')
+      .invoke('val', linkWidth)
+      .trigger('change', { force: true });
+    cy.window().its('commonService.session.style.widgets.link-width').should('equal', linkWidth);
+
+    getTransmissionCy().should((cyInstance) => {
+      expect(cyInstance.edges(':visible').length, 'visible chain links').to.be.greaterThan(0);
+      expectTransmissionChainSizing(cyInstance, nodeSize, linkWidth);
+    });
+
+    selectLineStyle('Curved', 'Curved');
+
+    getTransmissionCy().should((cyInstance) => {
+      const firstEdge = cyInstance.edges(':visible').first() as any;
+
+      expect(firstEdge.style('curve-style'), 'curved edge routing').to.equal('unbundled-bezier');
+      expectTransmissionChainSizing(cyInstance, nodeSize, linkWidth);
     });
   });
 

@@ -3,6 +3,7 @@ import { CommonService } from './contactTraceCommonServices/common.service';
 import * as d3 from 'd3';
 import { AppComponentBase } from '@shared/common/app-component-base';
 import { SelectItem, TreeNode, ConfirmationService } from 'primeng/api';
+import type { OverlayOptions } from 'primeng/api';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { AppSessionService } from '@shared/common/session/app-session.service';
 import { DialogSettings } from './helperClasses/dialogSettings';
@@ -310,6 +311,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     GlobalSettingsNodeShapeDialogSettings: DialogSettings;
     GlobalSettingsDialogStyle: Record<string, string> = {};
     readonly globalSettingsDialogBaseZIndex = 2200;
+    readonly globalSettingsChildOverlayBaseZIndex = this.globalSettingsDialogBaseZIndex + 100;
+    readonly globalSettingsOverlayOptions: OverlayOptions = {
+        autoZIndex: true,
+        baseZIndex: this.globalSettingsChildOverlayBaseZIndex
+    };
     private readonly globalSettingsDialogDefaultWidth = 470;
     private readonly globalSettingsDialogDefaultHeight = 720;
     private readonly globalSettingsDialogViewportMargin = 12;

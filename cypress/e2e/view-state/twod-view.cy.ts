@@ -134,6 +134,18 @@ const expectTopHitWithin = ($target: JQuery<HTMLElement>, expectedSelector: stri
   expect(topElement!.tagName.toLowerCase(), `${label} is not a Cytoscape canvas`).to.not.equal('canvas');
 };
 
+const expectTopHitInsideOverlay = ($overlay: JQuery<HTMLElement>, overlaySelector: string, label: string): void => {
+  const overlay = $overlay[0];
+  const rect = overlay.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const topElement = overlay.ownerDocument.elementFromPoint(x, y) as Element | null;
+
+  expect(topElement, `${label} top hit target`).to.exist;
+  expect(topElement!.closest(overlaySelector), `${label} receives pointer hits`).to.not.equal(null);
+  expect(topElement!.closest('#global-settings-modal'), `${label} is not covered by Global Settings`).to.equal(null);
+};
+
 const moveFirstNodeUnderViewportPoint = (cyInstance: Core, viewportX: number, viewportY: number): void => {
   const node = getFirstVisibleLeafNode(cyInstance);
   expectCytoscapeElement(node, 'node moved under toolbar');
@@ -488,6 +500,32 @@ describe('2D Network - Core Rendering and Stats', () => {
       .parents('.p-dialog')
       .should('be.visible')
       .then(($dialog) => expectTopHitWithin($dialog, '.p-dialog', 'settings dialog'));
+  });
+
+  it('keeps Global Settings dropdown overlays above the Global Settings dialog', () => {
+    cy.openGlobalSettings();
+
+    cy.contains('#global-settings-modal .nav-link', 'Styling').click({ force: true });
+    cy.get('#global-settings-modal #style-config', { timeout: 15000 }).should('be.visible');
+
+    cy.get('#node-color-variable').click();
+    cy.get('.p-select-overlay')
+      .filter(':visible')
+      .last()
+      .then(($overlay) => expectTopHitInsideOverlay($overlay, '.p-select-overlay', 'global settings select overlay'));
+    cy.contains('li[role="option"]', 'State').click();
+
+    cy.contains('#global-settings-modal .nav-link', 'Timeline').click({ force: true });
+    cy.get('#global-settings-modal #timeline-config', { timeout: 15000 }).should('be.visible');
+
+    cy.get('#node-timeline-variable').click();
+    cy.contains('li[role="option"]', timelineLayoutDateField).scrollIntoView().click();
+
+    cy.get('#timeline-start-date-input').should('not.be.disabled').click();
+    cy.get('.p-datepicker-panel')
+      .filter(':visible')
+      .last()
+      .then(($overlay) => expectTopHitInsideOverlay($overlay, '.p-datepicker-panel', 'global settings datepicker overlay'));
   });
 });
 
