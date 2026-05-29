@@ -320,6 +320,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             clusterTableColumns: [],
             tree: {},
             newickString: '',
+            phylogeneticBootstrap: null,
             reference: REFERENCE
         };
 
@@ -512,6 +513,9 @@ export class CommonService extends AppComponentBase implements OnInit {
             'tree-branch-distances-hide': true,
             'tree-branch-distance-size': 12,
             'tree-branch-nodes-show': false,
+            'tree-bootstrap-custom-replicates': 100,
+            'tree-bootstrap-replicates-option': 100,
+            'tree-bootstrap-stop-when-stable': false,
             'tree-horizontal-stretch': 1,
             'tree-layout-vertical': false,
             'tree-layout-horizontal': true,
@@ -2223,6 +2227,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         }
         if (oldSession.data?.tree) {
             this.session.data.tree = oldSession.data.tree;
+        }
+        if (oldSession.data?.phylogeneticBootstrap) {
+            this.session.data.phylogeneticBootstrap = oldSession.data.phylogeneticBootstrap;
         }
 
         // TODO: See about this process data functionality.  DO we need this?

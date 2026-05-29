@@ -10,6 +10,12 @@ import type {
   PatristicProgressResponse,
   PatristicErrorResponse,
 } from '../workers/patristic-engine.types';
+import type {
+  PhyloBootstrapProgressResponse,
+  PhyloBootstrapRequest,
+  PhyloBootstrapResultResponse,
+  PhyloBootstrapWorkerResponse,
+} from '../workers/phylo-bootstrap.types';
 
 interface ComputePatristicOptions {
   origin?: string[];
@@ -55,6 +61,10 @@ const DEFAULT_NEWICK_VISIBLE_LINK_HARD_LIMIT = 100000;
 export class WorkerComputeService {
   
   constructor(private computer: WorkerModule) {}
+
+  private phyloBootstrapJobId = 0;
+  private phyloBootstrapWorker: Worker | null = null;
+  private activePhyloBootstrapJobId: number | null = null;
 
   /**
    * Helper that converts a Worker’s events into an RxJS Observable.
@@ -584,6 +594,82 @@ export class WorkerComputeService {
   }
 
   // ─── Patristic Distance Engine ───────────────────────────────────────────
+
+  public computePhylogeneticBootstrap(
+    request: Omit<PhyloBootstrapRequest, 'type' | 'jobId'>,
+    onProgress: (progress: PhyloBootstrapProgressResponse) => void = () => undefined
+  ): Promise<PhyloBootstrapResultResponse> {
+    if (this.phyloBootstrapWorker) {
+      this.cancelPhylogeneticBootstrap();
+      this.phyloBootstrapWorker.terminate();
+      this.phyloBootstrapWorker = null;
+      this.activePhyloBootstrapJobId = null;
+    }
+
+    const worker = this.computer.getPhyloBootstrapWorker();
+    const jobId = ++this.phyloBootstrapJobId;
+    this.phyloBootstrapWorker = worker;
+    this.activePhyloBootstrapJobId = jobId;
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        worker.removeEventListener('message', handler);
+        worker.removeEventListener('error', errorHandler);
+        worker.terminate();
+        if (this.phyloBootstrapWorker === worker) {
+          this.phyloBootstrapWorker = null;
+          this.activePhyloBootstrapJobId = null;
+        }
+      };
+
+      const handler = (event: MessageEvent<PhyloBootstrapWorkerResponse>) => {
+        const message = event.data;
+        if (message.jobId !== jobId) return;
+
+        switch (message.type) {
+          case 'PROGRESS':
+            onProgress(message);
+            break;
+          case 'RESULT':
+            cleanup();
+            resolve(message);
+            break;
+          case 'CANCELLED':
+            cleanup();
+            reject(new Error('Bootstrap calculation cancelled.'));
+            break;
+          case 'ERROR':
+            cleanup();
+            reject(new Error(message.message));
+            break;
+        }
+      };
+
+      const errorHandler = (error: ErrorEvent) => {
+        cleanup();
+        reject(new Error(error.message || 'Bootstrap worker failed.'));
+      };
+
+      worker.addEventListener('message', handler);
+      worker.addEventListener('error', errorHandler);
+      worker.postMessage({
+        ...request,
+        type: 'START',
+        jobId,
+      } as PhyloBootstrapRequest);
+    });
+  }
+
+  public cancelPhylogeneticBootstrap(): void {
+    if (!this.phyloBootstrapWorker || this.activePhyloBootstrapJobId === null) {
+      return;
+    }
+
+    this.phyloBootstrapWorker.postMessage({
+      type: 'CANCEL',
+      jobId: this.activePhyloBootstrapJobId,
+    });
+  }
 
   /** Currently active patristic job ID for cancellation. */
   private patristicJobId = 0;

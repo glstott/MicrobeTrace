@@ -210,7 +210,7 @@
       </div>
     </p-accordion-content>
   </p-accordion-panel>
-  <p-accordion-panel value="tree-branchsize" style="color:#495057">
+<p-accordion-panel value="tree-branchsize" style="color:#495057">
     <p-accordion-header>Branch Nodes</p-accordion-header>
     <p-accordion-content><div #branchcontrollables>
       <div class="form-group row branch-node-visibility-row" title="Show branch Nodes?">
@@ -225,7 +225,7 @@
           <div class="col-7"><input type="range" class="custom-range" id="branch-node-size" min="1" step="0.5" max="10" [(ngModel)]="SelectedBranchNodeSizeVariable" (ngModelChange)="onBranchNodeSizeChange($event)"></div>
         </div>
       }
-      @if (hasNewickFile) {
+      @if (hasNewickFile || hasBootstrapSupport()) {
       <div class="form-group row" title="Show branch Nodes labels?">
         <div class="col-5"><label for="branch-node-visibility2">Branch Nodes Labels</label></div>
         <div class="col-7">
@@ -233,7 +233,7 @@
         </div>
       </div>
       }
-      @if (SelectedBranchLabelShowVariable && hasNewickFile) {
+      @if (SelectedBranchLabelShowVariable && (hasNewickFile || hasBootstrapSupport())) {
         <div class="form-group row" title="How big should branch nodes labels be?">
           <div class="col-5"><label for="branch-node-size">Branch Node Label Size</label></div>
           <div class="col-7"><input type="range" class="custom-range" id="branch-node-size" min="1" step="0.5" max="16" [(ngModel)]="SelectedBranchLabelSizeVariable" (ngModelChange)="onBranchLabelSizeChange($event)"></div>
@@ -243,6 +243,60 @@
   </p-accordion-content>
   </p-accordion-panel> 
 </p-accordion>
+</tab>
+<tab heading="{{'Bootstrap' | localize}}" customClass="m-tabs__item">
+  <p-accordion [value]="null" [multiple]="true">
+    <p-accordion-panel value="tree-bootstrap" style="color:#495057">
+      <p-accordion-header>Bootstrap Support</p-accordion-header>
+      <p-accordion-content><div #bootstrapcontrols>
+        <div class="form-group row" title="How many bootstrap replicates should be calculated?">
+          <div class="col-5"><label for="tree-bootstrap-replicates">Replicates</label></div>
+          <div class="col-7">
+            <p-select id="tree-bootstrap-replicates" appendTo="body" [options]="BootstrapReplicateOptions" class="width-percent-100" [(ngModel)]="SelectedBootstrapReplicateOption" (ngModelChange)="onBootstrapReplicateOptionChange($event)" [disabled]="BootstrapInProgress"></p-select>
+          </div>
+        </div>
+        @if (SelectedBootstrapReplicateOption === 'custom') {
+          <div class="form-group row" title="Enter a custom number of bootstrap replicates.">
+            <div class="col-5"><label for="tree-bootstrap-custom-replicates">Custom</label></div>
+            <div class="col-7">
+              <input type="number" id="tree-bootstrap-custom-replicates" class="form-control form-control-sm" min="1" max="10000" step="1" [(ngModel)]="SelectedBootstrapCustomReplicates" (ngModelChange)="onBootstrapCustomReplicatesChange($event)" [disabled]="BootstrapInProgress">
+            </div>
+          </div>
+        }
+        <div class="form-group row" title="Stop after support values stop changing across batches.">
+          <div class="col-5"><label for="tree-bootstrap-stable">Stop When Stable</label></div>
+          <div class="col-7">
+            <p-selectButton id="tree-bootstrap-stable" [options]="BootstrapStableOptions" [allowEmpty]="false" fluid [(ngModel)]="SelectedBootstrapStopWhenStable" (ngModelChange)="onBootstrapStopWhenStableChange($event)" [disabled]="BootstrapInProgress"></p-selectButton>
+          </div>
+        </div>
+        @if (BootstrapUnsupportedReason) {
+          <div id="tree-bootstrap-unavailable" class="form-group row">
+            <div class="col-12 text-muted">{{BootstrapUnsupportedReason}}</div>
+          </div>
+        }
+        @if (BootstrapError) {
+          <div id="tree-bootstrap-error" class="form-group row">
+            <div class="col-12 text-danger">{{BootstrapError}}</div>
+          </div>
+        }
+        <div id="tree-bootstrap-progress" class="form-group row">
+          <div class="col-12">{{BootstrapStatus}}</div>
+        </div>
+        <div class="form-group row">
+          <div class="col-4">
+            <button type="button" id="tree-bootstrap-calculate" class="btn btn-primary btn-sm width-percent-100" (click)="onBootstrapCalculate()" [disabled]="BootstrapInProgress || !!BootstrapUnsupportedReason">Calculate</button>
+          </div>
+          <div class="col-4">
+            <button type="button" id="tree-bootstrap-cancel" class="btn btn-secondary btn-sm width-percent-100" (click)="onBootstrapCancel()" [disabled]="!BootstrapInProgress">Cancel</button>
+          </div>
+          <div class="col-4">
+            <button type="button" id="tree-bootstrap-clear" class="btn btn-secondary btn-sm width-percent-100" (click)="onBootstrapClear()" [disabled]="BootstrapInProgress || !hasBootstrapSupport()">Clear</button>
+          </div>
+        </div>
+      </div>
+    </p-accordion-content>
+    </p-accordion-panel>
+  </p-accordion>
 </tab>
 </tabset>
 </p-dialog>

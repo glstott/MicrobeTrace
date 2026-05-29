@@ -577,6 +577,76 @@ describe('Phylogenetic Tree View', () => {
       cy.window().its('commonService.visuals.phylogenetic.SelectedBranchSizeVariable').should('equal', 7);
       cy.get(selectors.treeSvg).find('g.tidytree-link path').first().should('have.css', 'stroke-width', '7px')
     })    
+
+    it('should configure and calculate bootstrap support labels', () => {
+      cy.contains('.p-dialog-title', 'Phylogenetic Tree Settings')
+        .parents('.p-dialog').as('dialogContainer');
+
+      cy.get('@dialogContainer').contains('Bootstrap').click();
+      cy.get('@dialogContainer').contains('Bootstrap Support').click();
+
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapStopWhenStable').should('be.false');
+
+      cy.get('@dialogContainer').find('#tree-bootstrap-replicates').click();
+      cy.contains('li[role="option"]', '1000').click();
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapReplicateOption').should('equal', 1000);
+
+      cy.get('@dialogContainer').find('#tree-bootstrap-replicates').click();
+      cy.contains('li[role="option"]', 'Custom').click();
+      cy.get('@dialogContainer').find('#tree-bootstrap-custom-replicates')
+        .invoke('val', 3)
+        .trigger('input')
+        .trigger('change');
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapReplicateOption').should('equal', 'custom');
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapCustomReplicates').should('equal', 3);
+
+      cy.window().then((win: any) => {
+        const leaves = win.commonService.visuals.phylogenetic.tree.data.getLeaves().map((leaf: any) => leaf.id);
+        leaves.forEach((leafId: string, index: number) => {
+          const node = win.commonService.session.data.nodes.find((candidate: any) => candidate._id === leafId || candidate.id === leafId);
+          if (node) {
+            node.seq = index % 2 === 0 ? 'AAAAAA' : 'CCCCCC';
+            delete node._seq;
+          }
+        });
+      });
+
+      cy.get('@dialogContainer').find('#tree-bootstrap-calculate').should('not.be.disabled').click();
+      cy.window({ timeout: 60000 }).its('commonService.visuals.phylogenetic.BootstrapInProgress').should('be.false');
+      cy.window().its('commonService.session.data.phylogeneticBootstrap.completedReplicates').should('equal', 3);
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBranchLabelShowVariable').should('be.true');
+
+      cy.get(selectors.treeSvg)
+        .find('g.tidytree-node-internal text')
+        .then($labels => {
+          const labels = Cypress.$.makeArray($labels)
+            .map(label => (label.textContent || '').trim())
+            .filter(Boolean);
+          expect(labels.some(label => /^\d+\.\d%$/.test(label)), 'at least one bootstrap label').to.equal(true);
+        });
+
+      cy.window().then((win: any) => {
+        expect(win.commonService.visuals.phylogenetic.tree.data.toNewick(false)).to.match(/\)\d+\.\d%:/);
+      });
+    })
+
+    it('should disable bootstrap calculation when leaves are not sequence-backed', () => {
+      cy.window().then((win: any) => {
+        win.commonService.session.data.nodes.forEach((node: any) => {
+          delete node.seq;
+          delete node._seq;
+        });
+        win.commonService.visuals.phylogenetic.refreshBootstrapReadiness();
+      });
+
+      cy.contains('.p-dialog-title', 'Phylogenetic Tree Settings')
+        .parents('.p-dialog').as('dialogContainer');
+      cy.get('@dialogContainer').contains('Bootstrap').click();
+      cy.get('@dialogContainer').contains('Bootstrap Support').click();
+
+      cy.get('@dialogContainer').find('#tree-bootstrap-unavailable').should('contain', 'sequence-backed');
+      cy.get('@dialogContainer').find('#tree-bootstrap-calculate').should('be.disabled');
+    })
     
     it('should root tree on a branch', () => { 
       cy.closeSettingsPane('Phylogenetic Tree Settings');

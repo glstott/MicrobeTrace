@@ -95,4 +95,17 @@ export class WorkerModule implements OnInit {
     }
   }
 
+  /**
+   * Create a dedicated phylogenetic bootstrap worker.
+   *
+   * Bootstrap calculations are long-running and cancellable, so callers get an
+   * isolated worker per run instead of sharing compute.worker.ts.
+   */
+  public getPhyloBootstrapWorker(): Worker {
+    return new Worker(
+      new URL('./phylo-bootstrap.worker', import.meta.url),
+      { type: 'module', name: 'mt-phylo-bootstrap' }
+    );
+  }
+
 }

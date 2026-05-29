@@ -24,6 +24,16 @@ import { throws } from 'assert';
 import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 import { getTreeNodeShapeDataUri, getTreeNodeShapeScale, resolveNodeShapeForNode } from '@app/contactTraceCommonServices/node-shapes';
+import { WorkerComputeService } from '@app/contactTraceCommonServices/worker-compute.service';
+import type { PhyloBootstrapProgressResponse, PhyloBootstrapResultResponse } from '@app/workers/phylo-bootstrap.types';
+import { collectTreeLeafIds, formatBootstrapSupport, normalizeSplitKey } from '@app/workers/phylo-bootstrap-utils';
+
+interface BootstrapReadiness {
+  ready: boolean;
+  reason: string;
+  leafIds: string[];
+  sequences: Array<{ id: string; sequence: string }>;
+}
 
 /**
  * @title PhylogeneticComponent
@@ -118,6 +128,28 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   SelectedBranchDistanceSizeVariable = this.settings['tree-branch-distance-size'] ?? 12;
   //SelectedBranchTooltipShowVariable = false;
 
+  // Bootstrap Tab
+  BootstrapReplicateOptions: object = [
+    { label: '100', value: 100 },
+    { label: '1000', value: 1000 },
+    { label: 'Custom', value: 'custom' }
+  ];
+  SelectedBootstrapReplicateOption: number | 'custom' = this.settings['tree-bootstrap-replicates-option'] ?? 100;
+  SelectedBootstrapCustomReplicates: number = this.settings['tree-bootstrap-custom-replicates'] ?? 100;
+  SelectedBootstrapStopWhenStable: boolean = this.settings['tree-bootstrap-stop-when-stable'] ?? false;
+  BootstrapStableOptions: object = [
+    { label: 'Off', value: false },
+    { label: 'On', value: true }
+  ];
+  BootstrapInProgress = false;
+  BootstrapCompletedReplicates = 0;
+  BootstrapRequestedReplicates = 0;
+  BootstrapStable = false;
+  BootstrapStoppedEarly = false;
+  BootstrapStatus = 'Not calculated';
+  BootstrapError = '';
+  BootstrapUnsupportedReason = '';
+
   hideShowOptions: object = [
     { label: 'Hide', value: false },
     { label: 'Show', value: true }
@@ -170,7 +202,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     private cdref: ChangeDetectorRef,
     private gtmService: GoogleTagManagerService,
     private store: CommonStoreService,
-    private exportService: ExportService) {
+    private exportService: ExportService,
+    private workerComputeService: WorkerComputeService) {
 
     super(elRef.nativeElement);
 
@@ -208,6 +241,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       this.commonService.visuals.phylogenetic.tree = tree;
       this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
       this.hasTreeBeenModifiedFromOriginal = false;
+      this.restoreBootstrapStateFromSession();
       //this.mergeNodeData();
       this.hideTooltip();
       this.styleTree();
@@ -221,12 +255,14 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         this.commonService.visuals.phylogenetic.tree = tree;
         this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
         this.hasTreeBeenModifiedFromOriginal = false;
+        this.restoreBootstrapStateFromSession();
         //this.mergeNodeData();
         this.hideTooltip();
         this.styleTree();
       //});
     }
     this.hasNewickFile = this.commonService.session.files.some(file => file.format == 'newick');
+    this.refreshBootstrapReadiness();
     this.markTreeRendered();
     // d3.select('svg#network').exit().remove();
     // this.visuals.phylogenetic.svg = d3.select('svg#network').append('g');
@@ -285,6 +321,332 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.svg.style('height', '88vh;');
     branchEls.forEach(this.styleBranch);
     this.svg.style('background-color', '#ffffff');
+  }
+
+  private getTreeObject(data: any): any {
+    return data?.toObject ? data.toObject() : data;
+  }
+
+  private getCurrentTreeLeafIds(): string[] {
+    if (!this.tree?.data) return [];
+    return collectTreeLeafIds(this.getTreeObject(this.tree.data));
+  }
+
+  private getSelectedBootstrapReplicateCount(): number {
+    const rawValue = this.SelectedBootstrapReplicateOption === 'custom'
+      ? Number(this.SelectedBootstrapCustomReplicates)
+      : Number(this.SelectedBootstrapReplicateOption);
+    return Math.floor(rawValue);
+  }
+
+  private isBootstrapReplicateCountValid(): boolean {
+    const replicates = this.getSelectedBootstrapReplicateCount();
+    return Number.isInteger(replicates) && replicates >= 1 && replicates <= 10000;
+  }
+
+  private getBootstrapBatchSize(replicates: number): number {
+    if (replicates <= 100) return 10;
+    if (replicates <= 1000) return 25;
+    return 50;
+  }
+
+  private getBootstrapParallelism(): number {
+    const hardwareConcurrency = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+    return Math.min(4, Math.max(1, hardwareConcurrency - 1));
+  }
+
+  private findNodeForTreeLeaf(leafId: string): any | null {
+    const matches = this.commonService.session.data.nodes.filter(node => node?._id === leafId || node?.id === leafId);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  public getBootstrapReadiness(): BootstrapReadiness {
+    const leafIds = this.getCurrentTreeLeafIds();
+    if (!this.tree?.data || leafIds.length === 0) {
+      return { ready: false, reason: 'No tree is available.', leafIds: [], sequences: [] };
+    }
+    if (leafIds.length < 4) {
+      return { ready: false, reason: 'Bootstrapping requires at least four leaves.', leafIds, sequences: [] };
+    }
+
+    const sequences: Array<{ id: string; sequence: string }> = [];
+    for (const leafId of leafIds) {
+      const node = this.findNodeForTreeLeaf(leafId);
+      if (!node) {
+        return {
+          ready: false,
+          reason: 'Every tree leaf must match exactly one sequence-backed node.',
+          leafIds,
+          sequences: []
+        };
+      }
+
+      const sequence = typeof node._seq === 'string' && node._seq.length > 0
+        ? node._seq
+        : typeof node.seq === 'string' ? node.seq : '';
+      if (!sequence) {
+        return {
+          ready: false,
+          reason: 'Bootstrapping is available only for sequence-backed trees.',
+          leafIds,
+          sequences: []
+        };
+      }
+      sequences.push({ id: leafId, sequence: sequence.toUpperCase() });
+    }
+
+    const sequenceLength = sequences[0]?.sequence.length ?? 0;
+    if (sequenceLength === 0 || sequences.some(sequence => sequence.sequence.length !== sequenceLength)) {
+      return {
+        ready: false,
+        reason: 'Bootstrapping requires aligned sequences with equal lengths.',
+        leafIds,
+        sequences: []
+      };
+    }
+
+    return { ready: true, reason: '', leafIds, sequences };
+  }
+
+  public refreshBootstrapReadiness(): BootstrapReadiness {
+    const readiness = this.getBootstrapReadiness();
+    this.BootstrapUnsupportedReason = readiness.ready ? '' : readiness.reason;
+    return readiness;
+  }
+
+  hasBootstrapSupport(): boolean {
+    return !!this.commonService.session.data?.phylogeneticBootstrap?.supportBySplit;
+  }
+
+  onBootstrapReplicateOptionChange(event) {
+    this.SelectedBootstrapReplicateOption = event;
+    this.settings['tree-bootstrap-replicates-option'] = event;
+    this.refreshBootstrapReadiness();
+  }
+
+  onBootstrapCustomReplicatesChange(event) {
+    this.SelectedBootstrapCustomReplicates = Number(event);
+    this.settings['tree-bootstrap-custom-replicates'] = this.SelectedBootstrapCustomReplicates;
+  }
+
+  onBootstrapStopWhenStableChange(event) {
+    this.SelectedBootstrapStopWhenStable = event;
+    this.settings['tree-bootstrap-stop-when-stable'] = this.SelectedBootstrapStopWhenStable;
+  }
+
+  private updateBootstrapProgress(progress: PhyloBootstrapProgressResponse): void {
+    this.BootstrapCompletedReplicates = progress.completedReplicates;
+    this.BootstrapRequestedReplicates = progress.requestedReplicates;
+    this.BootstrapStable = progress.stable;
+    this.BootstrapStoppedEarly = progress.stoppedEarly;
+    this.BootstrapStatus = progress.stoppedEarly
+      ? `Stable after ${progress.completedReplicates} replicates`
+      : `Calculating ${progress.completedReplicates} of ${progress.requestedReplicates}`;
+    this.cdref.detectChanges();
+  }
+
+  async onBootstrapCalculate(): Promise<void> {
+    const readiness = this.refreshBootstrapReadiness();
+    this.BootstrapError = '';
+
+    if (!readiness.ready) {
+      this.BootstrapError = readiness.reason;
+      return;
+    }
+    if (!this.isBootstrapReplicateCountValid()) {
+      this.BootstrapError = 'Replicates must be an integer from 1 to 10000.';
+      return;
+    }
+
+    const replicates = this.getSelectedBootstrapReplicateCount();
+    this.BootstrapInProgress = true;
+    this.BootstrapCompletedReplicates = 0;
+    this.BootstrapRequestedReplicates = replicates;
+    this.BootstrapStable = false;
+    this.BootstrapStoppedEarly = false;
+    this.BootstrapStatus = `Calculating 0 of ${replicates}`;
+    this.cdref.detectChanges();
+
+    try {
+      const widgets = this.commonService.session.style.widgets;
+      const result = await this.workerComputeService.computePhylogeneticBootstrap({
+        leafIds: readiness.leafIds,
+        sequences: readiness.sequences,
+        referenceTree: this.getTreeObject(this.tree.data),
+        metric: widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'snps',
+        ambiguityStrategy: widgets['ambiguity-resolution-strategy'] || 'AVERAGE',
+        ambiguityThreshold: Number(widgets['ambiguity-threshold'] ?? 0.015),
+        replicates,
+        batchSize: this.getBootstrapBatchSize(replicates),
+        parallelism: this.getBootstrapParallelism(),
+        stability: {
+          enabled: this.SelectedBootstrapStopWhenStable,
+          minReplicates: 100,
+          thresholdPercentagePoints: 0.5,
+          consecutiveBatches: 2,
+        },
+      }, progress => this.updateBootstrapProgress(progress));
+
+      this.persistBootstrapResult(result);
+      this.applyBootstrapSupportResult(result, true);
+      this.BootstrapStatus = result.stoppedEarly
+        ? `Stable after ${result.completedReplicates} replicates`
+        : `Completed ${result.completedReplicates} replicates`;
+    } catch (error) {
+      this.BootstrapError = error instanceof Error ? error.message : String(error);
+      this.BootstrapStatus = this.BootstrapError.includes('cancelled') ? 'Cancelled' : 'Failed';
+    } finally {
+      this.BootstrapInProgress = false;
+      this.cdref.detectChanges();
+    }
+  }
+
+  onBootstrapCancel(): void {
+    this.workerComputeService.cancelPhylogeneticBootstrap();
+    this.BootstrapStatus = 'Cancelling';
+  }
+
+  onBootstrapClear(): void {
+    if (this.BootstrapInProgress) {
+      this.onBootstrapCancel();
+    }
+
+    const stored = this.commonService.session.data.phylogeneticBootstrap;
+    const originalLabelsBySplit = stored?.originalLabelsBySplit || {};
+    const storedLeafIds = stored?.leafIds || [];
+    if (this.tree?.data) {
+      this.restoreBootstrapLabelsForBranchData(this.tree.data, originalLabelsBySplit, storedLeafIds);
+      this.tree.setData(this.tree.data);
+    }
+    if (this.originalTreeData) {
+      this.restoreBootstrapLabelsForBranchData(this.originalTreeData, originalLabelsBySplit, storedLeafIds);
+    }
+
+    this.commonService.session.data.phylogeneticBootstrap = null;
+    this.BootstrapCompletedReplicates = 0;
+    this.BootstrapRequestedReplicates = 0;
+    this.BootstrapStable = false;
+    this.BootstrapStoppedEarly = false;
+    this.BootstrapStatus = 'Cleared';
+    this.BootstrapError = '';
+    this.styleTree();
+    this.cdref.detectChanges();
+  }
+
+  private persistBootstrapResult(result: PhyloBootstrapResultResponse): void {
+    const existing = this.commonService.session.data.phylogeneticBootstrap || {};
+    this.commonService.session.data.phylogeneticBootstrap = {
+      supportBySplit: result.supportBySplit,
+      supportCountsBySplit: result.supportCountsBySplit,
+      referenceSplitLeafIds: result.referenceSplitLeafIds,
+      requestedReplicates: result.requestedReplicates,
+      completedReplicates: result.completedReplicates,
+      stable: result.stable,
+      stoppedEarly: result.stoppedEarly,
+      metric: result.metric,
+      leafIds: result.leafIds,
+      updatedAt: result.updatedAt,
+      originalLabelsBySplit: existing.originalLabelsBySplit || {},
+    };
+  }
+
+  private applyBootstrapSupportResult(
+    result: Pick<PhyloBootstrapResultResponse, 'supportBySplit'>,
+    preserveOriginalLabels: boolean
+  ): void {
+    const stored = this.commonService.session.data.phylogeneticBootstrap;
+    const originalLabelsBySplit = stored?.originalLabelsBySplit || {};
+    const storedLeafIds = stored?.leafIds || [];
+
+    if (this.tree?.data) {
+      this.applyBootstrapLabelsToBranchData(this.tree.data, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds);
+      this.tree.setData(this.tree.data);
+    }
+    if (this.originalTreeData) {
+      this.applyBootstrapLabelsToBranchData(this.originalTreeData, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds);
+    }
+
+    if (stored) {
+      stored.originalLabelsBySplit = originalLabelsBySplit;
+    }
+    this.SelectedBranchLabelShowVariable = true;
+    this.styleTree();
+  }
+
+  private applyStoredBootstrapSupport(preserveOriginalLabels = false): void {
+    const stored = this.commonService.session.data.phylogeneticBootstrap;
+    if (!stored?.supportBySplit) return;
+    this.applyBootstrapSupportResult({ supportBySplit: stored.supportBySplit }, preserveOriginalLabels);
+  }
+
+  private restoreBootstrapStateFromSession(): void {
+    const stored = this.commonService.session.data.phylogeneticBootstrap;
+    if (!stored?.supportBySplit) {
+      return;
+    }
+
+    this.BootstrapCompletedReplicates = stored.completedReplicates ?? 0;
+    this.BootstrapRequestedReplicates = stored.requestedReplicates ?? 0;
+    this.BootstrapStable = stored.stable ?? false;
+    this.BootstrapStoppedEarly = stored.stoppedEarly ?? false;
+    this.BootstrapStatus = stored.stoppedEarly
+      ? `Stable after ${this.BootstrapCompletedReplicates} replicates`
+      : `Completed ${this.BootstrapCompletedReplicates} replicates`;
+    this.SelectedBranchLabelShowVariable = true;
+    this.applyStoredBootstrapSupport(false);
+  }
+
+  private applyBootstrapLabelsToBranchData(
+    branchData: any,
+    supportBySplit: Record<string, number>,
+    originalLabelsBySplit: Record<string, string>,
+    preserveOriginalLabels: boolean,
+    storedLeafIds: string[] = []
+  ): string[] {
+    const allLeaves = storedLeafIds.length ? storedLeafIds : collectTreeLeafIds(branchData);
+
+    const visit = (node: any): string[] => {
+      const children = Array.isArray(node?.children) ? node.children : [];
+      if (children.length === 0) {
+        return typeof node?.id === 'string' && node.id.length > 0 ? [node.id] : [];
+      }
+
+      const leaves = children.flatMap(child => visit(child)).sort();
+      const splitKey = normalizeSplitKey(leaves, allLeaves);
+      if (splitKey && Object.prototype.hasOwnProperty.call(supportBySplit, splitKey)) {
+        if (preserveOriginalLabels && !Object.prototype.hasOwnProperty.call(originalLabelsBySplit, splitKey)) {
+          originalLabelsBySplit[splitKey] = typeof node.id === 'string' ? node.id : '';
+        }
+        node.id = formatBootstrapSupport(supportBySplit[splitKey]);
+      }
+      return leaves;
+    };
+
+    return visit(branchData);
+  }
+
+  private restoreBootstrapLabelsForBranchData(
+    branchData: any,
+    originalLabelsBySplit: Record<string, string>,
+    storedLeafIds: string[] = []
+  ): string[] {
+    const allLeaves = storedLeafIds.length ? storedLeafIds : collectTreeLeafIds(branchData);
+
+    const visit = (node: any): string[] => {
+      const children = Array.isArray(node?.children) ? node.children : [];
+      if (children.length === 0) {
+        return typeof node?.id === 'string' && node.id.length > 0 ? [node.id] : [];
+      }
+
+      const leaves = children.flatMap(child => visit(child)).sort();
+      const splitKey = normalizeSplitKey(leaves, allLeaves);
+      if (splitKey && Object.prototype.hasOwnProperty.call(originalLabelsBySplit, splitKey)) {
+        node.id = originalLabelsBySplit[splitKey] || '';
+      }
+      return leaves;
+    };
+
+    return visit(branchData);
   }
 
   styleBranch = (el) => {
@@ -1007,6 +1369,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     d3.select('#reroot').on('click', c => {
       tree.setData(d[0].data.reroot());
       this.hasTreeBeenModifiedFromOriginal = true;
+      this.applyStoredBootstrapSupport(false);
       this.styleTree();
       this.hideContextMenu();
       this.cdref.detectChanges();
@@ -1014,6 +1377,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     d3.select('#rotate').on('click', c => {
       tree.setData(d[0].data.rotate().getRoot());
       this.hasTreeBeenModifiedFromOriginal = true;
+      this.applyStoredBootstrapSupport(false);
       this.styleTree();
       this.hideContextMenu();
       this.cdref.detectChanges();
@@ -1021,6 +1385,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     d3.select('#flip').on('click', c => {
       tree.setData(d[0].data.flip().getRoot());
       this.hasTreeBeenModifiedFromOriginal = true;
+      this.applyStoredBootstrapSupport(false);
       this.styleTree();
       this.hideContextMenu();
       this.cdref.detectChanges();
@@ -1051,6 +1416,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     }
     this.tree.setData(subtreeData);
     this.hasTreeBeenModifiedFromOriginal = true;
+    this.applyStoredBootstrapSupport(false);
     this.styleTree();
     this.openCenter();
     this.cdref.detectChanges();
@@ -1062,6 +1428,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     const fullTreeData = this.originalTreeData.clone ? this.originalTreeData.clone() : this.originalTreeData;
     this.tree.setData(fullTreeData);
     this.hasTreeBeenModifiedFromOriginal = false;
+    this.applyStoredBootstrapSupport(false);
     this.styleTree();
     this.openCenter();
     this.cdref.detectChanges();
