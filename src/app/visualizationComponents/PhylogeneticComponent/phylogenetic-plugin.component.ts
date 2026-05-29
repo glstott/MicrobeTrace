@@ -136,6 +136,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   ];
   SelectedBootstrapReplicateOption: number | 'custom' = this.settings['tree-bootstrap-replicates-option'] ?? 100;
   SelectedBootstrapCustomReplicates: number = this.settings['tree-bootstrap-custom-replicates'] ?? 100;
+  SelectedBootstrapDecimalPlaces: number = this.settings['tree-bootstrap-decimal-places'] ?? 1;
   SelectedBootstrapStopWhenStable: boolean = this.settings['tree-bootstrap-stop-when-stable'] ?? false;
   BootstrapStableOptions: object = [
     { label: 'Off', value: false },
@@ -344,6 +345,16 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return Number.isInteger(replicates) && replicates >= 1 && replicates <= 10000;
   }
 
+  private normalizeBootstrapDecimalPlaces(value: any): number {
+    const decimalPlaces = Number(value);
+    if (!Number.isFinite(decimalPlaces)) return 1;
+    return Math.max(0, Math.min(6, Math.floor(decimalPlaces)));
+  }
+
+  private getBootstrapDecimalPlaces(): number {
+    return this.normalizeBootstrapDecimalPlaces(this.SelectedBootstrapDecimalPlaces);
+  }
+
   private getBootstrapBatchSize(replicates: number): number {
     if (replicates <= 100) return 10;
     if (replicates <= 1000) return 25;
@@ -432,6 +443,16 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   onBootstrapStopWhenStableChange(event) {
     this.SelectedBootstrapStopWhenStable = event;
     this.settings['tree-bootstrap-stop-when-stable'] = this.SelectedBootstrapStopWhenStable;
+  }
+
+  onBootstrapDecimalPlacesChange(event) {
+    this.SelectedBootstrapDecimalPlaces = this.normalizeBootstrapDecimalPlaces(event);
+    this.settings['tree-bootstrap-decimal-places'] = this.SelectedBootstrapDecimalPlaces;
+    const stored = this.commonService.session.data?.phylogeneticBootstrap;
+    if (stored?.supportBySplit) {
+      stored.decimalPlaces = this.SelectedBootstrapDecimalPlaces;
+      this.applyStoredBootstrapSupport(false);
+    }
   }
 
   private updateBootstrapProgress(progress: PhyloBootstrapProgressResponse): void {
@@ -546,6 +567,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       metric: result.metric,
       leafIds: result.leafIds,
       updatedAt: result.updatedAt,
+      decimalPlaces: this.getBootstrapDecimalPlaces(),
       originalLabelsBySplit: existing.originalLabelsBySplit || {},
     };
   }
@@ -557,17 +579,19 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     const stored = this.commonService.session.data.phylogeneticBootstrap;
     const originalLabelsBySplit = stored?.originalLabelsBySplit || {};
     const storedLeafIds = stored?.leafIds || [];
+    const decimalPlaces = this.getBootstrapDecimalPlaces();
 
     if (this.tree?.data) {
-      this.applyBootstrapLabelsToBranchData(this.tree.data, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds);
+      this.applyBootstrapLabelsToBranchData(this.tree.data, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds, decimalPlaces);
       this.tree.setData(this.tree.data);
     }
     if (this.originalTreeData) {
-      this.applyBootstrapLabelsToBranchData(this.originalTreeData, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds);
+      this.applyBootstrapLabelsToBranchData(this.originalTreeData, result.supportBySplit, originalLabelsBySplit, preserveOriginalLabels, storedLeafIds, decimalPlaces);
     }
 
     if (stored) {
       stored.originalLabelsBySplit = originalLabelsBySplit;
+      stored.decimalPlaces = decimalPlaces;
     }
     this.SelectedBranchLabelShowVariable = true;
     this.styleTree();
@@ -585,6 +609,10 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       return;
     }
 
+    this.SelectedBootstrapDecimalPlaces = this.normalizeBootstrapDecimalPlaces(
+      this.settings['tree-bootstrap-decimal-places'] ?? stored.decimalPlaces ?? this.SelectedBootstrapDecimalPlaces
+    );
+    this.settings['tree-bootstrap-decimal-places'] = this.SelectedBootstrapDecimalPlaces;
     this.BootstrapCompletedReplicates = stored.completedReplicates ?? 0;
     this.BootstrapRequestedReplicates = stored.requestedReplicates ?? 0;
     this.BootstrapStable = stored.stable ?? false;
@@ -601,7 +629,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     supportBySplit: Record<string, number>,
     originalLabelsBySplit: Record<string, string>,
     preserveOriginalLabels: boolean,
-    storedLeafIds: string[] = []
+    storedLeafIds: string[] = [],
+    decimalPlaces = 1
   ): string[] {
     const allLeaves = storedLeafIds.length ? storedLeafIds : collectTreeLeafIds(branchData);
 
@@ -617,7 +646,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         if (preserveOriginalLabels && !Object.prototype.hasOwnProperty.call(originalLabelsBySplit, splitKey)) {
           originalLabelsBySplit[splitKey] = typeof node.id === 'string' ? node.id : '';
         }
-        node.id = formatBootstrapSupport(supportBySplit[splitKey]);
+        node.id = formatBootstrapSupport(supportBySplit[splitKey], decimalPlaces);
       }
       return leaves;
     };
@@ -1563,6 +1592,13 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   if (this.settings['tree-branch-distances-hide'] == this.SelectedBranchDistanceShowVariable) this.SelectedBranchDistanceShowVariable = !this.settings['tree-branch-distances-hide']
   if (this.settings['tree-branch-distance-size'] != this.SelectedBranchDistanceSizeVariable) this.SelectedBranchDistanceSizeVariable = this.settings['tree-branch-distance-size']
   if (this.settings['tree-branch-nodes-show'] != this.SelectedBranchNodeShowVariable) this.SelectedBranchNodeShowVariable = this.settings['tree-branch-nodes-show']
+  const bootstrapDecimalPlaces = this.normalizeBootstrapDecimalPlaces(this.settings['tree-bootstrap-decimal-places'] ?? this.SelectedBootstrapDecimalPlaces);
+  if (bootstrapDecimalPlaces != this.SelectedBootstrapDecimalPlaces) {
+    this.SelectedBootstrapDecimalPlaces = bootstrapDecimalPlaces;
+    if (this.hasBootstrapSupport()) {
+      this.applyStoredBootstrapSupport(false);
+    }
+  }
 
   // Leaf Labels
   if (this.settings['tree-leaf-label-show'] != this.SelectedLeafLabelShowVariable) this.SelectedLeafLabelShowVariable = this.settings['tree-leaf-label-show']

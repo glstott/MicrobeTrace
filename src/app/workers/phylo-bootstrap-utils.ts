@@ -90,10 +90,11 @@ export function extractSplitKeysFromTree(
   return Object.keys(extractSplitLeafIdsFromTree(tree, allLeafIds)).sort();
 }
 
-export function formatBootstrapSupport(percent: number): string {
+export function formatBootstrapSupport(percent: number, decimalPlaces = 1): string {
   const finitePercent = Number.isFinite(percent) ? percent : 0;
   const clamped = Math.max(0, Math.min(100, finitePercent));
-  return `${clamped.toFixed(1)}%`;
+  const precision = Number.isFinite(decimalPlaces) ? Math.max(0, Math.min(6, Math.floor(decimalPlaces))) : 1;
+  return `${clamped.toFixed(precision)}%`;
 }
 
 export function calculateSupportPercentages(
@@ -129,4 +130,3 @@ export function createSeededRandom(seed: number): () => number {
     return state / 0x100000000;
   };
 }
-

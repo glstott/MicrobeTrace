@@ -600,6 +600,12 @@ describe('Phylogenetic Tree View', () => {
       cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapReplicateOption').should('equal', 'custom');
       cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapCustomReplicates').should('equal', 3);
 
+      cy.get('@dialogContainer').find('#tree-bootstrap-decimal-places')
+        .invoke('val', 2)
+        .trigger('input')
+        .trigger('change');
+      cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapDecimalPlaces').should('equal', 2);
+
       cy.window().then((win: any) => {
         const leaves = win.commonService.visuals.phylogenetic.tree.data.getLeaves().map((leaf: any) => leaf.id);
         leaves.forEach((leafId: string, index: number) => {
@@ -622,11 +628,11 @@ describe('Phylogenetic Tree View', () => {
           const labels = Cypress.$.makeArray($labels)
             .map(label => (label.textContent || '').trim())
             .filter(Boolean);
-          expect(labels.some(label => /^\d+\.\d%$/.test(label)), 'at least one bootstrap label').to.equal(true);
+          expect(labels.some(label => /^\d+\.\d{2}%$/.test(label)), 'at least one bootstrap label').to.equal(true);
         });
 
       cy.window().then((win: any) => {
-        expect(win.commonService.visuals.phylogenetic.tree.data.toNewick(false)).to.match(/\)\d+\.\d%:/);
+        expect(win.commonService.visuals.phylogenetic.tree.data.toNewick(false)).to.match(/\)\d+\.\d{2}%:/);
       });
     })
 

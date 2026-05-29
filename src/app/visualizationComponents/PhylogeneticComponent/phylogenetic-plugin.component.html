@@ -269,6 +269,12 @@
             <p-selectButton id="tree-bootstrap-stable" [options]="BootstrapStableOptions" [allowEmpty]="false" fluid [(ngModel)]="SelectedBootstrapStopWhenStable" (ngModelChange)="onBootstrapStopWhenStableChange($event)" [disabled]="BootstrapInProgress"></p-selectButton>
           </div>
         </div>
+        <div class="form-group row" title="How many decimals should the bootstrap support labels have?">
+          <div class="col-5"><label for="tree-bootstrap-decimal-places">Decimal Length</label></div>
+          <div class="col-7">
+            <input type="number" class="form-control form-control-sm" id="tree-bootstrap-decimal-places" min="0" step="1" max="6" value="1" [(ngModel)]="SelectedBootstrapDecimalPlaces" (ngModelChange)="onBootstrapDecimalPlacesChange($event)" [disabled]="BootstrapInProgress">
+          </div>
+        </div>
         @if (BootstrapUnsupportedReason) {
           <div id="tree-bootstrap-unavailable" class="form-group row">
             <div class="col-12 text-muted">{{BootstrapUnsupportedReason}}</div>

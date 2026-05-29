@@ -37,8 +37,11 @@ describe('phylo bootstrap utils', () => {
 
   it('formats and compares support percentages', () => {
     expect(formatBootstrapSupport(85.234)).toBe('85.2%');
+    expect(formatBootstrapSupport(85.234, 0)).toBe('85%');
+    expect(formatBootstrapSupport(85.234, 2)).toBe('85.23%');
+    expect(formatBootstrapSupport(85.234, 3)).toBe('85.234%');
+    expect(formatBootstrapSupport(85.234, 6)).toBe('85.234000%');
     expect(calculateSupportPercentages({ split: 17 }, 20).split).toBe(85);
     expect(getMaxSupportDelta({ split: 84.5 }, { split: 85.2 })).toBeCloseTo(0.7, 5);
   });
 });
-
