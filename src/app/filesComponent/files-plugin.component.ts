@@ -198,6 +198,13 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.applyStyleFileSettings();
+        this.refreshTemplateState();
+      });
+
+    this.store.networkUpdated$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.refreshTemplateState();
       });
 
     this.store.FP_removeFiles$
@@ -723,6 +730,12 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
      // Set to false to indicate that the network is not fully loaded  as new network is launching
      const loadGeneration = this.commonService.beginDataLoad();
+     const updateExistingAnalysis = this.commonService.session.network.launched;
+     if (updateExistingAnalysis) {
+       this.commonService.cacheAnalysisStyleForUndo('file-update');
+     } else {
+       this.commonService.clearCachedAnalysisStyleForUndo();
+     }
      this.commonService.session.network.isFullyLoaded = false;
      
     // launching new network, so set network rendered to false to start loading modal
@@ -760,6 +773,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       console.log('launch click launched ', this.commonService.session.network.launched);
 
       this.commonService.resetData();
+      this.commonService.session.network.launched = true;
 
       $('#launch').text('Update');
       // this.visuals.twoD.isLoading = true;
@@ -809,6 +823,27 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       // Process the data files loaded.
       this.creatLaunchSequences(loadGeneration);
     }, 1000);
+    this.refreshTemplateState();
+  }
+
+  hasCachedAnalysisSettings(): boolean {
+    return this.commonService.hasCachedAnalysisStyleForUndo();
+  }
+
+  canRestoreCachedAnalysisSettings(): boolean {
+    return this.hasCachedAnalysisSettings()
+      && !this.isLoadingFiles
+      && (this.commonService.session.network.isFullyLoaded || this.store.networkUpdatedValue);
+  }
+
+  restoreCachedAnalysisSettings(): void {
+    if (!this.canRestoreCachedAnalysisSettings()) {
+      return;
+    }
+
+    if (this.commonService.restoreCachedAnalysisStyleForUndo()) {
+      this.refreshTemplateState();
+    }
   }
 
   /**

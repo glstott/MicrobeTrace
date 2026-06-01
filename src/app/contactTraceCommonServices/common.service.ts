@@ -44,6 +44,12 @@ interface SequencePairwiseLinkGuardrailResult {
     message: string;
 }
 
+interface CachedAnalysisStyleSnapshot {
+    createdAt: number;
+    reason: 'file-update';
+    style: any;
+}
+
 const DEFAULT_SEQUENCE_PAIRWISE_LINK_WARNING_THRESHOLD = 1000000;
 const DEFAULT_SEQUENCE_PAIRWISE_LINK_HARD_LIMIT = 2000000;
 
@@ -64,6 +70,7 @@ export class CommonService extends AppComponentBase implements OnInit {
 
     activeTab: string = 'Files';
     pendingDashboardRestore: DashboardRestoreState | null = null;
+    private cachedAnalysisStyleSnapshot: CachedAnalysisStyleSnapshot | null = null;
 
     private readonly restorableDashboardViews = new Set<string>([
         '2D Network',
@@ -1010,6 +1017,194 @@ export class CommonService extends AppComponentBase implements OnInit {
         const builtInFields = styleableFields.filter(field => this.lowPriorityStyleableNodeFields.has(`${field}`.toLowerCase()));
 
         return metadataFields.concat(builtInFields);
+    }
+
+    private buildCanonicalFieldLookup(fields: string[]): Map<string, string> {
+        const lookup = new Map<string, string>();
+
+        fields.forEach(field => {
+            const normalizedField = `${field ?? ''}`.trim();
+            if (!normalizedField) {
+                return;
+            }
+
+            lookup.set(normalizedField.toLowerCase(), normalizedField);
+        });
+
+        return lookup;
+    }
+
+    private getCompatibleFieldValue(value: any, fieldLookup: Map<string, string>, fallback: any): any {
+        if (Array.isArray(value)) {
+            const compatibleValues = value
+                .map(fieldValue => this.getCompatibleSingleFieldValue(fieldValue, fieldLookup))
+                .filter(fieldValue => fieldValue !== null && fieldValue !== undefined);
+
+            return compatibleValues.length > 0
+                ? compatibleValues
+                : _.cloneDeep(fallback);
+        }
+
+        const compatibleValue = this.getCompatibleSingleFieldValue(value, fieldLookup);
+        return compatibleValue !== null && compatibleValue !== undefined
+            ? compatibleValue
+            : _.cloneDeep(fallback);
+    }
+
+    private getCompatibleSingleFieldValue(value: any, fieldLookup: Map<string, string>): string | null {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        const fieldValue = `${value}`.trim();
+        if (!fieldValue || fieldValue === 'None') {
+            return 'None';
+        }
+
+        return fieldLookup.get(fieldValue.toLowerCase()) ?? null;
+    }
+
+    private sanitizeCachedStyleWidgetFields(style: any): any {
+        const currentStyle = _.cloneDeep(this.session?.style || this.sessionSkeleton().style);
+        const cachedStyle = _.cloneDeep(style || {});
+        const defaultWidgets: any = this.defaultWidgets();
+        const currentWidgets = _.cloneDeep(currentStyle.widgets || {});
+        const cachedWidgets = _.cloneDeep(cachedStyle.widgets || {});
+        const sanitizedStyle = Object.assign(currentStyle, cachedStyle);
+        sanitizedStyle.widgets = Object.assign(
+            {},
+            defaultWidgets,
+            currentWidgets,
+            cachedWidgets
+        );
+
+        const nodeFieldLookup = this.buildCanonicalFieldLookup(['None', ...this.getStyleableNodeFields()]);
+        const rawNodeFieldLookup = this.buildCanonicalFieldLookup(['None', ...(this.session?.data?.nodeFields || [])]);
+        const linkFieldLookup = this.buildCanonicalFieldLookup(['None', ...(this.session?.data?.linkFields || [])]);
+        const clusterFieldLookup = this.buildCanonicalFieldLookup(['None', ...(this.session?.data?.clusterFields || [])]);
+        const combinedFieldLookup = this.buildCanonicalFieldLookup([
+            'None',
+            ...(this.session?.data?.nodeFields || []),
+            ...(this.session?.data?.linkFields || []),
+            ...(this.session?.data?.clusterFields || [])
+        ]);
+
+        const sanitizeWidget = (widgetKey: string, fieldLookup: Map<string, string>) => {
+            sanitizedStyle.widgets[widgetKey] = this.getCompatibleFieldValue(
+                sanitizedStyle.widgets[widgetKey],
+                fieldLookup,
+                currentWidgets[widgetKey] ?? defaultWidgets[widgetKey]
+            );
+        };
+
+        [
+            'node-color-variable',
+            'node-symbol-variable',
+            'node-radius-variable',
+            'node-label-variable',
+            'node-timeline-variable',
+            'tree-leaf-node-radius-variable',
+            'physics-tree-node-label-variable',
+            'physics-tree-tooltip',
+            'timeline-date-field',
+            'search-field',
+            'bubble-x',
+            'bubble-y',
+            'choropleth-aggregate-on',
+            'map-field-lat',
+            'map-field-lon',
+            'map-field-tract',
+            'map-field-zipcode',
+            'map-field-county',
+            'map-field-state',
+            'map-field-country',
+            'globe-field-lat',
+            'globe-field-lon',
+            'globe-field-tract',
+            'globe-field-zipcode',
+            'globe-field-county',
+            'globe-field-state',
+            'globe-field-country',
+            'polygons-foci'
+        ].forEach(widgetKey => sanitizeWidget(widgetKey, nodeFieldLookup));
+
+        [
+            'link-color-variable',
+            'link-label-variable',
+            'link-sort-variable',
+            'link-tooltip-variable',
+            'link-width-variable'
+        ].forEach(widgetKey => sanitizeWidget(widgetKey, linkFieldLookup));
+
+        [
+            'cluster-color-variable',
+            'cluster-label-variable'
+        ].forEach(widgetKey => {
+            if (Object.prototype.hasOwnProperty.call(sanitizedStyle.widgets, widgetKey)) {
+                sanitizeWidget(widgetKey, clusterFieldLookup);
+            }
+        });
+
+        [
+            'scatterplot-xVar',
+            'scatterplot-yVar'
+        ].forEach(widgetKey => sanitizeWidget(widgetKey, combinedFieldLookup));
+
+        sanitizedStyle.widgets['node-tooltip-variable'] = this.getCompatibleFieldValue(
+            sanitizedStyle.widgets['node-tooltip-variable'],
+            rawNodeFieldLookup,
+            currentWidgets['node-tooltip-variable'] ?? defaultWidgets['node-tooltip-variable']
+        );
+
+        return sanitizedStyle;
+    }
+
+    cacheAnalysisStyleForUndo(reason: 'file-update'): void {
+        if (!this.session?.style) {
+            this.cachedAnalysisStyleSnapshot = null;
+            return;
+        }
+
+        this.cachedAnalysisStyleSnapshot = {
+            createdAt: Date.now(),
+            reason,
+            style: _.cloneDeep(this.session.style)
+        };
+    }
+
+    hasCachedAnalysisStyleForUndo(): boolean {
+        return !!this.cachedAnalysisStyleSnapshot;
+    }
+
+    clearCachedAnalysisStyleForUndo(): void {
+        this.cachedAnalysisStyleSnapshot = null;
+    }
+
+    restoreCachedAnalysisStyleForUndo(): boolean {
+        if (!this.cachedAnalysisStyleSnapshot) {
+            return false;
+        }
+
+        const compatibleStyle = this.sanitizeCachedStyleWidgetFields(this.cachedAnalysisStyleSnapshot.style);
+        this.applyStyle(compatibleStyle);
+
+        const microbeTrace = this.visuals?.microbeTrace as any;
+        if (microbeTrace) {
+            if (typeof microbeTrace.loadUISettings === 'function') {
+                microbeTrace.loadUISettings();
+            } else if (typeof microbeTrace.applyStyleFileSettings === 'function') {
+                microbeTrace.applyStyleFileSettings();
+            }
+
+            if (typeof microbeTrace.refreshVisibleColorTables === 'function') {
+                microbeTrace.refreshVisibleColorTables();
+            }
+        }
+
+        this.updateStatistics();
+        this._debouncedUpdateNetworkVisuals();
+        this.clearCachedAnalysisStyleForUndo();
+        return true;
     }
 
     hasValidTimelineDateValue(value: any): boolean {

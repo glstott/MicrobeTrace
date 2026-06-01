@@ -270,6 +270,18 @@
       <span>
         <button type="button" class="btn btn-default btn-nr floater" (click)="showSequenceSettings()">Sequence Controls</button>
       </span>
+      @if (hasCachedAnalysisSettings()) {
+        <span>
+          <button
+            type="button"
+            class="btn btn-warning btn-nr floater"
+            data-testid="files-undo-settings-button"
+            [disabled]="!canRestoreCachedAnalysisSettings()"
+            (click)="restoreCachedAnalysisSettings()">
+            Undo Settings
+          </button>
+        </span>
+      }
       <span>
         <button id="launch" class="btn btn-success" (click)="launchClick()" title="Please select a Network CSV or FASTA File" disabled>Launch</button>
       </span>

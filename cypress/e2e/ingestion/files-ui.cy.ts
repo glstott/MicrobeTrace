@@ -7,6 +7,30 @@ describe('File Handling and Processing', () => {
   const nodeFile = 'AngularTesting_nodelist_withseqs_TN93_BS.csv';
   const linkFile = 'AngularTesting_Epi_linklist_BS.csv';
   const loadNodeFile = () => cy.loadFiles([{ name: nodeFile, datatype: 'node' }]);
+  const undoSettingsButton = byTestId(testIds.filesUndoSettingsButton);
+
+  const launchNodeAndLinkFiles = () => {
+    cy.loadFiles([
+      { name: nodeFile, datatype: 'node' },
+      { name: linkFile, datatype: 'link' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 30000 }).should('contain.text', '2D Network');
+  };
+
+  const removeNodeFileAndUpdate = () => {
+    cy.contains('.lm_tab:visible', 'Files', { timeout: 15000 }).click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 15000 }).should('contain.text', 'Files');
+    cy.contains('.file-table-row', nodeFile, { timeout: 15000 })
+      .find('.flaticon-delete-1')
+      .click({ force: true });
+    cy.contains('#file-table .file-table-row', nodeFile).should('not.exist');
+    cy.get('#launch').should('not.be.disabled').click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 30000 }).should('contain.text', '2D Network');
+    cy.contains('.lm_tab:visible', 'Files', { timeout: 15000 }).click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 15000 }).should('contain.text', 'Files');
+  };
 
   beforeEach(() => {
     cy.visit('/?skipEula=1&skipDemoSession=1');
@@ -123,6 +147,70 @@ describe('File Handling and Processing', () => {
     // Assert the file row is gone and the prompt is back
     cy.contains('#file-table .file-table-row', nodeFile).should('not.exist');
     cy.get('#file-prompt').should('be.visible');
+  });
+
+  it('restores cached scalar styling after updating files', () => {
+    launchNodeAndLinkFiles();
+
+    cy.window().then((win: any) => {
+      const widgets = win.commonService.session.style.widgets;
+      widgets['node-color'] = '#ff0000';
+      win.commonService.visuals.microbeTrace.SelectedNodeColorVariable = '#ff0000';
+      win.commonService.visuals.microbeTrace.onNodeColorChanged(true);
+      expect(widgets['node-color']).to.equal('#ff0000');
+    });
+
+    removeNodeFileAndUpdate();
+
+    cy.window()
+      .its('commonService.session.style.widgets', { timeout: 20000 })
+      .should((widgets) => {
+        expect(widgets['node-color']).to.equal('#1f77b4');
+      });
+
+    cy.get(undoSettingsButton, { timeout: 15000 })
+      .should('be.visible')
+      .and('not.be.disabled')
+      .click({ force: true });
+
+    cy.window()
+      .its('commonService.session.style.widgets')
+      .should((widgets) => {
+        expect(widgets['node-color']).to.equal('#ff0000');
+      });
+    cy.get(undoSettingsButton).should('not.exist');
+  });
+
+  it('does not restore cached field styling when the field is missing after updating files', () => {
+    launchNodeAndLinkFiles();
+
+    cy.window().then((win: any) => {
+      const widgets = win.commonService.session.style.widgets;
+      const microbeTrace = win.commonService.visuals.microbeTrace;
+      widgets['node-color'] = '#ff0000';
+      microbeTrace.SelectedNodeColorVariable = '#ff0000';
+      microbeTrace.onNodeColorChanged(true);
+      microbeTrace.SelectedColorNodesByVariable = 'subtype';
+      microbeTrace.onColorNodesByChanged(true);
+      expect(widgets['node-color']).to.equal('#ff0000');
+      expect(widgets['node-color-variable']).to.equal('subtype');
+    });
+
+    removeNodeFileAndUpdate();
+
+    cy.get(undoSettingsButton, { timeout: 15000 })
+      .should('be.visible')
+      .and('not.be.disabled')
+      .click({ force: true });
+
+    cy.window()
+      .its('commonService.session')
+      .should((session) => {
+        expect(session.data.nodeFields).not.to.include('subtype');
+        expect(session.style.widgets['node-color']).to.equal('#ff0000');
+        expect(session.style.widgets['node-color-variable']).to.equal('None');
+      });
+    cy.get(undoSettingsButton).should('not.exist');
   });
 
   it('opens and closes the sequence controls modal', () => {
