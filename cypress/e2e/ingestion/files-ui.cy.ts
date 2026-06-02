@@ -7,7 +7,15 @@ describe('File Handling and Processing', () => {
   const nodeFile = 'AngularTesting_nodelist_withseqs_TN93_BS.csv';
   const linkFile = 'AngularTesting_Epi_linklist_BS.csv';
   const loadNodeFile = () => cy.loadFiles([{ name: nodeFile, datatype: 'node' }]);
-  const undoSettingsButton = byTestId(testIds.filesUndoSettingsButton);
+  const undoSettingsButton = byTestId(testIds.globalSettingsUndoSettingsButton);
+
+  const openGlobalSettingsFooter = () => {
+    cy.openGlobalSettings();
+    cy.contains('.p-dialog-title', 'Global Settings')
+      .parents('.p-dialog')
+      .find('.p-dialog-content')
+      .scrollTo('bottom');
+  };
 
   const launchNodeAndLinkFiles = () => {
     cy.loadFiles([
@@ -168,6 +176,7 @@ describe('File Handling and Processing', () => {
         expect(widgets['node-color']).to.equal('#1f77b4');
       });
 
+    openGlobalSettingsFooter();
     cy.get(undoSettingsButton, { timeout: 15000 })
       .should('be.visible')
       .and('not.be.disabled')
@@ -198,6 +207,7 @@ describe('File Handling and Processing', () => {
 
     removeNodeFileAndUpdate();
 
+    openGlobalSettingsFooter();
     cy.get(undoSettingsButton, { timeout: 15000 })
       .should('be.visible')
       .and('not.be.disabled')

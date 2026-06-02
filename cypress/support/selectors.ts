@@ -17,7 +17,7 @@ export const testIds = {
   appSampleDatasetButton: 'app-sample-dataset-button',
   filesSettingsButton: 'files-settings-button',
   filesSettingsDialog: 'files-settings-dialog',
-  filesUndoSettingsButton: 'files-undo-settings-button',
+  globalSettingsUndoSettingsButton: 'global-settings-undo-settings-button',
   filterEpsilon: 'filter-epsilon',
   filterMinimumClusterSize: 'filter-minimum-cluster-size',
   filterRevealEverything: 'filter-reveal-everything',

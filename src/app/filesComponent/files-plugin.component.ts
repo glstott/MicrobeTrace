@@ -201,12 +201,6 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         this.refreshTemplateState();
       });
 
-    this.store.networkUpdated$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => {
-        this.refreshTemplateState();
-      });
-
     this.store.FP_removeFiles$
       .pipe(takeUntil(this.destroy$))
       .subscribe((shouldRemoveFiles) => {
@@ -824,26 +818,6 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       this.creatLaunchSequences(loadGeneration);
     }, 1000);
     this.refreshTemplateState();
-  }
-
-  hasCachedAnalysisSettings(): boolean {
-    return this.commonService.hasCachedAnalysisStyleForUndo();
-  }
-
-  canRestoreCachedAnalysisSettings(): boolean {
-    return this.hasCachedAnalysisSettings()
-      && !this.isLoadingFiles
-      && (this.commonService.session.network.isFullyLoaded || this.store.networkUpdatedValue);
-  }
-
-  restoreCachedAnalysisSettings(): void {
-    if (!this.canRestoreCachedAnalysisSettings()) {
-      return;
-    }
-
-    if (this.commonService.restoreCachedAnalysisStyleForUndo()) {
-      this.refreshTemplateState();
-    }
   }
 
   /**

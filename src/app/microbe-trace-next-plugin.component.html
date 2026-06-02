@@ -648,6 +648,16 @@
 
       <div class="modal-footer">
         <div class="btn-group" data-toggle="buttons">
+          @if (hasCachedAnalysisSettings()) {
+            <button
+              type="button"
+              class="btn btn-warning"
+              data-testid="global-settings-undo-settings-button"
+              [disabled]="!canRestoreCachedAnalysisSettings()"
+              (click)="restoreCachedAnalysisSettings()">
+              Undo Settings
+            </button>
+          }
           <button type="button" class="btn btn-primary" (click)="GlobalSettingsDialogSettings.setVisibility(false)">Done</button>
         </div>
       </div>

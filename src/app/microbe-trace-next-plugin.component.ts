@@ -2040,6 +2040,26 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.refreshKeyTablesView();
     }
 
+    hasCachedAnalysisSettings(): boolean {
+        return this.commonService.hasCachedAnalysisStyleForUndo();
+    }
+
+    canRestoreCachedAnalysisSettings(): boolean {
+        return this.hasCachedAnalysisSettings()
+            && !this.commonService.session?.network?.rendering
+            && (this.commonService.session.network.isFullyLoaded || this.store.networkUpdatedValue);
+    }
+
+    restoreCachedAnalysisSettings(): void {
+        if (!this.canRestoreCachedAnalysisSettings()) {
+            return;
+        }
+
+        if (this.commonService.restoreCachedAnalysisStyleForUndo()) {
+            this.cdref.markForCheck();
+        }
+    }
+
     mapPreviousShapeNameToCurrent(name: string): string {
         return resolveNodeShapeKey(name);
     }
