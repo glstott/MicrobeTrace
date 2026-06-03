@@ -2,6 +2,7 @@ export interface PieChartSlice {
   label: string;
   count: number;
   color: string;
+  alpha?: number;
 }
 
 export interface PieChartPathSlice extends PieChartSlice {
@@ -94,7 +95,9 @@ export function buildPieChartPatternDef(patternId: string, slices: PieChartSlice
     const arcStart = i === 0 ? '1 0' : `${coordinates[i - 1][0]} ${coordinates[i - 1][1]}`;
     const largeArcFlag = proportions[i] > 0.5 ? 1 : 0;
     const arcEnd = i === coordinates.length - 1 ? '1 0' : `${coordinates[i][0]} ${coordinates[i][1]}`;
-    patternString += `<path d='M 0 0 L ${arcStart} A 1 1 0 ${largeArcFlag} 1 ${arcEnd} L 0 0' fill='${validSlices[i].color}' />`;
+    const alpha = Number(validSlices[i].alpha);
+    const fillOpacity = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
+    patternString += `<path d='M 0 0 L ${arcStart} A 1 1 0 ${largeArcFlag} 1 ${arcEnd} L 0 0' fill='${validSlices[i].color}' fill-opacity='${fillOpacity}' />`;
   }
 
   patternString += '</pattern>';
