@@ -1,0 +1,7 @@
+[1m[33mPrebundling has been configured but will not be used because caching has been disabled.[39m[22m
+[1m[33m[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mbundle initial exceeded maximum budget. Budget 2.00 MB was not met by 19.22 MB with a total of 21.22 MB.[0m
+
+
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1msrc/app/microbe-trace-next-plugin.component.less exceeded maximum budget. Budget 6.00 kB was not met by 4.96 kB with a total of 10.96 kB.[0m
+
+[39m[22m

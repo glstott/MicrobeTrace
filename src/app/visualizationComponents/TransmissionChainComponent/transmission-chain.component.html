@@ -1,0 +1,128 @@
+<div #chainWrapper class="transmission-chain-wrapper">
+  <div id="tool-btn-container-transmission-chain" class="tool-btn-container m-portlet">
+    <span style="overflow: visible; position: relative;">
+      <a title="Open Settings" data-testid="transmission-chain-settings-button" class="btn btn-sm btn-clean btn-icon btn-icon-md" style="float:left" (click)="openSettings()"><i class="flaticon-settings primary"></i></a>
+    </span>
+    <span style="overflow: visible; position: relative;">
+      <a title="Export Transmission Chain" data-testid="transmission-chain-export-button" class="btn btn-sm btn-clean btn-icon btn-icon-md" style="float:left" (click)="openExport()"><i class="flaticon-download primary"></i></a>
+    </span>
+    <span style="overflow: visible; position: relative;">
+      <a title="Center Screen" data-testid="transmission-chain-center-button" class="btn btn-sm btn-clean btn-icon btn-icon-md" style="float:left" (click)="openCenter()"><i class="flaticon-eye primary"></i></a>
+    </span>
+  </div>
+
+  <div class="transmission-chain-status" data-testid="transmission-chain-status">
+    <span>{{statusMessage}}</span>
+    @if (SelectedDateFieldVariable !== 'None') {
+      <span>{{componentCount.toLocaleString()}} components</span>
+      <span>{{missingDateCount.toLocaleString()}} without dates</span>
+    }
+  </div>
+
+  <div #chainScroll class="transmission-chain-scroll">
+    <svg #chainSvg id="transmissionChainSVG" data-testid="transmission-chain-svg"></svg>
+  </div>
+
+  <div #chainTooltip class="transmission-chain-tooltip"></div>
+
+  @if (viewActive) {
+    <p-dialog id="transmission-chain-settings-dialog" data-testid="transmission-chain-settings-dialog" [(visible)]="settingsOpen" header="Transmission Chain Settings" [contentStyle]="{'max-height': '70vh', 'width': '460px'}" appendTo="body">
+      <div class="form-group row" title="Select the node date field used to place cases on the fixed timeline axis.">
+        <div class="col-4">
+          <label>Date Field</label>
+        </div>
+        <div class="col-8">
+          <p-select id="transmission-chain-date-field" [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable" (ngModelChange)="onDateFieldChange()"></p-select>
+        </div>
+      </div>
+
+      <div class="form-group row node-label-row" title="Set the rendered node radius.">
+        <div class="col-4 padding-right-5"><label>Node Size</label></div>
+        <div class="col-8"><input id="transmission-chain-node-radius" type="range" class="custom-range" min="5" step="1" max="24" [(ngModel)]="nodeRadius" (change)="onNodeRadiusChange()"></div>
+      </div>
+
+      <div class="form-group row node-label-row" title="Set the vertical spacing between transmission-chain lanes.">
+        <div class="col-4 padding-right-5"><label>Lane Spacing</label></div>
+        <div class="col-8"><input id="transmission-chain-lane-height" type="range" class="custom-range" min="22" step="2" max="70" [(ngModel)]="laneHeight" (change)="onLaneHeightChange()"></div>
+      </div>
+
+      <div class="form-group row" title="Use global node styling controls for node color.">
+        <div class="col-4"><label>Node Color</label></div>
+        <div class="col-8">
+          <button id="transmission-chain-open-global-styling" pButton type="button" label="Show Colors" class="ui-button-raised width-percent-100" (click)="showGlobalSettings()" [style]="{'background-color': '#2196f3', 'border': '1px solid #2196f3'}"></button>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="transmission-chain-link-file-header">
+        <label>Link Files</label>
+        <div>
+          <button type="button" class="btn btn-light btn-sm" (click)="selectAllLinkOrigins()">All</button>
+          <button type="button" class="btn btn-light btn-sm" (click)="clearLinkOrigins()">Clear</button>
+        </div>
+      </div>
+
+      <div class="transmission-chain-link-file-list">
+        @if (availableLinkOrigins.length === 0) {
+          <div class="transmission-chain-empty-option">No link files available</div>
+        }
+        @for (origin of availableLinkOrigins; track origin) {
+          <label class="transmission-chain-link-file-option" [title]="origin">
+            <input type="checkbox" [checked]="isLinkOriginSelected(origin)" (change)="toggleLinkOrigin(origin, $event)">
+            <span>{{origin}}</span>
+          </label>
+        }
+      </div>
+    </p-dialog>
+  }
+
+  @if (viewActive) {
+    <p-dialog id="transmission-chain-export-dialog" data-testid="transmission-chain-export-dialog" [(visible)]="exportOpen" appendTo="body" header="Export Transmission Chain">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-body" style="min-width: 400px; height: 100%;">
+            <div class="form-group row">
+              <div class="col-9">
+                <input id="transmission-chain-export-filename" type="text" class="form-control form-control-sm" placeholder="Filename" [(ngModel)]="ChainExportFileName">
+              </div>
+              <div class="col-3">
+                <select id="transmission-chain-export-filetype" [(ngModel)]="ChainExportFileType" class="form-control form-control-sm">
+                  <option>svg</option>
+                  <option>png</option>
+                </select>
+              </div>
+            </div>
+            <div [hidden]="ChainExportFileType=='svg'">
+              <p-accordion [value]="null" [multiple]="true">
+                <p-accordion-panel value="transmission-chain-export-advanced" style="color:#495057">
+                  <p-accordion-header>Advanced</p-accordion-header>
+                  <p-accordion-content>
+                    <div id="transmission-chain-export-advanced">
+                      <div class="form-group row">
+                        <div class="col-3">
+                          <label for="transmission-chain-export-scale">Scale</label>
+                        </div>
+                        <div class="col-9">
+                          <input id="transmission-chain-export-scale" type="number" class="form-control form-control-sm" min="0" max="2" step="0.1" [(ngModel)]="SelectedChainExportScaleVariable" (ngModelChange)="updateCalculatedResolution()">
+                        </div>
+                      </div>
+                      <div class="form-group row">
+                        <div class="col-3">Resolution</div>
+                        <div id="transmission-chain-export-dimensions" class="col-9 text-right">{{CalculatedResolution}}</div>
+                      </div>
+                    </div>
+                  </p-accordion-content>
+                </p-accordion-panel>
+              </p-accordion>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-error" (click)="exportOpen = false">Cancel</button>
+            <button id="transmission-chain-export-confirm" type="button" class="btn btn-primary" (click)="exportVisualization()">Export</button>
+          </div>
+        </div>
+      </div>
+    </p-dialog>
+  }
+</div>

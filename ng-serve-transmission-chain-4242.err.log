@@ -1,0 +1,4 @@
+[1m[33mPrebundling has been configured but will not be used because caching has been disabled.[39m[22m
+[31m×[39m Building... [31m[FAILED: spawn EPERM][39m
+[1m[31mAn unhandled exception occurred: spawn EPERM
+See "C:\Users\qkx2\AppData\Local\Temp\1\ng-ubXg3Y\angular-errors.log" for further details.[39m[22m

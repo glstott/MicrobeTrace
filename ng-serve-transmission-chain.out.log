@@ -1,0 +1,23 @@
+[33m>[39m Building...
+[32m√[39m Building...
+[1mInitial chunk files[22m  [2m | [22m[1mNames[22m                  [2m | [22m [1mRaw size[22m
+[32mmain.js[39m              [2m | [22m[2mmain[22m                   [2m | [22m [36m19.59 MB[39m[2m | [22m
+[32mchunk-3SMD2V5M.js[39m    [2m | [22m[2m-[22m                      [2m | [22m[36m871.96 kB[39m[2m | [22m
+[32mpolyfills.js[39m         [2m | [22m[2mpolyfills[22m              [2m | [22m[36m336.18 kB[39m[2m | [22m
+[32mstyles.css[39m           [2m | [22m[2mstyles[22m                 [2m | [22m[36m295.92 kB[39m[2m | [22m
+[32mscripts.js[39m           [2m | [22m[2mscripts[22m                [2m | [22m [36m92.84 kB[39m[2m | [22m
+[32mchunk-KBUIKKCC.js[39m    [2m | [22m[2m-[22m                      [2m | [22m  [36m3.56 kB[39m[2m | [22m
+
+[1m [22m                    [2m | [22m[1mInitial total[22m          [2m | [22m [1m[93m21.19 MB[39m[22m
+
+[1mLazy chunk files[22m     [2m | [22m[1mNames[22m                  [2m | [22m [1mRaw size[22m
+[32mpdfmake-UK4B3AXJ.js[39m  [2m | [22m[2mpdfmake[22m                [2m | [22m  [36m3.69 MB[39m[2m | [22m
+[32mvfs_fonts-YTEZFX7K.js[39m[2m | [22m[2mvfs_fonts[22m              [2m | [22m[36m829.21 kB[39m[2m | [22m
+[32mworker-3LDEUBSJ.js[39m   [2m | [22m[2mcompute-worker[22m         [2m | [22m [36m71.84 kB[39m[2m | [22m
+[32mworker-XMBCIRRF.js[39m   [2m | [22m[2mpatristic-engine-worker[22m[2m | [22m [36m42.12 kB[39m[2m | [22m
+[32mxlsx-NDWLPF6S.js[39m     [2m | [22m[2mxlsx[22m                   [2m | [22m[36m664 bytes[39m[2m | [22m
+
+Application bundle generation complete. [10.448 seconds] - 2026-06-04T14:33:56.602Z
+
+NOTE: Raw file sizes do not reflect development server per-request transformations.
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m4210[22m/[39m

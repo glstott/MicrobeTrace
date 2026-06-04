@@ -4601,6 +4601,18 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                 break;
             }
+            case "Transmission Chain": {
+
+                this.showSettings = true;
+                this.showExport = true;
+                this.showCenter = true;
+                this.showPinAllNodes = false;
+                this.showRefresh = false;
+                this.showButtonGroup = false;
+                this.showSorting = false;
+
+                break;
+            }
             case KeyTablesComponent.componentTypeName: {
 
                 this.showSettings = false;

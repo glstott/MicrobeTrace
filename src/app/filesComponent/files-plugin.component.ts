@@ -50,6 +50,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     'Crosstab',
     'Map',
     'Bubble',
+    'Transmission Chain',
     'Gantt Chart',
     'Phylogenetic Tree',
     'Alignment View',

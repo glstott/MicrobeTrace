@@ -78,7 +78,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         'Heatmap',
         'Bubble',
         'Sankey',
-        'Waterfall'
+        'Waterfall',
+        'Transmission Chain'
     ]);
 
     private readonly legacyViewNameMap: { [key: string]: string } = {
@@ -108,6 +109,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         'bubble': 'Bubble',
         'sankey': 'Sankey',
         'waterfall': 'Waterfall',
+        'transmission_chain': 'Transmission Chain',
+        'transmissionchain': 'Transmission Chain',
+        'chain': 'Transmission Chain',
         'files': 'Files'
     };
 
@@ -509,6 +513,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             'selected-node-stroke-width': '4px',
             'timeline-date-field': 'None',
             'timeline-noncumulative': true,
+            'transmission-chain-date-field': 'None',
+            'transmission-chain-link-origins': null,
+            'transmission-chain-node-radius': 11,
+            'transmission-chain-lane-height': 32,
             'tree-animation-on': true,
             'tree-branch-distances-hide': true,
             'tree-branch-distance-size': 12,

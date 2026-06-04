@@ -22,6 +22,7 @@ import { BubbleComponent } from './visualizationComponents/BubbleComponent/bubbl
 import { SankeyComponent } from './visualizationComponents/SankeyComponent/sankey.component';
 import { WaterfallComponent } from './visualizationComponents/WaterfallComponent/waterfall.component';
 import { KeyTablesComponent } from './visualizationComponents/KeyTablesComponent/key-tables.component';
+import { TransmissionChainComponent } from './visualizationComponents/TransmissionChainComponent/transmission-chain.component';
 
 @Component({
     selector: 'app-golden-layout-host',
@@ -82,6 +83,7 @@ export class GoldenLayoutHostComponent implements OnDestroy {
     this.goldenLayoutComponentService.registerComponentType(BubbleComponent.componentTypeName, BubbleComponent);
     this.goldenLayoutComponentService.registerComponentType(SankeyComponent.componentTypeName, SankeyComponent);
     this.goldenLayoutComponentService.registerComponentType(WaterfallComponent.componentTypeName, WaterfallComponent);
+    this.goldenLayoutComponentService.registerComponentType(TransmissionChainComponent.componentTypeName, TransmissionChainComponent);
     this.goldenLayoutComponentService.registerComponentType(KeyTablesComponent.componentTypeName, KeyTablesComponent);
   }
 

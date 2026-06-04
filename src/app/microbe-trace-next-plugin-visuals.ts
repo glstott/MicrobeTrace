@@ -16,6 +16,7 @@ import { BubbleComponent } from "./visualizationComponents/BubbleComponent/bubbl
 import { SankeyComponent } from "./visualizationComponents/SankeyComponent/sankey.component";
 import { WaterfallComponent } from './visualizationComponents/WaterfallComponent/waterfall.component';
 import { KeyTablesComponent } from "./visualizationComponents/KeyTablesComponent/key-tables.component";
+import { TransmissionChainComponent } from "./visualizationComponents/TransmissionChainComponent/transmission-chain.component";
 
 @Injectable({
     providedIn: 'root',
@@ -36,5 +37,6 @@ export class MicrobeTraceNextVisuals {
     public bubble: BubbleComponent;
     public sankey: SankeyComponent;
     public waterfall: WaterfallComponent;
+    public transmissionChain?: TransmissionChainComponent;
     public keyTables?: KeyTablesComponent;
 }
