@@ -67,6 +67,7 @@ export class CommonService extends AppComponentBase implements OnInit {
 
     private readonly restorableDashboardViews = new Set<string>([
         '2D Network',
+        'Transmission Chain View',
         'Map',
         'Table',
         'Epi Curve',
@@ -81,10 +82,29 @@ export class CommonService extends AppComponentBase implements OnInit {
         'Waterfall'
     ]);
 
+    private readonly missingTimelineDateTokens = new Set([
+        '',
+        '0',
+        '0.0',
+        'na',
+        'n/a',
+        'nan',
+        'none',
+        'null',
+        'undefined',
+        'unknown',
+        'not available',
+        'invalid date'
+    ]);
+
     private readonly legacyViewNameMap: { [key: string]: string } = {
         '2d_network': '2D Network',
         '2dnetwork': '2D Network',
         'network': '2D Network',
+        'transmission_chain': 'Transmission Chain View',
+        'transmissionchain': 'Transmission Chain View',
+        'transmission_chain_view': 'Transmission Chain View',
+        'transmissionchainview': 'Transmission Chain View',
         'geo_map': 'Map',
         'geomap': 'Map',
         'map': 'Map',
@@ -318,6 +338,13 @@ export class CommonService extends AppComponentBase implements OnInit {
             nodeTableColumns: [],
             linkTableColumns: [],
             clusterTableColumns: [],
+            geoJSON: null,
+            geoJSONLayerName: '',
+            floorplanImage: null,
+            floorplanImageLayerName: '',
+            floorplanImageBounds: null,
+            floorplanImageWidth: null,
+            floorplanImageHeight: null,
             tree: {},
             newickString: '',
             reference: REFERENCE
@@ -426,10 +453,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             'link-width-variable': 'None',
             'link-width-reciprocal': false,
             'link-origin-array-order': [],
-            'map-basemap-show': true,
+            'map-basemap-show': false,
             'map-collapsing-on': true,
             'map-counties-show': false,
-            'map-countries-show': false,
+            'map-countries-show': true,
             'map-field-lat': 'None',
             'map-field-lon': 'None',
             'map-field-tract': 'None',
@@ -437,6 +464,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'map-field-county': 'None',
             'map-field-state': 'None',
             'map-field-country': 'None',
+            'map-user-geojson-show': false,
             'map-link-show': true,
             'map-link-tooltip-variable': 'None',
             'map-link-transparency': 0,
@@ -450,7 +478,16 @@ export class CommonService extends AppComponentBase implements OnInit {
             "mst-computed": false,
             'network-friction': 0.4,
             'network-gravity': 0.05,
+            'network-layout-mode': 'Force Directed',
             'network-link-strength': 0.124,
+            'network-node-collapse-enabled': false,
+            'network-node-collapse-threshold': 0,
+            'network-timeline-date-field': 'None',
+            'network-timeline-vertical-spacing': 100,
+            'transmission-chain-date-field': 'None',
+            'transmission-chain-link-origins': null,
+            'transmission-chain-line-style': 'Stepped',
+            'transmission-chain-vertical-spacing': 100,
             'node-charge': 200,
             'node-border-width' : 2.0,
             'node-color': '#1f77b4',
@@ -575,7 +612,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 settingsLoaded: false,
             },
             state: {
-                timeStart: 0,
+                timeStart: new Date(0),
                 timeEnd: new Date(),
                 timeTarget: null
             },
@@ -1017,9 +1054,14 @@ export class CommonService extends AppComponentBase implements OnInit {
             return false;
         }
 
+        if (typeof value === 'number' && value === 0) {
+            return false;
+        }
+
         if (typeof value === 'string') {
             const trimmed = value.trim();
-            if (trimmed === '' || trimmed.toLowerCase() === 'null') {
+            const normalized = trimmed.toLowerCase();
+            if (this.missingTimelineDateTokens.has(normalized)) {
                 return false;
             }
         }
@@ -1087,6 +1129,70 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         const lookupKey = rawValue.toLowerCase().replace(/[\s-]+/g, '_');
         return this.legacyViewNameMap[lookupKey] ?? rawValue;
+    }
+
+    private replaceLegacyTimelineLayoutView(layoutItem: any): void {
+        if (!layoutItem || typeof layoutItem !== 'object') {
+            return;
+        }
+
+        const replaceViewValue = (key: string): void => {
+            if (this.normalizeViewName(layoutItem[key]) === '2D Network') {
+                layoutItem[key] = 'Transmission Chain View';
+            }
+        };
+
+        replaceViewValue('componentType');
+        replaceViewValue('componentName');
+        replaceViewValue('title');
+
+        const itemType = String(layoutItem.type ?? '').toLowerCase();
+        if (!['row', 'column', 'stack', 'component'].includes(itemType)) {
+            replaceViewValue('type');
+        }
+
+        if (layoutItem.root) {
+            this.replaceLegacyTimelineLayoutView(layoutItem.root);
+        }
+
+        if (Array.isArray(layoutItem.content)) {
+            layoutItem.content.forEach(child => this.replaceLegacyTimelineLayoutView(child));
+        }
+
+        if (Array.isArray(layoutItem.openPopouts)) {
+            layoutItem.openPopouts.forEach(child => this.replaceLegacyTimelineLayoutView(child));
+        }
+    }
+
+    private migrateLegacyTimelineLayoutSession(oldSession: any): void {
+        const widgets = oldSession?.style?.widgets;
+        if (!widgets || widgets['network-layout-mode'] !== 'Timeline') {
+            return;
+        }
+
+        widgets['transmission-chain-date-field'] =
+            widgets['transmission-chain-date-field'] && widgets['transmission-chain-date-field'] !== 'None'
+                ? widgets['transmission-chain-date-field']
+                : widgets['network-timeline-date-field'] || 'None';
+
+        const legacySpacing = Number(widgets['network-timeline-vertical-spacing']);
+        widgets['transmission-chain-vertical-spacing'] = Number.isFinite(legacySpacing)
+            ? legacySpacing
+            : 100;
+
+        if (widgets['transmission-chain-link-origins'] === undefined) {
+            widgets['transmission-chain-link-origins'] = null;
+        }
+
+        widgets['network-layout-mode'] = 'Force Directed';
+
+        if (this.normalizeViewName(widgets['default-view']) === '2D Network') {
+            widgets['default-view'] = 'Transmission Chain View';
+        }
+
+        this.replaceLegacyTimelineLayoutView(oldSession.layout);
+        this.replaceLegacyTimelineLayoutView(oldSession.dashboardLayout);
+        this.replaceLegacyTimelineLayoutView(oldSession?.dashboardState?.layout);
     }
 
     private normalizeRestorableDashboardViewName(value: any): string | null {
@@ -1917,8 +2023,10 @@ export class CommonService extends AppComponentBase implements OnInit {
         const nodes = microbeData.nodes.map((node) => ({
           ...node, // Spread existing properties
           id: node._id, // Ensure the id property is set correctly
-          group: node.cluster,
-          color: this.getColorByIndex(node.index), // Add or override the color property
+          group: node.isCollapsedAggregate ? node.group : node.cluster,
+          color: node.color ?? (Number.isInteger(node.index) && node.index >= 0
+            ? this.getColorByIndex(node.index)
+            : this.session.style.widgets['node-color']), // Add or override the color property
           label: (this.session.style.widgets['node-label-variable'] === 'None') ? '' : node.label, // Ensure label is defined
             nodeSize: node.nodeSize ?? 20, // Default node size
             borderWidth: node.borderWidth ?? this.session.style.widgets['node-border-width'] ?? 1 // Default border width
@@ -2116,6 +2224,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         const oldSession = stashObject.session;
         const savedTabs = Array.isArray(stashObject.tabs) ? stashObject.tabs : [];
 
+        this.migrateLegacyTimelineLayoutSession(oldSession);
+        this.replaceLegacyTimelineLayoutView(stashObject.dashboardLayout);
+
         const normalizedDefaultView = this.normalizeViewName(oldSession?.style?.widgets?.['default-view']);
         if (normalizedDefaultView && oldSession?.style?.widgets) {
             oldSession.style.widgets['default-view'] = normalizedDefaultView;
@@ -2187,9 +2298,17 @@ export class CommonService extends AppComponentBase implements OnInit {
         // Set to false to indicate that the network is not fully loaded  as new network is launching
         this.session.network.isFullyLoaded = false;
 
-         if (oldSession.data.geoJSONLayerName !== "") {
+         if (oldSession.data.geoJSONLayerName) {
             this.session.data['geoJSON'] = oldSession.data.geoJSON;
             this.session.data['geoJSONLayerName'] = oldSession.data.geoJSONLayerName;
+        }
+
+        if (oldSession.data.floorplanImageLayerName || oldSession.data.floorplanImage) {
+            this.session.data['floorplanImage'] = oldSession.data.floorplanImage;
+            this.session.data['floorplanImageLayerName'] = oldSession.data.floorplanImageLayerName || '';
+            this.session.data['floorplanImageBounds'] = oldSession.data.floorplanImageBounds || null;
+            this.session.data['floorplanImageWidth'] = oldSession.data.floorplanImageWidth || null;
+            this.session.data['floorplanImageHeight'] = oldSession.data.floorplanImageHeight || null;
         }
 
         // previous versions of MT had bug where nodeColorsTableHistory stored jQuery events instead of color string in session file, this section resolves that bug
@@ -2820,6 +2939,8 @@ align(params): Promise<any> {
     } else {
       this.session.warnings.push(warning);
     }
+
+    this.store.triggerWarningsChanged();
   }
 
   // Compute links using a fresh links worker
@@ -3466,6 +3587,49 @@ align(params): Promise<any> {
         return out;
     };
 
+    private getTopologyItemId(item: any): string {
+        if (item && typeof item === 'object') {
+            return String(item._id ?? item.id ?? '');
+        }
+
+        return String(item ?? '');
+    }
+
+    getVisibleTopologySummary(filterLinksByVisibleNodes: boolean = this.session.style.widgets["timeline-date-field"] !== 'None') {
+        const nodes = this.getVisibleNodes();
+        let links = this.getVisibleLinks();
+
+        if (filterLinksByVisibleNodes) {
+            const visibleNodeIds = new Set(nodes.map(node => this.getTopologyItemId(node)));
+            links = links.filter(link =>
+                visibleNodeIds.has(this.getTopologyItemId(link.source)) &&
+                visibleNodeIds.has(this.getTopologyItemId(link.target))
+            );
+        }
+
+        const metric = this.session.style.widgets["link-sort-variable"];
+        const summary = buildVisibleClusterSummary(
+            nodes,
+            links.map(link => ({
+                ...link,
+                source: this.getTopologyItemId(link.source),
+                target: this.getTopologyItemId(link.target),
+                visible: true,
+            })),
+            metric
+        );
+
+        return {
+            nodes,
+            links,
+            nodeCount: nodes.length,
+            selectedNodeCount: nodes.filter(node => node.selected).length,
+            linkCount: links.length,
+            clusterCount: summary.clusterCount,
+            singletonCount: summary.singletonCount,
+        };
+    }
+
     /**
      * updates the network statistics table with number of visible nodes, visible links, clusters, and selected links
      * @returns undefined
@@ -3473,38 +3637,27 @@ align(params): Promise<any> {
     updateStatistics() {
 
         if ($("#network-statistics-hide").is(":checked")) return;
-        let vnodes = this.getVisibleNodes();
-        let vlinks = this.getVisibleLinks();
+        const timelineActive = this.session.style.widgets["timeline-date-field"] !== 'None';
+        const topologySummary = this.getVisibleTopologySummary(timelineActive);
+        let vnodes = topologySummary.nodes;
+        let vlinks = topologySummary.links;
         console.log('vLinksStats', vlinks.length);
         let linkCount = 0;
         let clusterCount = 0;
         let singletons = 0;
-        if (this.session.style.widgets["timeline-date-field"] == 'None') {
+        if (!timelineActive) {
             linkCount = vlinks.length;
             // const minSize = this.session.style.widgets['cluster-minimum-size'];
             clusterCount = this.session.data.clusters.filter(
               cluster => cluster.visible && cluster.nodes > 1).length;
             singletons = vnodes.filter(d => d.degree == 0).length;
         } else {
-            const metric = this.session.style.widgets["link-sort-variable"];
-            const visibleNodeIds = new Set(
-                vnodes.map(node => String(node._id ?? node.id ?? ''))
-            );
-            const timelineLinks = vlinks.filter(link => {
-                return visibleNodeIds.has(String(link.source)) && visibleNodeIds.has(String(link.target));
-            });
-            const timelineSummary = buildVisibleClusterSummary(
-                vnodes,
-                timelineLinks.map(link => ({ ...link, visible: true })),
-                metric
-            );
-
-            linkCount = timelineLinks.length;
-            clusterCount = timelineSummary.clusterCount;
-            singletons = timelineSummary.singletonCount;
+            linkCount = topologySummary.linkCount;
+            clusterCount = topologySummary.clusterCount;
+            singletons = topologySummary.singletonCount;
         }
-        $("#numberOfSelectedNodes").text(vnodes.filter(d => d.selected).length.toLocaleString());
-        $("#numberOfNodes").text(vnodes.length.toLocaleString());
+        $("#numberOfSelectedNodes").text(topologySummary.selectedNodeCount.toLocaleString());
+        $("#numberOfNodes").text(topologySummary.nodeCount.toLocaleString());
         $("#numberOfVisibleLinks").text(linkCount.toLocaleString());
         $("#numberOfSingletonNodes").text(singletons.toLocaleString());
         $("#numberOfDisjointComponents").text(clusterCount);
@@ -3576,7 +3729,7 @@ align(params): Promise<any> {
             return [];
         }
 
-        const links = this.getVisibleLinks();
+        const links = this.getVisibleTopologySummary().links;
       
         let linkColors;
         if( this.session.style.linkColorsTable && this.session.style.linkColorsTable[linkColorVariable]) {
@@ -4016,6 +4169,12 @@ align(params): Promise<any> {
             clusters = this.session.data.clusters;
         let n = nodes.length;
         let visibleNodes = 0;
+        const timeStart = this.hasValidTimelineDateValue(this.session.state.timeStart)
+            ? moment(this.session.state.timeStart).toDate()
+            : null;
+        const timeEnd = this.hasValidTimelineDateValue(this.session.state.timeEnd)
+            ? moment(this.session.state.timeEnd).toDate()
+            : null;
         for (let i = 0; i < n; i++) {
             const node = nodes[i];
 
@@ -4032,9 +4191,11 @@ align(params): Promise<any> {
             if (dateField != "None") {
                 const rawDateValue = node[dateField];
                 if (this.hasValidTimelineDateValue(rawDateValue)) {
+                    const nodeDate = moment(rawDateValue).toDate();
                     node.visible =
                         node.visible &&
-                        moment(this.session.state.timeEnd).toDate() >= moment(rawDateValue).toDate();
+                        (timeStart == null || nodeDate >= timeStart) &&
+                        (timeEnd == null || nodeDate <= timeEnd);
                 }
             }
 

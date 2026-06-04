@@ -24,6 +24,7 @@ export class MicrobeTraceNextVisuals {
     public microbeTrace: MicrobeTraceNextHomeComponent;
     public filesPlugin: FilesComponent;
     public twoD: TwoDComponent;
+    public transmissionChain: TwoDComponent;
     public gisMap: MapComponent;
     public tableComp: TableComponent;
     public epiCurve: TimelineComponent;

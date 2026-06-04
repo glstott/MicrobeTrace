@@ -2851,7 +2851,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             ////////// slider //////////
         this.currentTimelineValue = 0;
         this.currentTimelineTargetValue = width;
-        this.commonService.session.state.timeStart = startDate;
+        this.commonService.session.state.timeStart = new Date(startDate);
 
         const that = this;
         const playButton = d3.select("#timeline-play-button");
@@ -2924,7 +2924,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             .attr("r", 9);
 
         this.commonService.session.style.widgets["timeline-date-field"] = field;
-        this.commonService.session.state.timeStart = startDate;
+        this.commonService.session.state.timeStart = new Date(startDate);
         this.commonService.session.state.timeTarget = this.xAttribute.invert(this.currentTimelineTargetValue);
         if (loadingJsonFile && moment(this.commonService.session.state.timeEnd).toDate() < moment(this.commonService.session.state.timeTarget).toDate()) {
             let t = moment(this.commonService.session.state.timeEnd).toDate();
@@ -4378,7 +4378,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             const instance = this._goldenLayoutHostComponent.getComponentRef(container).instance as any;
             console.log('--- viewClick exisitng view - load settings');
 
-            if (viewName === '2D Network' && !instance.cy) {
+            if ((viewName === '2D Network' || viewName === 'Transmission Chain View') && !instance.cy) {
                 if (instance.onLoadNewData) {
                     instance.onLoadNewData();
                 }
@@ -4553,7 +4553,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                 break;
             }
-            case "2D Network": {
+            case "2D Network":
+            case "Transmission Chain View": {
 
                 this.showSettings = true;
                 this.showExport = true;
