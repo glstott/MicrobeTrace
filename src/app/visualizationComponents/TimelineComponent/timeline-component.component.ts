@@ -445,7 +445,7 @@ updateLocalColorMap() {
       nodeColorTableKeys.push(node[this.widgets['epiCurve-stackColorBy']])
     }
   })
-  this.localColorMap = d3.scaleOrdinal(this.commonService.session.style.nodeColors).domain(nodeColorTableKeys);
+  this.localColorMap = d3.scaleOrdinal(this.commonService.thirtyColorPalette).domain(nodeColorTableKeys);
 
   return nodeColorTableKeys;
 }
@@ -643,11 +643,6 @@ private setupEventListeners(): void {
       $('#timeline-play').html('<span class="oi oi-media-pause"></span>');
       this.startTimeline();
     }
-  });
-
-  $(window).on('node-color-change', () => {
-    this.svg.selectAll(".epiCurve-epi-curve rect")
-      .attr("fill", this.commonService.session.style.widgets["node-color-variable"]);
   });
 
   $('#timeline-speed').on('change', () => {
@@ -1086,7 +1081,9 @@ private propagate(): void {
 // }
 
 updateNodeColors() {
-  this.refresh();
+  if(this.selectedGraphType == "Single Date Field" && this.widgets['epiCurve-stackColorBy'] == 'Node Color') {
+    this.refresh();
+  }
 }
 updateVisualization() {
   //Not Relevant
