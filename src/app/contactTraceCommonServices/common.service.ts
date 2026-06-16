@@ -321,6 +321,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             clusterTableColumns: [],
             tree: {},
             newickString: '',
+            newickStringMetric: '',
             phylogeneticBootstrap: null,
             reference: REFERENCE
         };
@@ -2007,6 +2008,49 @@ export class CommonService extends AppComponentBase implements OnInit {
         return true;
     }
 
+    public getSelectedGeneticDistanceMetric(): string {
+        const metric = String(this.session?.style?.widgets?.['default-distance-metric'] || 'tn93').toLowerCase();
+        return metric === 'snps' ? 'snps' : 'tn93';
+    }
+
+    public hasUserProvidedTreeSource(): boolean {
+        if (this.session.data?.['newick']) {
+            return true;
+        }
+
+        return this.session.files?.some(file =>
+            file?.format === 'newick' || file?.format === 'auspice' ||
+            file?.datatype === 'newick' || file?.datatype === 'auspice'
+        ) ?? false;
+    }
+
+    public storedGeneratedTreeMatchesCurrentMetric(): boolean {
+        if (this.hasUserProvidedTreeSource()) {
+            return true;
+        }
+
+        const newickString = this.session.data?.newickString;
+        if (typeof newickString !== 'string' || newickString.trim().length === 0) {
+            return false;
+        }
+
+        return String(this.session.data?.newickStringMetric || '').toLowerCase() === this.getSelectedGeneticDistanceMetric();
+    }
+
+    public invalidateGeneratedTree(): boolean {
+        if (this.hasUserProvidedTreeSource()) {
+            return false;
+        }
+
+        const hadGeneratedTree = typeof this.session.data?.newickString === 'string' && this.session.data.newickString.trim().length > 0;
+        this.session.data.newickString = '';
+        this.session.data.newickStringMetric = '';
+        this.session.data.phylogeneticBootstrap = null;
+        delete this.temp.treeObj;
+        delete this.temp.tree;
+        return hadGeneratedTree;
+    }
+
     public getSelectedNode(nodes: any[]): any {
         return nodes.find(node => node.selected);
     }
@@ -2289,6 +2333,9 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         if (typeof oldSession.data?.newickString === 'string') {
             this.session.data.newickString = oldSession.data.newickString;
+        }
+        if (typeof oldSession.data?.newickStringMetric === 'string') {
+            this.session.data.newickStringMetric = oldSession.data.newickStringMetric;
         }
         if (oldSession.data?.tree) {
             this.session.data.tree = oldSession.data.tree;
@@ -2970,7 +3017,10 @@ align(params): Promise<any> {
     return new Promise(resolve => {
       const computeLinksStart = Date.now();
       let k = 0;
-      const metric = this.session.style.widgets['default-distance-metric'];
+      const metric = this.getSelectedGeneticDistanceMetric();
+      if (!this.session.data.linkFields.includes(metric)) {
+        this.session.data.linkFields.push(metric);
+      }
       const n = subset.length;
       const pairCount = (n * (n - 1)) / 2;
       const guardrails = this.getSequencePairwiseLinkGuardrails();
@@ -3022,15 +3072,18 @@ align(params): Promise<any> {
           const sourceID = subset[i]._id;
           for (let j = 0; j < i; j++) {
             let targetID = subset[j]._id;
-            k += this.addLink({
+            const distance = dists[l++];
+            const newLink: any = {
               source: sourceID,
               target: targetID,
-              distance: dists[l++],
+              distance,
               origin: ['Genetic Distance'],
               distanceOrigin: 'Genetic Distance',
               hasDistance: true,
               directed: false
-            }, check);
+            };
+            newLink[metric] = distance;
+            k += this.addLink(newLink, check);
           }
         }
         if (this.debugMode) {
@@ -3080,7 +3133,8 @@ align(params): Promise<any> {
                 //console.log("Before sorting: " + labels);
                 //labels = labels.sort();
                 //console.log("After sorting: " + labels);
-                let metric = this.session.style.widgets['link-sort-variable'];
+                let metric = this.getSelectedGeneticDistanceMetric();
+                const fallbackMetric = this.session.style.widgets['link-sort-variable'];
                 const n = labels.length;
                 dm = new Array(n);
                 const m = new Array(n);
@@ -3093,7 +3147,13 @@ align(params): Promise<any> {
                         for (let j = 0; j < i; j++) {
                             const link = row[labels[j]];
                             if (link) {
-                                dm[i][j] = dm[j][i] = link[metric];
+                                const metricDistance = Number(link[metric]);
+                                const distance = Number.isFinite(metricDistance)
+                                    ? metricDistance
+                                    : Number.isFinite(Number(link.distance))
+                                        ? Number(link.distance)
+                                        : link[fallbackMetric];
+                                dm[i][j] = dm[j][i] = distance;
                             } else {
                                 dm[i][j] = dm[j][i] = null;
                             }
@@ -3133,6 +3193,7 @@ align(params): Promise<any> {
                 // Decode the result from the worker.
                 const treeObj = this.decode(new Uint8Array(response.data.tree));
                 const treeString = patristic.parseJSON(treeObj).toNewick();
+                this.session.data.newickStringMetric = this.getSelectedGeneticDistanceMetric();
                 if (this.debugMode) {
                   console.log('Tree Transit time: ', (Date.now() - response.data.start).toLocaleString(), 'ms');
                 }

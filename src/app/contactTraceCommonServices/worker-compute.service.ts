@@ -88,6 +88,11 @@ export class WorkerComputeService {
   private phyloBootstrapWorker: Worker | null = null;
   private activePhyloBootstrapJobId: number | null = null;
 
+  private getSelectedGeneticDistanceMetric(session: any): string {
+    const metric = String(session?.style?.widgets?.['default-distance-metric'] || 'tn93').toLowerCase();
+    return metric === 'snps' ? 'snps' : 'tn93';
+  }
+
   /**
    * Helper that converts a Worker’s events into an RxJS Observable.
    */
@@ -333,7 +338,10 @@ export class WorkerComputeService {
   ): Promise<any> {
     return new Promise(resolve => {
       let k = 0;
-      const metric = session.style.widgets['default-distance-metric'];
+      const metric = this.getSelectedGeneticDistanceMetric(session);
+      if (!session.data.linkFields.includes(metric)) {
+        session.data.linkFields.push(metric);
+      }
       const linksWorker = this.computer.getLinksWorker() as unknown as Worker;
       linksWorker.postMessage({
         nodes: subset,
@@ -362,15 +370,18 @@ export class WorkerComputeService {
         for (let i = 0; i < subset.length; i++) {
           const sourceID = subset[i]._id;
           for (let j = 0; j < i; j++) {
-            k += addLink({
+            const distance = dists[l++];
+            const newLink: any = {
               source: sourceID,
               target: subset[j]._id,
-              distance: dists[l++],
+              distance,
               origin: ['Genetic Distance'],
               distanceOrigin: 'Genetic Distance',
               hasDistance: true,
               directed: false
-            }, checkFlag);
+            };
+            newLink[metric] = distance;
+            k += addLink(newLink, checkFlag);
           }
         }
         if (session.debugMode) {
@@ -401,7 +412,8 @@ export class WorkerComputeService {
         dm = treeObj.toMatrix();
       } else {
         let labels = session.data.nodes.map((d: any) => d._id).sort();
-        const metric = session.style.widgets['link-sort-variable'];
+        const metric = this.getSelectedGeneticDistanceMetric(session);
+        const fallbackMetric = session.style.widgets['link-sort-variable'];
         const n = labels.length;
         dm = new Array(n);
 
@@ -417,7 +429,13 @@ export class WorkerComputeService {
           for (let j = 0; j < i; j++) {
             const link = row[labels[j]];
             if (link) {
-              dm[i][j] = dm[j][i] = link[metric];
+              const metricDistance = Number(link[metric]);
+              const distance = Number.isFinite(metricDistance)
+                ? metricDistance
+                : Number.isFinite(Number(link.distance))
+                  ? Number(link.distance)
+                  : link[fallbackMetric];
+              dm[i][j] = dm[j][i] = distance;
             } else {
               dm[i][j] = dm[j][i] = null;
             }

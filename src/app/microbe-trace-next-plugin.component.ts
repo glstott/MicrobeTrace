@@ -5377,6 +5377,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     this.metric = selectedMetric;
     this.store.updatecurrentThresholdStepSize(selectedMetric);
     let didRecomputeSequenceLinks = false;
+    const shouldRebuildPhylogeneticTree = !this.commonService.hasUserProvidedTreeSource()
+      && !!this.commonService.visuals?.phylogenetic?.tree;
     if (selectedMetric === 'snps') {
       $('#default-distance-threshold')
         .attr('step', 1)
@@ -5395,11 +5397,16 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
       this.commonService.session.style.widgets["link-threshold"] = 0.015;
     }
     this.syncThresholdDisplayFromStoredValue();
+    this.commonService.invalidateGeneratedTree();
 
     didRecomputeSequenceLinks = await this.commonService.recomputeSequenceDerivedLinksForCurrentMetric();
     if (didRecomputeSequenceLinks && this.commonService.session.style.widgets["link-show-nn"]) {
       await this.commonService.computeMST();
       this.commonService.session.style.widgets["mst-computed"] = true;
+    }
+
+    if (shouldRebuildPhylogeneticTree) {
+      await this.commonService.visuals.phylogenetic.rebuildTreeForCurrentDistanceMetric();
     }
 
     this.onLinkThresholdChanged();

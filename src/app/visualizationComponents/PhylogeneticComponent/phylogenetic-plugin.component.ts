@@ -234,7 +234,11 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     } else {
     */
     //@ts-ignore
-    if (this.visuals.phylogenetic.commonService.session.data.hasOwnProperty("newickString") && this.visuals.phylogenetic.commonService.session.data.newickString) {
+    if (
+      this.visuals.phylogenetic.commonService.session.data.hasOwnProperty("newickString")
+      && this.visuals.phylogenetic.commonService.session.data.newickString
+      && this.visuals.phylogenetic.commonService.storedGeneratedTreeMatchesCurrentMetric()
+    ) {
       //@ts-ignore
       const newickString = this.visuals.phylogenetic.commonService.session.data.newickString;
       const tree = this.buildTree(newickString);
@@ -249,6 +253,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     } else {
       const newickString = await this.commonService.computeTree();
       this.commonService.session.data.newickString = newickString;
+      this.commonService.session.data.newickStringMetric = this.commonService.getSelectedGeneticDistanceMetric();
       console.log(newickString);
       //newickString.then((x) => {
         const tree = this.buildTree(newickString);
@@ -494,7 +499,9 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         leafIds: readiness.leafIds,
         sequences: readiness.sequences,
         referenceTree: this.getTreeObject(this.tree.data),
-        metric: widgets['link-sort-variable'] || widgets['default-distance-metric'] || 'snps',
+        // Bootstrap must follow the selected genetic distance model. The link-sort
+        // field is usually "distance" and would otherwise force the TN93 path.
+        metric: widgets['default-distance-metric'] || 'snps',
         ambiguityStrategy: widgets['ambiguity-resolution-strategy'] || 'AVERAGE',
         ambiguityThreshold: Number(widgets['ambiguity-threshold'] ?? 0.015),
         replicates,
@@ -552,6 +559,19 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.BootstrapError = '';
     this.styleTree();
     this.cdref.detectChanges();
+  }
+
+  private resetBootstrapState(status = 'Not calculated'): void {
+    if (this.BootstrapInProgress) {
+      this.onBootstrapCancel();
+    }
+
+    this.BootstrapCompletedReplicates = 0;
+    this.BootstrapRequestedReplicates = 0;
+    this.BootstrapStable = false;
+    this.BootstrapStoppedEarly = false;
+    this.BootstrapStatus = status;
+    this.BootstrapError = '';
   }
 
   private persistBootstrapResult(result: PhyloBootstrapResultResponse): void {
@@ -936,6 +956,32 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       margin: [10, 80, 50, 30] //CSS order: top, right, bottom, left
     };
     return treeOpts;
+  }
+
+  public async rebuildTreeForCurrentDistanceMetric(): Promise<void> {
+    if (this.commonService.hasUserProvidedTreeSource()) {
+      return;
+    }
+
+    if (!this.commonService.session.data?.nodes?.length) {
+      return;
+    }
+
+    const newickString = await this.commonService.computeTree();
+    this.commonService.session.data.newickString = newickString;
+    this.commonService.session.data.newickStringMetric = this.commonService.getSelectedGeneticDistanceMetric();
+    this.commonService.session.data.phylogeneticBootstrap = null;
+    this.resetBootstrapState();
+
+    const tree = this.buildTree(newickString);
+    this.tree = tree;
+    this.commonService.visuals.phylogenetic.tree = tree;
+    this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
+    this.hasTreeBeenModifiedFromOriginal = false;
+    this.hideTooltip();
+    this.styleTree();
+    this.refreshBootstrapReadiness();
+    this.markTreeRendered();
   }
 
   getTreeHandlers = () => {

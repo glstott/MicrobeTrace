@@ -49,6 +49,75 @@ describe('Phylogenetic Tree View', () => {
     });
   };
 
+  const makeBootstrapSequenceBacked = () => {
+    cy.window().then((win: any) => {
+      const leaves = win.commonService.visuals.phylogenetic.tree.data.getLeaves().map((leaf: any) => leaf.id);
+      leaves.forEach((leafId: string, index: number) => {
+        const node = win.commonService.session.data.nodes.find((candidate: any) => candidate._id === leafId || candidate.id === leafId);
+        if (node) {
+          node.seq = index % 2 === 0 ? 'AAAAAA' : 'CCCCCC';
+          delete node._seq;
+        }
+      });
+      win.commonService.visuals.phylogenetic.refreshBootstrapReadiness();
+    });
+  };
+
+  const configureMetricSplitMatrix = () => {
+    cy.window().then((win: any) => {
+      const commonService = win.commonService;
+      const leafIds = ['A', 'B', 'C', 'D'];
+      const matrix: Record<string, Record<string, any>> = {};
+      const addLink = (source: string, target: string, snps: number, tn93: number) => {
+        const link = {
+          source,
+          target,
+          distance: snps,
+          snps,
+          tn93,
+          visible: true,
+          hasDistance: true,
+          origin: ['Genetic Distance'],
+          distanceOrigin: 'Genetic Distance'
+        };
+        matrix[source] = matrix[source] || {};
+        matrix[target] = matrix[target] || {};
+        matrix[source][target] = link;
+        matrix[target][source] = link;
+      };
+
+      addLink('A', 'B', 1, 10);
+      addLink('C', 'D', 1, 10);
+      addLink('A', 'C', 10, 1);
+      addLink('B', 'D', 10, 1);
+      addLink('A', 'D', 10, 10);
+      addLink('B', 'C', 10, 10);
+
+      commonService.session.data.nodes = leafIds.map(id => ({ _id: id, id, seq: 'AAAA' }));
+      commonService.session.data.links = Object.values(matrix)
+        .flatMap(row => Object.values(row))
+        .filter((link, index, links) => links.findIndex(candidate => candidate.source === link.source && candidate.target === link.target) === index);
+      commonService.session.data.linkFields = ['index', 'source', 'target', 'distance', 'snps', 'tn93', 'visible', 'cluster', 'origin', 'nn', 'directed'];
+      commonService.session.data.newickString = '';
+      commonService.session.data.newickStringMetric = '';
+      commonService.session.data.phylogeneticBootstrap = null;
+      delete commonService.session.data.newick;
+      delete commonService.temp.treeObj;
+      delete commonService.temp.tree;
+      commonService.temp.matrix = matrix;
+      commonService.session.style.widgets['link-sort-variable'] = 'distance';
+    });
+  };
+
+  const expectNewickLeafPair = (newick: string, pair: [string, string]) => {
+    const topology = newick
+      .replace(/:[^,();]+/g, '')
+      .replace(/[;\s]/g, '');
+    const pairPattern = ([a, b]: [string, string]) => new RegExp(`\\((?:${a},${b}|${b},${a})\\)`);
+
+    expect(topology).to.match(pairPattern(pair));
+  };
+
   /**
    * This block runs before each test. It loads the application,
    * continues with the sample dataset, and navigates to the view.
@@ -99,8 +168,8 @@ describe('Phylogenetic Tree View', () => {
       cy.openGlobalSettings();
       cy.get('#node-color-variable').click()
       cy.get('li[role="option"]').contains('Lineage').click()
-      cy.get('#node-color-table td input', { timeout: 10000 }).should('exist');
-      cy.get('#node-color-table tr').eq(1).find('.transparency-symbol').click({ force: true });
+      cy.get('#key-tables-node-table td input', { timeout: 10000 }).should('exist');
+      cy.get('#key-tables-node-table tr').eq(1).find('.transparency-symbol').click({ force: true });
       cy.get('#color-transparency').invoke('val', alpha).trigger('change');
       cy.window().its('commonService.session.style.nodeAlphas.0').should('equal', alpha);
       cy.closeGlobalSettings();
@@ -606,16 +675,7 @@ describe('Phylogenetic Tree View', () => {
         .trigger('change');
       cy.window().its('commonService.visuals.phylogenetic.SelectedBootstrapDecimalPlaces').should('equal', 2);
 
-      cy.window().then((win: any) => {
-        const leaves = win.commonService.visuals.phylogenetic.tree.data.getLeaves().map((leaf: any) => leaf.id);
-        leaves.forEach((leafId: string, index: number) => {
-          const node = win.commonService.session.data.nodes.find((candidate: any) => candidate._id === leafId || candidate.id === leafId);
-          if (node) {
-            node.seq = index % 2 === 0 ? 'AAAAAA' : 'CCCCCC';
-            delete node._seq;
-          }
-        });
-      });
+      makeBootstrapSequenceBacked();
 
       cy.get('@dialogContainer').find('#tree-bootstrap-calculate').should('not.be.disabled').click();
       cy.window({ timeout: 60000 }).its('commonService.visuals.phylogenetic.BootstrapInProgress').should('be.false');
@@ -633,6 +693,83 @@ describe('Phylogenetic Tree View', () => {
 
       cy.window().then((win: any) => {
         expect(win.commonService.visuals.phylogenetic.tree.data.toNewick(false)).to.match(/\)\d+\.\d{2}%:/);
+      });
+    })
+
+    it('should use the selected distance metric when calculating bootstrap support', () => {
+      cy.contains('.p-dialog-title', 'Phylogenetic Tree Settings')
+        .parents('.p-dialog').as('dialogContainer');
+
+      cy.get('@dialogContainer').contains('Bootstrap').click();
+      cy.get('@dialogContainer').contains('Bootstrap Support').click();
+      cy.get('@dialogContainer').find('#tree-bootstrap-replicates').click();
+      cy.contains('li[role="option"]', 'Custom').click();
+      cy.get('@dialogContainer').find('#tree-bootstrap-custom-replicates')
+        .invoke('val', 1)
+        .trigger('input')
+        .trigger('change');
+
+      makeBootstrapSequenceBacked();
+
+      cy.window().then((win: any) => {
+        const phylogenetic = win.commonService.visuals.phylogenetic;
+        const computeStub = cy.stub(phylogenetic.workerComputeService, 'computePhylogeneticBootstrap').callsFake((request: any) => Promise.resolve({
+          type: 'RESULT',
+          jobId: 1,
+          completedReplicates: request.replicates,
+          requestedReplicates: request.replicates,
+          supportBySplit: {},
+          supportCountsBySplit: {},
+          referenceSplitLeafIds: {},
+          stable: false,
+          stoppedEarly: false,
+          maxDeltaPercentagePoints: null,
+          metric: request.metric,
+          leafIds: request.leafIds,
+          updatedAt: Date.now()
+        }));
+        cy.wrap(computeStub).as('computePhylogeneticBootstrap');
+      });
+
+      cy.window().then((win: any) => {
+        win.commonService.session.style.widgets['default-distance-metric'] = 'snps';
+        win.commonService.session.style.widgets['link-sort-variable'] = 'distance';
+      });
+      cy.get('@dialogContainer').find('#tree-bootstrap-calculate').should('not.be.disabled').click();
+      cy.window({ timeout: 60000 }).its('commonService.visuals.phylogenetic.BootstrapInProgress').should('be.false');
+      cy.get('@computePhylogeneticBootstrap').should('have.been.calledOnce');
+      cy.get('@computePhylogeneticBootstrap').then((computeStub: any) => {
+        expect(computeStub.firstCall.args[0].metric).to.equal('snps');
+      });
+
+      cy.window().then((win: any) => {
+        win.commonService.session.style.widgets['default-distance-metric'] = 'tn93';
+        win.commonService.session.style.widgets['link-sort-variable'] = 'distance';
+      });
+      cy.get('@dialogContainer').find('#tree-bootstrap-calculate').should('not.be.disabled').click();
+      cy.window({ timeout: 60000 }).its('commonService.visuals.phylogenetic.BootstrapInProgress').should('be.false');
+      cy.get('@computePhylogeneticBootstrap').should('have.been.calledTwice');
+      cy.get('@computePhylogeneticBootstrap').then((computeStub: any) => {
+        expect(computeStub.secondCall.args[0].metric).to.equal('tn93');
+      });
+    })
+
+    it('should generate the tree from the selected SNP or TN93 distance metric', () => {
+      configureMetricSplitMatrix();
+
+      cy.window().then((win: any) => {
+        win.commonService.session.style.widgets['default-distance-metric'] = 'snps';
+        return win.commonService.computeTree();
+      }).then((snpNewick: string) => {
+        expectNewickLeafPair(snpNewick, ['A', 'B']);
+      });
+
+      cy.window().then((win: any) => {
+        win.commonService.session.style.widgets['default-distance-metric'] = 'tn93';
+        win.commonService.invalidateGeneratedTree();
+        return win.commonService.computeTree();
+      }).then((tn93Newick: string) => {
+        expectNewickLeafPair(tn93Newick, ['A', 'C']);
       });
     })
 
