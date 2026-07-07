@@ -1145,45 +1145,18 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         let l = 0;
 
         const seenTargetsBySource = new Map<string, Set<string>>();
+        const linkStructuralFields = [file.field1, file.field2, file.field3];
 
         /**
          * Processes and then adds link. updates value of l
          * @param {object} link 
          */
-        const forEachLink = link => {
-          const keys = Object.keys(link);
-          const n = keys.length;
+        const forEachLink = (link, fieldMap: Map<string, string>) => {
           const safeLink = {};
-          // for each key in link object
-          for (let i = 0; i < n; i++) {
-            let key = this.commonService.filterXSS(keys[i]);
-            // console.log('key is: ',key);
+          this.addImportedMetadataFields(safeLink, link, fieldMap, this.commonService.session.data.linkFields, false);
 
-            if(key === "distance") {
-              // console.log('key is distance');
-              link[key] = parseFloat(link[key]);
-            } else if (key === 'origin') {
-              // related to zenhub#810: link list csv was exported from table view and unable to be loaded correctly; this code create a new linkField when it runs into field called origin 
-              link['originColumnFromFile'] = link['origin'].split('\n')
-              safeLink['originColumnFromFile'] = link['originColumnFromFile'];
-              link['origin'] = origin;
-
-              if (!this.commonService.includes(this.commonService.session.data.linkFields, 'originColumnFromFile')) {
-                this.commonService.session.data.linkFields.push('originColumnFromFile');
-              }
-            }
-            
-            safeLink[key] = link[key];
-            // console.log('safelink key is: ',safeLink[key]);
-            // console.log('safelink is: x',safeLink);
-
-            if (!this.commonService.includes(this.commonService.session.data.linkFields, key)) {
-              this.commonService.session.data.linkFields.push(key);
-            }
-          }
-
-          const src = '' + safeLink[file.field1];
-          const tgt = '' + safeLink[file.field2];
+          const src = '' + this.getImportedFieldValue(link, file.field1);
+          const tgt = '' + this.getImportedFieldValue(link, file.field2);
           const hasReverseEdge = seenTargetsBySource.get(tgt)?.has(src) ?? false;
 
           if (!seenTargetsBySource.has(src)) {
@@ -1192,13 +1165,14 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           seenTargetsBySource.get(src)?.add(tgt);
 
           const isDistanceFieldMissing = file.field3 == 'None';
+          const distanceValue = this.getImportedFieldValue(link, file.field3);
           const linkBase = {
             source: src,
             target: tgt,
             origin: origin,
             visible: true,
             directed: isDistanceFieldMissing ? true : false,
-            distance: isDistanceFieldMissing ? 0 : parseFloat(safeLink[file.field3]),
+            distance: isDistanceFieldMissing ? 0 : parseFloat(distanceValue),
             hasDistance: isDistanceFieldMissing ? false : true,
             distanceOrigin: isDistanceFieldMissing ? '' : file.name
           } as any;
@@ -1207,7 +1181,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
             linkBase.bidirectional = true;
           }
 
-          l += this.commonService.addLink(Object.assign(linkBase, safeLink), check);
+          l += this.commonService.addLink(Object.assign(safeLink, linkBase), check);
 
         //  console.log('matrixx1: ',  JSON.stringify((window as any).context.commonService.temp.matrix));
 
@@ -1218,7 +1192,8 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
           const workbook = XLSX.read(file.contents, { type: 'array' , cellDates: true, dateNF: 'mm/dd/yyyy'});
           const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {dateNF: 'mm/dd/yyyy', raw: false});
-          data.map(forEachLink);
+          const fieldMap = this.buildImportFieldNameMap(file, 'link', this.collectObjectKeys(data), linkStructuralFields);
+          data.map(link => forEachLink(link, fieldMap));
           this.showMessage(` - Parsed ${l} New, ${data.length} Total Links from Link Excel Table.`);
           let n = 0, t = 0;
           const nodeIDs = [];
@@ -1226,7 +1201,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           // for each line or excel file, check if node exist, if not add it
           for (let i = 0; i < k; i++) {
             const l = data[i];
-            const f1 = l[file.field1];
+            const f1 = this.getImportedFieldValue(l, file.field1);
             if (nodeIDs.indexOf(f1) === -1) {
               t++;
               nodeIDs.push(f1);
@@ -1235,7 +1210,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
                 origin: origin
               }, true);
             }
-            const f2 = l[file.field2];
+            const f2 = this.getImportedFieldValue(l, file.field2);
             if (nodeIDs.indexOf(f2) === -1) {
               t++;
               nodeIDs.push(f2);
@@ -1262,16 +1237,9 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
             if (!results || results.length === 0) return;
 
             const data = results;
-            data.map(forEachLink);
+            const fieldMap = this.buildImportFieldNameMap(file, 'link', this.collectObjectKeys(data), linkStructuralFields);
+            data.map(link => forEachLink(link, fieldMap));
             this.showMessage(` - Parsed ${l} New, ${data.length} Total Links from Link JSON.`);
-            if (data.length > 0)
-              Object.keys(data[0]).forEach(key => {
-                const safeKey = this.commonService.filterXSS(key);
-
-                if (!this.commonService.includes(this.commonService.session.data.linkFields, safeKey)) {
-                  this.commonService.session.data.linkFields.push(safeKey);
-                }
-              });
             let newNodes = 0, totalNodes = 0;
             const n = data.length;
             const nodeIDs = [];
@@ -1279,7 +1247,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
             for (let i = 0; i < n; i++) {
 
               const l = data[i];
-              const f1 = l[file.field1];
+              const f1 = this.getImportedFieldValue(l, file.field1);
               if (nodeIDs.indexOf(f1) === -1) {
                 totalNodes++;
                 newNodes += this.commonService.addNode({
@@ -1287,7 +1255,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
                   origin: origin
                 }, true);
               }
-              const f2 = l[file.field2];
+              const f2 = this.getImportedFieldValue(l, file.field2);
               if (nodeIDs.indexOf(f2) === -1) {
                 totalNodes++;
                 newNodes += this.commonService.addNode({
@@ -1317,21 +1285,20 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
                 if (!isCurrentLoad()) return;
 
                 const data = results.data;
-                data.map(forEachLink);
+                const fieldMap = this.buildImportFieldNameMap(
+                  file,
+                  'link',
+                  results.meta?.fields?.length ? results.meta.fields : this.collectObjectKeys(data),
+                  linkStructuralFields
+                );
+                data.map(link => forEachLink(link, fieldMap));
                 this.showMessage(` - Parsed ${l} New, ${data.length} Total Links from Link CSV.`);
-                results.meta.fields.forEach(key => {
-                  const safeKey = this.commonService.filterXSS(key);
-
-                  if (!this.commonService.includes(this.commonService.session.data.linkFields, safeKey)) {
-                    this.commonService.session.data.linkFields.push(safeKey);
-                  }
-                });
                 let newNodes = 0, totalNodes = 0;
                 const n = data.length;
                 const nodeIDs = [];
                 for (let i = 0; i < n; i++) {
                   const l = data[i];
-                  const f1 = l[file.field1];
+                  const f1 = this.getImportedFieldValue(l, file.field1);
                   if (nodeIDs.indexOf(f1) === -1) {
                     totalNodes++;
                     newNodes += this.commonService.addNode({
@@ -1339,7 +1306,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
                       origin: origin
                     }, true);
                   }
-                  const f2 = l[file.field2];
+                  const f2 = this.getImportedFieldValue(l, file.field2);
                   if (nodeIDs.indexOf(f2) === -1) {
                     totalNodes++;
                     newNodes += this.commonService.addNode({
@@ -1371,24 +1338,21 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
         let m = 0;
         const n = 0;
+        const nodeStructuralFields = [file.field1, file.field2];
 
         if (file.extension === 'xls' || file.extension === 'xlsx') {
 
           const workbook = XLSX.read(file.contents, { type: 'array', cellDates: true, dateNF: 'mm/dd/yyyy' });
           const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { raw: false, dateNF: 'mm/dd/yyyy'});
+          const fieldMap = this.buildImportFieldNameMap(file, 'node', this.collectObjectKeys(data), nodeStructuralFields);
           data.forEach(node => {
+            const sequenceValue = this.getImportedFieldValue(node, file.field2);
             let safeNode = {
-              _id: this.commonService.filterXSS('' + node[file.field1]),
-              seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(node[file.field2]),
+              _id: this.commonService.filterXSS('' + this.getImportedFieldValue(node, file.field1)),
+              seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(sequenceValue),
               origin: origin
             };
-            Object.keys(node).forEach(key => {
-              let safeKey = this.commonService.filterXSS(key);
-              if (!this.commonService.includes(this.commonService.session.data.nodeFields, safeKey)) {
-                this.commonService.session.data.nodeFields.push(safeKey);
-              }
-              safeNode[safeKey] = this.commonService.filterXSS(node[key]);
-            });
+            this.addImportedMetadataFields(safeNode, node, fieldMap, this.commonService.session.data.nodeFields, true);
             m += this.commonService.addNode(safeNode, check);
           });
 
@@ -1405,25 +1369,23 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           if (file.extension === 'json') {
             const results = JSON.parse(file.contents);
             if (!results || results.length === 0) return;
+            const fieldMap = this.buildImportFieldNameMap(file, 'node', this.collectObjectKeys(results), nodeStructuralFields);
             results.forEach(data => {
 
               const node = data;//data[0]             
 
-              if (node[file.field1] && node[file.field1].toString().trim()) {
+              const nodeId = this.getImportedFieldValue(node, file.field1);
 
+              if (nodeId && nodeId.toString().trim()) {
+
+                const sequenceValue = this.getImportedFieldValue(node, file.field2);
                 let safeNode = {
-                  _id: this.commonService.filterXSS('' + node[file.field1]),
-                  seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(node[file.field2]),
+                  _id: this.commonService.filterXSS('' + nodeId),
+                  seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(sequenceValue),
                   origin: origin
                 };
 
-                Object.keys(node).forEach(key => {
-                  let safeKey = this.commonService.filterXSS(key);
-                  if (!this.commonService.includes(this.commonService.session.data.nodeFields, safeKey)) {
-                    this.commonService.session.data.nodeFields.push(safeKey);
-                  }
-                  safeNode[safeKey] = this.commonService.filterXSS(node[key]);
-                });
+                this.addImportedMetadataFields(safeNode, node, fieldMap, this.commonService.session.data.nodeFields, true);
                 m += this.commonService.addNode(safeNode, check);
               }
             })
@@ -1441,6 +1403,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           } else {
 
             let nodeCsvRows = 0;
+            let nodeCsvFieldMap: Map<string, string> | null = null;
             Papa.parse(file.contents, {
               header: true,
               dynamicTyping: true,
@@ -1450,22 +1413,27 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
                 nodeCsvRows++;
                 const node = data.data;
+                if (!nodeCsvFieldMap) {
+                  nodeCsvFieldMap = this.buildImportFieldNameMap(
+                    file,
+                    'node',
+                    data.meta?.fields?.length ? data.meta.fields : Object.keys(node),
+                    nodeStructuralFields
+                  );
+                }
 
-                if (node[file.field1] && node[file.field1].toString().trim()) {
+                const nodeId = this.getImportedFieldValue(node, file.field1);
 
+                if (nodeId && nodeId.toString().trim()) {
+
+                  const sequenceValue = this.getImportedFieldValue(node, file.field2);
                   let safeNode = {
-                    _id: this.commonService.filterXSS('' + node[file.field1]),
-                    seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(node[file.field2]),
+                    _id: this.commonService.filterXSS('' + nodeId),
+                    seq: (!file.field2 || file.field2 === 'None') ? '' : this.commonService.filterXSS(sequenceValue),
                     origin: origin
                   };
 
-                  Object.keys(node).forEach(key => {
-                    let safeKey = this.commonService.filterXSS(key);
-                    if (!this.commonService.includes(this.commonService.session.data.nodeFields, safeKey)) {
-                      this.commonService.session.data.nodeFields.push(safeKey);
-                    }
-                    safeNode[safeKey] = this.commonService.filterXSS(node[key]);
-                  });
+                  this.addImportedMetadataFields(safeNode, node, nodeCsvFieldMap, this.commonService.session.data.nodeFields, true);
                   m += this.commonService.addNode(safeNode, check);
                 }
               },
@@ -2083,6 +2051,186 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
   private normalizeFileTypeSignal(value: any): string {
     return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private readonly nodeImportReservedFields = new Set<string>([
+    'index',
+    '_id',
+    'id',
+    'label',
+    'selected',
+    'cluster',
+    'visible',
+    'degree',
+    'origin',
+    '_originAll',
+    'mt_networks',
+    'data',
+    'hasDistance',
+    'x',
+    'y',
+    'z',
+    'vx',
+    'vy',
+    '_lat',
+    '_lon',
+    '_jlat',
+    '_jlon',
+    '_j',
+    '_theta',
+    'nodeSize',
+    'nodeColor',
+    'bgOpacity',
+    'borderWidth',
+    'shape',
+    'group',
+    'parent',
+    'isParent',
+    'color',
+    'size',
+    'seq',
+    '_diff',
+    '_ambiguity',
+    '_score',
+    '_padding',
+    '_cigar',
+    '_seq',
+    '_seqint',
+    'foci'
+  ].map(field => field.toLowerCase()));
+
+  private readonly linkImportReservedFields = new Set<string>([
+    'index',
+    'id',
+    'source',
+    'target',
+    'visible',
+    'cluster',
+    'origin',
+    '_originAll',
+    'nn',
+    'directed',
+    'hasDistance',
+    'distance',
+    'distanceOrigin',
+    'distanceOrigins',
+    'mt_networks',
+    'label',
+    'mtRawLinkLabel',
+    'lineSelectedColor',
+    'lineColor',
+    'lineOpacity',
+    'width',
+    'secondLink',
+    'bidirectional',
+    'length',
+    'weight',
+    'snps',
+    'tn93',
+    'genetic_distance',
+    'mean_genetic_distance'
+  ].map(field => field.toLowerCase()));
+
+  private getImportReservedFields(type: 'node' | 'link'): Set<string> {
+    return type === 'node' ? this.nodeImportReservedFields : this.linkImportReservedFields;
+  }
+
+  private getImportStructuralFields(fields: any[] = []): Set<string> {
+    const structuralFields = new Set<string>();
+    (fields || []).forEach(field => {
+      const safeField = this.commonService.filterXSS(field);
+      if (safeField && safeField !== 'None') {
+        structuralFields.add(safeField);
+      }
+    });
+    return structuralFields;
+  }
+
+  private collectObjectKeys(rows: any[]): string[] {
+    const keys: string[] = [];
+    (rows || []).forEach(row => {
+      Object.keys(row || {}).forEach(key => {
+        if (!this.commonService.includes(keys, key)) {
+          keys.push(key);
+        }
+      });
+    });
+    return keys;
+  }
+
+  private buildImportFieldNameMap(
+    file: any,
+    type: 'node' | 'link',
+    headers: any[] = [],
+    structuralFields: any[] = []
+  ): Map<string, string> {
+    const reservedFields = this.getImportReservedFields(type);
+    const structuralFieldNames = this.getImportStructuralFields(structuralFields);
+    const sanitizedFileName = this.commonService.filterXSS(file?.name || 'Imported file');
+    const sanitizedHeaders = (headers || []).map(rawHeader => ({
+      rawHeader,
+      safeHeader: this.commonService.filterXSS(rawHeader)
+    })).filter(({ safeHeader }) => !structuralFieldNames.has(safeHeader || 'field'));
+
+    const usedFieldNames = new Set<string>();
+    const fieldMap = new Map<string, string>();
+
+    sanitizedHeaders.forEach(({ rawHeader, safeHeader }) => {
+      const baseHeader = safeHeader || 'field';
+      const isReserved = reservedFields.has(baseHeader.toLowerCase());
+      const baseFieldName = isReserved
+        ? `${baseHeader} (${sanitizedFileName})`
+        : baseHeader;
+      let mappedFieldName = baseFieldName;
+      let suffix = 2;
+
+      while (usedFieldNames.has(mappedFieldName)) {
+        mappedFieldName = `${baseFieldName} ${suffix}`;
+        suffix++;
+      }
+
+      usedFieldNames.add(mappedFieldName);
+      fieldMap.set(rawHeader, mappedFieldName);
+    });
+
+    return fieldMap;
+  }
+
+  private getImportedFieldValue(row: any, fieldName: any): any {
+    const selectedField = String(fieldName ?? '');
+    if (!row || selectedField === '' || selectedField === 'None') {
+      return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(row, selectedField)) {
+      return row[selectedField];
+    }
+
+    const matchingKey = Object.keys(row).find(key => this.commonService.filterXSS(key) === selectedField);
+    return matchingKey === undefined ? undefined : row[matchingKey];
+  }
+
+  private addImportedMetadataFields(
+    target: any,
+    source: any,
+    fieldMap: Map<string, string>,
+    sessionFields: string[],
+    sanitizeValues: boolean
+  ): void {
+    Object.keys(source || {}).forEach(rawKey => {
+      const mappedKey = fieldMap.get(rawKey);
+      if (!mappedKey) {
+        return;
+      }
+
+      target[mappedKey] = sanitizeValues
+        ? this.commonService.filterXSS(source[rawKey])
+        : source[rawKey];
+
+      if (!this.commonService.includes(sessionFields, mappedKey)) {
+        sessionFields.push(mappedKey);
+      }
+    });
   }
 
   private inferTabularFileFormat(

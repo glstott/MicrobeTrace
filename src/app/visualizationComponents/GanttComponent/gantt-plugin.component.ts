@@ -156,7 +156,7 @@ export class GanttComponent extends BaseComponentDirective implements OnInit, Af
 
       this.visuals.gantt.FieldList.push(
         {
-          label: this.visuals.gantt.commonService.capitalize(d.replace('_', '')),
+          label: d,
           value: d
         });
     });

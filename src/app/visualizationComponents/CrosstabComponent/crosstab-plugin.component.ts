@@ -319,11 +319,11 @@ export class CrosstabComponent extends BaseComponentDirective implements OnInit,
     const yVariable = typeof this.yVariable === 'string' ? this.yVariable : 'None';
 
     if (xVariable != 'None' && yVariable != 'None') {
-      return `${this.commonService.capitalize(xVariable.replace("_", ""))} vs ${this.commonService.capitalize(yVariable.replace("_",""))}`
+      return `${xVariable} vs ${yVariable}`
     } else if (xVariable != 'None') {
-      return `${this.commonService.capitalize(xVariable.replace("_", ""))}`
+      return `${xVariable}`
     } else if (yVariable != 'None') {
-      return `${this.commonService.capitalize(yVariable.replace("_",""))}`
+      return `${yVariable}`
     } else {
       return ''
     }
@@ -351,7 +351,7 @@ export class CrosstabComponent extends BaseComponentDirective implements OnInit,
     this.commonService.session.data['nodeFields'].map((d) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(d)) return;
       this.fieldList.push({
-        label: this.commonService.capitalize(d.replace("_", "")),
+        label: d,
         value: d
       });
     })

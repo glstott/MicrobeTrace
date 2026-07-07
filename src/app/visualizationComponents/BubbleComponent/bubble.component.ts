@@ -217,7 +217,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     this.commonService.session.data['nodeFields'].forEach((field) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(field)) return;
       this.selectedFieldList.push({
-        label: this.commonService.capitalize(field.replace("_", "")),
+        label: field,
         value: field
       });
     });

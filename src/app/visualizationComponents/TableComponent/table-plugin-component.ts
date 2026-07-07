@@ -502,7 +502,7 @@ import { CommonStoreService } from '@app/contactTraceCommonServices/common-store
             header:
               d == 'nn'
                 ? 'Nearest Neighbor'
-                : this.visuals.tableComp.capitalize(d.replace('_', '')),
+                : d,
             filterValue: filterValue,
             filterType: filterType
           };

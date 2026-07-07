@@ -274,8 +274,8 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     this.commonService.session.data['nodeFields'].map((d) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(d)) return;
       this.fieldOptions[0]['items'].push({
-        short_label: this.commonService.capitalize(d.replace("_", "")),
-        label : `Node-${this.commonService.capitalize(d.replace("_", ""))}`,
+        short_label: d,
+        label : `Node-${d}`,
         value: `Node-${d}`
       });
     })
@@ -283,16 +283,16 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     this.commonService.session.data['linkFields'].map((d) => {
       if (['index', 'origin', 'nearest neighbor', 'nn'].includes(d)) return;
       this.fieldOptions[1]['items'].push({
-        short_label: this.commonService.capitalize(d.replace("_", "")),
-        label : `Link-${this.commonService.capitalize(d.replace("_", ""))}`,
+        short_label: d,
+        label : `Link-${d}`,
         value: `Link-${d}`
       });
     })
 
     this.commonService.session.data['clusterFields'].map((d) => {
       this.fieldOptions[2]['items'].push({
-        short_label: this.commonService.capitalize(d.replace("_", "")),
-        label : `Cluster-${this.commonService.capitalize(d.replace("_", ""))}`,
+        short_label: d,
+        label : `Cluster-${d}`,
         value: `Cluster-${d}`
       });
     })

@@ -8,6 +8,8 @@ describe('File Handling and Processing', () => {
   const compatibleNodeFile = 'AngularTesting_nodes_Map.csv';
   const linkFile = 'AngularTesting_Epi_linklist_BS.csv';
   const additionalNodeFile = compatibleNodeFile;
+  const collisionNodeFile = 'FieldNameCollisionNodes.csv';
+  const collisionLinkFile = 'FieldNameCollisionLinks.csv';
   const loadNodeFile = () => cy.loadFiles([{ name: nodeFile, datatype: 'node' }]);
 
   beforeEach(() => {
@@ -204,6 +206,119 @@ describe('File Handling and Processing', () => {
         (l.source === 'KF773571' && l.target === 'KF773578')
       );
       expect(link.Contact).to.equal('Bar');
+    });
+  });
+
+  it('preserves imported fields that collide with internal graph fields', () => {
+    cy.loadFiles([
+      { name: collisionNodeFile, datatype: 'node', field1: 'id', field2: 'None' },
+      { name: collisionLinkFile, datatype: 'link', field1: 'source', field2: 'target', field3: 'distance' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+
+    cy.window().then((win) => {
+      const { nodes, links, nodeFields, linkFields } = win.commonService.session.data;
+      const nodeSuffix = ` (${collisionNodeFile})`;
+      const linkSuffix = ` (${collisionLinkFile})`;
+      const node = nodes.find((candidate: any) => candidate._id === 'USER-ID-A');
+      const link = links.find((candidate: any) => candidate.source === 'USER-ID-A' && candidate.target === 'USER-ID-B');
+
+      expect(node, 'collision fixture node').to.exist;
+      expect(link, 'collision fixture link').to.exist;
+
+      expect(node._id, 'node _id remains structural').to.equal('USER-ID-A');
+      expect(node.id, 'node id mirrors structural _id').to.equal('USER-ID-A');
+      expect(node.visible, 'node visible remains boolean state').to.be.a('boolean');
+      expect(node.origin, 'node origin remains file provenance').to.include.members([collisionNodeFile, collisionLinkFile]);
+      expect(node.case_id, 'safe non-colliding node metadata stays unprefixed').to.equal('NODE-A');
+      expect(node[`id${nodeSuffix}`], 'selected node id field is not duplicated as metadata').to.be.undefined;
+      expect(node[`id${nodeSuffix} 2`], 'selected node id field is not duplicated with a suffix').to.be.undefined;
+      expect(node[`_id${nodeSuffix}`], 'imported _id metadata').to.equal('USER-_ID-A');
+      expect(node[`origin${nodeSuffix}`], 'imported origin metadata').to.equal('USER-ORIGIN-A');
+      expect(node[`seq${nodeSuffix}`], 'imported seq metadata').to.equal('ACGT');
+      expect(node.sequence, 'safe non-colliding node metadata stays unprefixed').to.equal('USER-SEQUENCE-A');
+      expect(node.lat, 'imported lat metadata keeps original label').to.equal('10.1');
+      expect(node[`_lat${nodeSuffix}`], 'imported _lat metadata gets filename suffix').to.equal('20.2');
+      expect(node.Lat, 'imported Lat metadata keeps original label').to.equal('30.3');
+      expect(node.l_at, 'imported l_at metadata keeps original label').to.equal('40.4');
+      expect(node.long, 'safe non-colliding longitude metadata stays unprefixed').to.equal('-70.1');
+      expect(node[`_lon${nodeSuffix}`], 'imported _lon metadata gets filename suffix').to.equal('-80.2');
+      expect(node[`_jlat${nodeSuffix}`], 'imported _jlat metadata gets filename suffix').to.equal('50.5');
+      expect(node[`_jlon${nodeSuffix}`], 'imported _jlon metadata gets filename suffix').to.equal('-100.5');
+      expect(node[`_j${nodeSuffix}`], 'imported _j metadata gets filename suffix').to.equal('0.5');
+      expect(node[`_theta${nodeSuffix}`], 'imported _theta metadata gets filename suffix').to.equal('1.57');
+      expect(node.lon, 'imported lon metadata keeps original label').to.equal('-90.3');
+      expect(node.safe_status, 'safe custom node field remains unprefixed').to.equal('Safe-A');
+
+      expect(link.source, 'link source remains structural').to.equal('USER-ID-A');
+      expect(link.target, 'link target remains structural').to.equal('USER-ID-B');
+      expect(link.distance, 'link distance remains structural').to.equal(0.125);
+      expect(link.id, 'link id remains generated structural id').to.equal('USER-ID-A-USER-ID-B');
+      expect(link.visible, 'link visible remains boolean state').to.be.a('boolean');
+      expect(link.origin, 'link origin remains file provenance').to.deep.equal([collisionLinkFile]);
+      expect(link.distanceOrigin, 'link distance origin remains file provenance').to.equal(collisionLinkFile);
+      expect(link[`source${linkSuffix}`], 'selected link source field is not duplicated as metadata').to.be.undefined;
+      expect(link[`target${linkSuffix}`], 'selected link target field is not duplicated as metadata').to.be.undefined;
+      expect(link[`distance${linkSuffix}`], 'selected link distance field is not duplicated as metadata').to.be.undefined;
+      expect(link[`Distance${linkSuffix}`], 'imported Distance metadata').to.equal(101.01);
+      expect(link[`origin${linkSuffix}`], 'imported link origin metadata').to.equal('USER-LINK-ORIGIN-A');
+      expect(link[`id${linkSuffix}`], 'imported link id metadata').to.equal('USER-LINK-ID-A');
+      expect(link.lat, 'imported link lat metadata keeps original label').to.equal(10.1);
+      expect(link._lat, 'imported link _lat metadata keeps original label').to.equal(20.2);
+      expect(link.Contact, 'safe custom link field remains unprefixed').to.equal('Contact-A');
+
+      const originalNodeFields = [
+        'lat',
+        'Lat',
+        'l_at',
+        'lon',
+      ];
+      const internalCollisionNodeFields = [
+        `_id${nodeSuffix}`,
+        `origin${nodeSuffix}`,
+        `seq${nodeSuffix}`,
+        `_lat${nodeSuffix}`,
+        `_lon${nodeSuffix}`,
+        `_jlat${nodeSuffix}`,
+        `_jlon${nodeSuffix}`,
+        `_j${nodeSuffix}`,
+        `_theta${nodeSuffix}`,
+      ];
+      const originalLinkFields = [
+        'lat',
+        '_lat',
+      ];
+      const internalCollisionLinkFields = [
+        `Distance${linkSuffix}`,
+        `origin${linkSuffix}`,
+        `id${linkSuffix}`,
+      ];
+
+      expect(nodeFields, 'normalized-display node fields keep original imported labels').to.include.members(originalNodeFields);
+      expect(linkFields, 'normalized-display link fields keep original imported labels').to.include.members(originalLinkFields);
+      expect(nodeFields, 'internal node collisions get filename suffixes').to.include.members(internalCollisionNodeFields);
+      expect(linkFields, 'internal link collisions get filename suffixes').to.include.members(internalCollisionLinkFields);
+      expect(nodeFields, 'selected node id field is not added as metadata').not.to.include.members([
+        `id${nodeSuffix}`,
+        `id${nodeSuffix} 2`,
+      ]);
+      expect(linkFields, 'selected link structural fields are not added as metadata').not.to.include.members([
+        `source${linkSuffix}`,
+        `target${linkSuffix}`,
+        `distance${linkSuffix}`,
+      ]);
+      expect(nodeFields, 'raw map internal coordinate fields are not added as imported metadata').not.to.include.members([
+        '_lat',
+        '_lon',
+        '_jlat',
+        '_jlon',
+        '_j',
+        '_theta',
+      ]);
     });
   });
 

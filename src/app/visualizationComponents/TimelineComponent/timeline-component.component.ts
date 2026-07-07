@@ -115,12 +115,12 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
         if (d != 'seq' && d != 'sequence') {
             this.FieldList.push(
                 {
-                    label: this.commonService.capitalize(d.replace("_", "")),
+                    label: d,
                     value: d
                 });
             this.FieldListStack.push(
                 {
-                    label: this.commonService.capitalize(d.replace("_", "")),
+                    label: d,
                     value: d
                 });
         }

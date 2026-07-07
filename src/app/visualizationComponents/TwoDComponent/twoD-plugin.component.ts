@@ -1440,7 +1440,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             this.commonService.getStyleableNodeFields().forEach(d => {
                 this.FieldList.push(
                     {
-                        label: this.commonService.capitalize(d.replace("_", "")),
+                        label: d,
                         value: d
                     });
             });
@@ -1479,12 +1479,12 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 } else {
                     this.LinkToolTipList.push(
                         {
-                            label: this.commonService.capitalize(d.replace("_", "")),
+                            label: d,
                             value: d
                         });
                     this.ToolTipFieldList.push(
                         {
-                            label: this.commonService.capitalize(d.replace("_", "")),
+                            label: d,
                             value: d
                         });
                 }

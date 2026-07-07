@@ -3754,7 +3754,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             
             this.FieldList.push(
                 {
-                    label: this.commonService.capitalize(d.replace("_", "")),
+                    label: d,
                     value: d
                 });
 
@@ -3768,7 +3768,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
             this.ToolTipFieldList.push(
                 {
-                    label: this.commonService.capitalize(d.replace("_", "")),
+                    label: d,
                     value: d
                 });
 
