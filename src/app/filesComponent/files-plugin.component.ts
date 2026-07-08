@@ -2166,7 +2166,6 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
   ): Map<string, string> {
     const reservedFields = this.getImportReservedFields(type);
     const structuralFieldNames = this.getImportStructuralFields(structuralFields);
-    const sanitizedFileName = this.commonService.filterXSS(file?.name || 'Imported file');
     const sanitizedHeaders = (headers || []).map(rawHeader => ({
       rawHeader,
       safeHeader: this.commonService.filterXSS(rawHeader)
@@ -2179,7 +2178,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       const baseHeader = safeHeader || 'field';
       const isReserved = reservedFields.has(baseHeader.toLowerCase());
       const baseFieldName = isReserved
-        ? `${baseHeader} (${sanitizedFileName})`
+        ? `${baseHeader} (Imported)`
         : baseHeader;
       let mappedFieldName = baseFieldName;
       let suffix = 2;
@@ -2450,7 +2449,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
       fnamerow.appendTo(root);
       const optionsrow = $('<div class="row w-100"></div>');
-      const options = '<option>None</option>' + headers.map(h => `<option value="${h}">${parentContext.commonService.titleize(h)}</option>`).join('\n');
+      const options = '<option>None</option>' + headers.map(h => `<option value="${h}">${parentContext.commonService.filterXSS(h)}</option>`).join('\n');
       optionsrow.append(`
                   <div class='col-4 '${showsColumnMapping ? '' : ' style="display: none;"'} data-file='${file.name}'>
                     <label for="file-${file.name}-field-1">${isNode ? 'ID' : 'Source'}</label>

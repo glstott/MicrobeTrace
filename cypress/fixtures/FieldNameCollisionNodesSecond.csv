@@ -1,0 +1,2 @@
+case_id,index,_id,id,origin,_lat,_lon,_jlat,_jlon,lat,long,safe_status
+NODE-C,3,USER-_ID-C,USER-ID-C,USER-ORIGIN-C,22.2,-82.2,52.5,-102.5,12.1,-72.1,Safe-C

@@ -92,14 +92,18 @@ export function visitAppAndAcceptEula(options: JourneyVisitOptions = {}): void {
   }
 
   cy.get('body').then(($body) => {
-    if (!resolvedOptions.skipDemoSession) return;
-
     const continueButton = $body.find(`${byTestId(testIds.appSampleDatasetButton)}:visible`);
     if (!continueButton.length) return;
 
     cy.get(byTestId(testIds.appSampleDatasetButton)).click({ force: true });
     cy.get('#overlay', { timeout: 15000 }).should('not.be.visible');
   });
+
+  if (!resolvedOptions.skipDemoSession) {
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.data.nodes.length')
+      .should('be.greaterThan', 0);
+  }
 }
 
 export function saveSessionFromFileMenu(
