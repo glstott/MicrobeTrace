@@ -289,6 +289,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 'degree',
                 'origin'
             ],
+            nodeFieldLabels: {},
             nodeExclusions: [],
             linkFields: [
                 'index',
@@ -301,6 +302,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 'nn',
                 'directed'
             ],
+            linkFieldLabels: {},
             clusterFields: [
                 'id',
                 'nodes',
@@ -3374,23 +3376,23 @@ align(params): Promise<any> {
         console.log('----- finishUp -- search fields, color variable sort varialbe, distance UI');
 
         $("#search-field")
-            .html(this.session.data.nodeFields.map(field => '<option value="' + field + '">' + this.titleize(field) + "</option>").join("\n"))
+            .html(this.session.data.nodeFields.map(field => '<option value="' + field + '">' + this.getFieldDisplayLabel(field, 'node') + "</option>").join("\n"))
             .val(this.session.style.widgets["search-field"]);
         $("#search-form").css("display", "flex");
         $("#link-sort-variable")
-            .html(this.session.data.linkFields.map(field => '<option value="' + field + '">' + this.titleize(field) + "</option>").join("\n"))
+            .html(this.session.data.linkFields.map(field => '<option value="' + field + '">' + this.getFieldDisplayLabel(field, 'link') + "</option>").join("\n"))
             .val(this.session.style.widgets["link-sort-variable"]);
         $("#node-color-variable")
             .html(
                 "<option selected>None</option>" +
-                this.getStyleableNodeFields().map(field => '<option value="' + field + '">' + this.titleize(field) + "</option>").join("\n"))
+                this.getStyleableNodeFields().map(field => '<option value="' + field + '">' + this.getFieldDisplayLabel(field, 'node') + "</option>").join("\n"))
             .val(this.session.style.widgets["node-color-variable"]);
         $("#default-distance-metric")
             .val(this.session.style.widgets["default-distance-metric"]);
         $("#link-color-variable")
         .html(
             "<option>None</option>" +
-            this.session.data.linkFields.map(field => '<option value="' + field + '">' + this.titleize(field) + "</option>").join("\n"))
+            this.session.data.linkFields.map(field => '<option value="' + field + '">' + this.getFieldDisplayLabel(field, 'link') + "</option>").join("\n"))
         .val(this.session.style.widgets["link-color-variable"]);
         try {
             // TODO:: Refactoring asses need for this
@@ -4234,6 +4236,30 @@ align(params): Promise<any> {
         return title;
         return small.replace(/(?:^|\s|-)\S/g, c => c.toUpperCase());
     };
+
+    getFieldDisplayLabel(field: any, fieldType: 'node' | 'link' = 'node'): string {
+        const fieldName = String(field ?? '');
+        const labels = fieldType === 'link'
+            ? this.session?.data?.linkFieldLabels
+            : this.session?.data?.nodeFieldLabels;
+
+        return labels?.[fieldName] || fieldName;
+    }
+
+    setFieldDisplayLabel(field: any, label: any, fieldType: 'node' | 'link' = 'node'): void {
+        const fieldName = String(field ?? '');
+        if (!fieldName || fieldName === 'None') return;
+
+        const labelName = String(label ?? fieldName);
+        if (fieldType === 'link') {
+            this.session.data.linkFieldLabels = this.session.data.linkFieldLabels || {};
+            this.session.data.linkFieldLabels[fieldName] = labelName;
+            return;
+        }
+
+        this.session.data.nodeFieldLabels = this.session.data.nodeFieldLabels || {};
+        this.session.data.nodeFieldLabels[fieldName] = labelName;
+    }
 
     /** 
      * Set up the clusters; new clusters are created as needed; node.cluster is set to cluster id.

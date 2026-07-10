@@ -22,6 +22,10 @@ import { WorkerComputeService } from '@app/contactTraceCommonServices/worker-com
 // import { ComponentContainer } from 'golden-layout';
 // import { ConsoleReporter } from 'jasmine';
 
+interface ImportFieldMapping {
+  mappedKey: string;
+  displayLabel: string;
+}
 
 @Component({
     selector: 'FilesComponent',
@@ -1151,7 +1155,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
          * Processes and then adds link. updates value of l
          * @param {object} link 
          */
-        const forEachLink = (link, fieldMap: Map<string, string>) => {
+        const forEachLink = (link, fieldMap: Map<string, ImportFieldMapping>) => {
           const safeLink = {};
           this.addImportedMetadataFields(safeLink, link, fieldMap, this.commonService.session.data.linkFields, false);
 
@@ -1403,7 +1407,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           } else {
 
             let nodeCsvRows = 0;
-            let nodeCsvFieldMap: Map<string, string> | null = null;
+            let nodeCsvFieldMap: Map<string, ImportFieldMapping> | null = null;
             Papa.parse(file.contents, {
               header: true,
               dynamicTyping: true,
@@ -2163,8 +2167,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     type: 'node' | 'link',
     headers: any[] = [],
     structuralFields: any[] = []
-  ): Map<string, string> {
+  ): Map<string, ImportFieldMapping> {
     const reservedFields = this.getImportReservedFields(type);
+    const optionReservedFields = type === 'node'
+      ? new Set((this.commonService.session.data.nodeFields || []).map(field => `${field}`.toLowerCase()))
+      : new Set((this.commonService.session.data.linkFields || []).map(field => `${field}`.toLowerCase()));
     const structuralFieldNames = this.getImportStructuralFields(structuralFields);
     const sanitizedHeaders = (headers || []).map(rawHeader => ({
       rawHeader,
@@ -2172,24 +2179,34 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     })).filter(({ safeHeader }) => !structuralFieldNames.has(safeHeader || 'field'));
 
     const usedFieldNames = new Set<string>();
-    const fieldMap = new Map<string, string>();
+    const fieldMap = new Map<string, ImportFieldMapping>();
 
     sanitizedHeaders.forEach(({ rawHeader, safeHeader }) => {
       const baseHeader = safeHeader || 'field';
-      const isReserved = reservedFields.has(baseHeader.toLowerCase());
+      const normalizedBaseHeader = baseHeader.toLowerCase();
+      const isReserved = reservedFields.has(normalizedBaseHeader);
+      const hasSelectableInternalCollision = isReserved && optionReservedFields.has(normalizedBaseHeader);
       const baseFieldName = isReserved
         ? `${baseHeader} (Imported)`
         : baseHeader;
+      const baseDisplayLabel = hasSelectableInternalCollision
+        ? `${baseHeader} (Imported)`
+        : baseHeader;
       let mappedFieldName = baseFieldName;
+      let displayLabel = baseDisplayLabel;
       let suffix = 2;
 
       while (usedFieldNames.has(mappedFieldName)) {
         mappedFieldName = `${baseFieldName} ${suffix}`;
+        displayLabel = `${baseDisplayLabel} ${suffix}`;
         suffix++;
       }
 
       usedFieldNames.add(mappedFieldName);
-      fieldMap.set(rawHeader, mappedFieldName);
+      fieldMap.set(rawHeader, {
+        mappedKey: mappedFieldName,
+        displayLabel
+      });
     });
 
     return fieldMap;
@@ -2212,16 +2229,17 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
   private addImportedMetadataFields(
     target: any,
     source: any,
-    fieldMap: Map<string, string>,
+    fieldMap: Map<string, ImportFieldMapping>,
     sessionFields: string[],
     sanitizeValues: boolean
   ): void {
     Object.keys(source || {}).forEach(rawKey => {
-      const mappedKey = fieldMap.get(rawKey);
-      if (!mappedKey) {
+      const mapping = fieldMap.get(rawKey);
+      if (!mapping) {
         return;
       }
 
+      const mappedKey = mapping.mappedKey;
       target[mappedKey] = sanitizeValues
         ? this.commonService.filterXSS(source[rawKey])
         : source[rawKey];
@@ -2229,6 +2247,9 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       if (!this.commonService.includes(sessionFields, mappedKey)) {
         sessionFields.push(mappedKey);
       }
+
+      const fieldType = sessionFields === this.commonService.session.data.linkFields ? 'link' : 'node';
+      this.commonService.setFieldDisplayLabel(mappedKey, mapping.displayLabel, fieldType);
     });
   }
 

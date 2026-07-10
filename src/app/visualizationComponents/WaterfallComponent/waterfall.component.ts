@@ -225,12 +225,12 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
   }
 
   private buildNodeExpandedRowData(nodeId: any) {
-    return this.buildExpandedRowData(this.getVisibleNodeById(nodeId));
+    return this.buildExpandedRowData(this.getVisibleNodeById(nodeId), false, 'node');
   }
 
   private buildLinkExpandedRowData(linkIndex: any) {
     const link = this.getVisibleLinksForWaterfall().find(candidate => Number(candidate.index) === Number(linkIndex));
-    return this.buildExpandedRowData(link);
+    return this.buildExpandedRowData(link, false, 'link');
   }
 
   private getEndpointId(endpoint: any): string {
@@ -396,13 +396,15 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     this.markWaterfallRendered();
   }
 
-  private buildExpandedRowData(source: any, formatClusterSummary = false) {
+  private buildExpandedRowData(source: any, formatClusterSummary = false, fieldType?: 'node' | 'link') {
     if (!source) return [];
 
     return Object.keys(source)
       .filter(k => !(this.metaDataToSkip.includes(k) || k.charAt(0) == '_' || typeof source[k] == 'object'))
       .map(k => {
-        const prop = this.commonService.titleize(k);
+        const prop = fieldType
+          ? this.commonService.getFieldDisplayLabel(k, fieldType)
+          : this.commonService.titleize(k);
         const isNumericValue = typeof source[k] == 'number';
         const shouldFormatClusterDistance = formatClusterSummary && k == 'mean_genetic_distance' && isNumericValue;
         const shouldFormatLinksPerNode = formatClusterSummary && k == 'links_per_node' && isNumericValue;

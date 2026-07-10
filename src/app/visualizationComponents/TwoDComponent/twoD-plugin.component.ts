@@ -1440,7 +1440,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             this.commonService.getStyleableNodeFields().forEach(d => {
                 this.FieldList.push(
                     {
-                        label: d,
+                        label: this.commonService.getFieldDisplayLabel(d, 'node'),
                         value: d
                     });
             });
@@ -1479,12 +1479,12 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 } else {
                     this.LinkToolTipList.push(
                         {
-                            label: d,
+                            label: this.commonService.getFieldDisplayLabel(d, 'link'),
                             value: d
                         });
                     this.ToolTipFieldList.push(
                         {
-                            label: d,
+                            label: this.commonService.getFieldDisplayLabel(d, 'link'),
                             value: d
                         });
                 }
@@ -1960,11 +1960,12 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         const legacyPolygonHeader = this.commonService.session.style.overwrite?.['polygonColorHeaderVariable'] === this.widgets['polygons-foci']
             ? this.commonService.session.style.overwrite?.['polygonColorHeaderTitle']
             : undefined;
+        const polygonFieldLabel = this.commonService.getFieldDisplayLabel(this.widgets['polygons-foci'], 'node');
         const valueColumnName = microbeTrace?.getKeyTableColumnDisplayName(
             'polygon-color',
             'value',
-            legacyPolygonHeader ?? 'Group ' + this.commonService.titleize(this.widgets['polygons-foci'])
-        ) ?? (legacyPolygonHeader ?? 'Group ' + this.commonService.titleize(this.widgets['polygons-foci']));
+            legacyPolygonHeader ?? 'Group ' + polygonFieldLabel
+        ) ?? (legacyPolygonHeader ?? 'Group ' + polygonFieldLabel);
         const countColumnName = microbeTrace?.getKeyTableColumnDisplayName('polygon-color', 'count', 'Count') ?? 'Count';
         const frequencyColumnName = microbeTrace?.getKeyTableColumnDisplayName('polygon-color', 'frequency', 'Frequency') ?? 'Frequency';
 
@@ -2849,7 +2850,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         } else if (tt_var_len == 1) {
          tooltipHtml =  `${d[this.widgets['node-tooltip-variable'][0]]}`
         } else {
-          tooltipHtml =  this.tabulate(this.widgets['node-tooltip-variable'].map(variable => [this.titleize(variable), d[variable]]))
+          tooltipHtml =  this.tabulate(this.widgets['node-tooltip-variable'].map(variable => [this.commonService.getFieldDisplayLabel(variable, 'node'), d[variable]]))
         }
 
         let [X, Y] = this.getRelativeMousePosition(event);
@@ -2912,7 +2913,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         // Generate the HTML for the tooltip
         let tooltipHtml = '';
         if (tooltipVariables.length > 1) {
-            tooltipHtml = this.tabulate(tooltipVariables.map(variable => [this.titleize(variable), getData(d, variable)]));
+            tooltipHtml = this.tabulate(tooltipVariables.map(variable => [this.commonService.getFieldDisplayLabel(variable, 'link'), getData(d, variable)]));
         } else {
             tooltipHtml = getData(d, tooltipVariables[0])
         }

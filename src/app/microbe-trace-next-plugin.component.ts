@@ -2662,7 +2662,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
     // The actual function that builds your color table
   generateNodeLinkTable(tableId: string, isEditable: boolean = true) {
-    const valueColumnName = this.getKeyTableColumnDisplayName('link-color', 'value', 'Link ' + this.commonService.titleize(this.SelectedColorLinksByVariable));
+    const valueColumnName = this.getKeyTableColumnDisplayName('link-color', 'value', 'Link ' + this.commonService.getFieldDisplayLabel(this.SelectedColorLinksByVariable, 'link'));
     const countColumnName = this.getKeyTableColumnDisplayName('link-color', 'count', 'Count');
     const frequencyColumnName = this.getKeyTableColumnDisplayName('link-color', 'frequency', 'Frequency');
     const linkColorTable = $(tableId).empty().append(
@@ -2960,7 +2960,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         // }
 
         }
-        let globalTimelineField =  (this.commonService.session.style.overwrite && variable == this.commonService.session.style.overwrite['globalTimelineFieldVariable'] ? this.commonService.session.style.overwrite['globalTimelineField'] : this.commonService.titleize(variable));
+        let globalTimelineField =  (this.commonService.session.style.overwrite && variable == this.commonService.session.style.overwrite['globalTimelineFieldVariable'] ? this.commonService.session.style.overwrite['globalTimelineField'] : this.commonService.getFieldDisplayLabel(variable, 'node'));
         const encodedGlobalTimelineField = globalTimelineField.replace(/[\u00A0-\u9999<>\&]/g, function(i) {
             return '&#'+i.charCodeAt(0)+';';
         });
@@ -3284,7 +3284,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     }
 
     generateNodeColorTable(tableId: string, isEditable: boolean = true) {
-        const valueColumnName = this.getKeyTableColumnDisplayName('node-color', 'value', 'Node ' + this.commonService.titleize(this.SelectedColorNodesByVariable));
+        const valueColumnName = this.getKeyTableColumnDisplayName('node-color', 'value', 'Node ' + this.commonService.getFieldDisplayLabel(this.SelectedColorNodesByVariable, 'node'));
         const countColumnName = this.getKeyTableColumnDisplayName('node-color', 'count', 'Count');
         const frequencyColumnName = this.getKeyTableColumnDisplayName('node-color', 'frequency', 'Frequency');
         const nodeColorTable = $(tableId)
@@ -3754,7 +3754,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             
             this.FieldList.push(
                 {
-                    label: d,
+                    label: this.commonService.getFieldDisplayLabel(d, 'node'),
                     value: d
                 });
 
@@ -3768,7 +3768,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
             this.ToolTipFieldList.push(
                 {
-                    label: d,
+                    label: this.commonService.getFieldDisplayLabel(d, 'link'),
                     value: d
                 });
 
@@ -5568,7 +5568,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.thresholdStabilityRegions = this.buildThresholdStabilityRegions(summary, threshold);
 
         if (summary.thresholds.length === 0) {
-            this.thresholdStabilityMessage = `No numeric ${this.commonService.titleize(metric)} values are available for this view.`;
+            this.thresholdStabilityMessage = `No numeric ${this.commonService.getFieldDisplayLabel(metric, 'link')} values are available for this view.`;
         } else if (this.thresholdStabilityRegions.length === 0) {
             this.thresholdStabilityMessage = 'No broad flat range was found for the current metric.';
         } else {

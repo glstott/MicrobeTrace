@@ -217,7 +217,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     this.commonService.session.data['nodeFields'].forEach((field) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(field)) return;
       this.selectedFieldList.push({
-        label: field,
+        label: this.commonService.getFieldDisplayLabel(field, 'node'),
         value: field
       });
     });
@@ -375,7 +375,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
         })
       })
 
-      Axes.push({ group: 'nodes', data: {id: 'x_axis_Label', label: this.commonService.capitalize(this.xVariable)}, position: {x: (this.X_categories.length-1)*this.scaleFactor/2, y: this.Y_categories.length*this.scaleFactor}, classes: ['X_axis', 'axisLabel']})
+      Axes.push({ group: 'nodes', data: {id: 'x_axis_Label', label: this.getAxisLabel('X')}, position: {x: (this.X_categories.length-1)*this.scaleFactor/2, y: this.Y_categories.length*this.scaleFactor}, classes: ['X_axis', 'axisLabel']})
     }
 
     let longestYLabel: string = '';
@@ -401,7 +401,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
       });
       let yAxisLabelOffset = this.estimateSize(longestYLabel) + 20
 
-      Axes.push({ group: 'nodes', data: {id: 'y_axis_Label', label: this.commonService.capitalize(this.yVariable)}, position: {x: -(80+yAxisLabelOffset), y: (this.Y_categories.length-1)*this.scaleFactor/2}, classes: ['Y_axis', 'axisLabel']})
+      Axes.push({ group: 'nodes', data: {id: 'y_axis_Label', label: this.getAxisLabel('Y')}, position: {x: -(80+yAxisLabelOffset), y: (this.Y_categories.length-1)*this.scaleFactor/2}, classes: ['Y_axis', 'axisLabel']})
 
     }
 
@@ -591,7 +591,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
           background-color: #fff;
         } 
       </style>
-      <table id="bubbleToolTip"><thead><th>${this.commonService.capitalize(this.commonService.session.style.widgets['node-color-variable'])}</th><th> Count </th><th> % </th></thead><tbody>`;
+      <table id="bubbleToolTip"><thead><th>${this.commonService.getFieldDisplayLabel(this.commonService.session.style.widgets['node-color-variable'], 'node')}</th><th> Count </th><th> % </th></thead><tbody>`;
       d.counts.forEach((x) => tooltipHTML += `<tr><td>${x.label}</td><td> ${x.count}</td><td>${(x.count/d.totalCount*100).toFixed(1)}%</td></tr>`)
       tooltipHTML += `<tr><td>Total</td><td> ${d.totalCount}</td><td></td></tr></tbody></table>`;
     } else {
@@ -1243,11 +1243,11 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   getAxisLabel(axis: string) {
     if (axis == 'X') {
       if (this.xVariable == 'None') return;
-      return this.commonService.capitalize(this.xVariable)
+      return this.commonService.getFieldDisplayLabel(this.xVariable, 'node')
     }
     else {
       if (this.yVariable == 'None') return;
-      return this.commonService.capitalize(this.yVariable)
+      return this.commonService.getFieldDisplayLabel(this.yVariable, 'node')
     }
   }
 

@@ -223,7 +223,7 @@ describe('File Handling and Processing', () => {
       .should('be.true');
 
     cy.window().then((win) => {
-      const { nodes, links, nodeFields, linkFields } = win.commonService.session.data;
+      const { nodes, links, nodeFields, linkFields, nodeFieldLabels, linkFieldLabels } = win.commonService.session.data;
       const importedSuffix = ' (Imported)';
       const node = nodes.find((candidate: any) => candidate._id === 'USER-ID-A');
       const nodeFromSecondFile = nodes.find((candidate: any) => candidate._id === 'USER-ID-C');
@@ -245,15 +245,20 @@ describe('File Handling and Processing', () => {
       expect(node[`seq${importedSuffix}`], 'imported seq metadata').to.equal('ACGT');
       expect(node.sequence, 'safe non-colliding node metadata stays unprefixed').to.equal('USER-SEQUENCE-A');
       expect(node.lat, 'imported lat metadata keeps original label').to.equal('10.1');
-      expect(node[`_lat${importedSuffix}`], 'imported _lat metadata gets imported suffix').to.equal('20.2');
+      expect(node[`x${importedSuffix}`], 'imported x metadata').to.equal('10');
+      expect(node[`y${importedSuffix}`], 'imported y metadata').to.equal('20');
+      expect(node[`z${importedSuffix}`], 'imported z metadata').to.equal('0');
+      expect(node[`vx${importedSuffix}`], 'imported vx metadata').to.equal('0.1');
+      expect(node[`vy${importedSuffix}`], 'imported vy metadata').to.equal('0.2');
+      expect(node[`_lat${importedSuffix}`], 'imported _lat metadata').to.equal('20.2');
       expect(node.Lat, 'imported Lat metadata keeps original label').to.equal('30.3');
       expect(node.l_at, 'imported l_at metadata keeps original label').to.equal('40.4');
       expect(node.long, 'safe non-colliding longitude metadata stays unprefixed').to.equal('-70.1');
-      expect(node[`_lon${importedSuffix}`], 'imported _lon metadata gets imported suffix').to.equal('-80.2');
-      expect(node[`_jlat${importedSuffix}`], 'imported _jlat metadata gets imported suffix').to.equal('50.5');
-      expect(node[`_jlon${importedSuffix}`], 'imported _jlon metadata gets imported suffix').to.equal('-100.5');
-      expect(node[`_j${importedSuffix}`], 'imported _j metadata gets imported suffix').to.equal('0.5');
-      expect(node[`_theta${importedSuffix}`], 'imported _theta metadata gets imported suffix').to.equal('1.57');
+      expect(node[`_lon${importedSuffix}`], 'imported _lon metadata').to.equal('-80.2');
+      expect(node[`_jlat${importedSuffix}`], 'imported _jlat metadata').to.equal('50.5');
+      expect(node[`_jlon${importedSuffix}`], 'imported _jlon metadata').to.equal('-100.5');
+      expect(node[`_j${importedSuffix}`], 'imported _j metadata').to.equal('0.5');
+      expect(node[`_theta${importedSuffix}`], 'imported _theta metadata').to.equal('1.57');
       expect(node.lon, 'imported lon metadata keeps original label').to.equal('-90.3');
       expect(node.safe_status, 'safe custom node field remains unprefixed').to.equal('Safe-A');
       expect(nodeFromSecondFile[`_id${importedSuffix}`], 'same colliding node field from second file reuses imported alias').to.equal('USER-_ID-C');
@@ -273,6 +278,8 @@ describe('File Handling and Processing', () => {
       expect(link[`Distance${importedSuffix}`], 'imported Distance metadata').to.equal(101.01);
       expect(link[`origin${importedSuffix}`], 'imported link origin metadata').to.equal('USER-LINK-ORIGIN-A');
       expect(link[`id${importedSuffix}`], 'imported link id metadata').to.equal('USER-LINK-ID-A');
+      expect(link[`_originAll${importedSuffix}`], 'imported link origin-all metadata').to.equal('USER-LINK-ORIGINALL-A');
+      expect(link[`hasDistance${importedSuffix}`], 'imported link hasDistance metadata').to.equal(true);
       expect(link.lat, 'imported link lat metadata keeps original label').to.equal(10.1);
       expect(link._lat, 'imported link _lat metadata keeps original label').to.equal(20.2);
       expect(link.Contact, 'safe custom link field remains unprefixed').to.equal('Contact-A');
@@ -297,6 +304,11 @@ describe('File Handling and Processing', () => {
         `_jlon${importedSuffix}`,
         `_j${importedSuffix}`,
         `_theta${importedSuffix}`,
+        `x${importedSuffix}`,
+        `y${importedSuffix}`,
+        `z${importedSuffix}`,
+        `vx${importedSuffix}`,
+        `vy${importedSuffix}`,
       ];
       const originalLinkFields = [
         'lat',
@@ -307,6 +319,17 @@ describe('File Handling and Processing', () => {
         `Distance${importedSuffix}`,
         `origin${importedSuffix}`,
         `id${importedSuffix}`,
+        `_originAll${importedSuffix}`,
+        `hasDistance${importedSuffix}`,
+        `distanceOrigin${importedSuffix}`,
+        `distanceOrigins${importedSuffix}`,
+        `mtRawLinkLabel${importedSuffix}`,
+        `lineSelectedColor${importedSuffix}`,
+        `lineColor${importedSuffix}`,
+        `lineOpacity${importedSuffix}`,
+        `width${importedSuffix}`,
+        `secondLink${importedSuffix}`,
+        `bidirectional${importedSuffix}`,
       ];
       const importedNodeFieldLabelsForSafeFields = originalNodeFields.map(field => `${field}${importedSuffix}`);
       const importedLinkFieldLabelsForSafeFields = originalLinkFields.map(field => `${field}${importedSuffix}`);
@@ -317,6 +340,22 @@ describe('File Handling and Processing', () => {
       expect(linkFields, 'safe link fields are not labeled imported').not.to.include.members(importedLinkFieldLabelsForSafeFields);
       expect(nodeFields, 'internal node collisions get shared imported suffixes').to.include.members(internalCollisionNodeFields);
       expect(linkFields, 'internal link collisions get shared imported suffixes').to.include.members(internalCollisionLinkFields);
+      expect(nodeFieldLabels[`x${importedSuffix}`], 'x menu label is original imported header').to.equal('x');
+      expect(nodeFieldLabels[`y${importedSuffix}`], 'y menu label is original imported header').to.equal('y');
+      expect(nodeFieldLabels[`z${importedSuffix}`], 'z menu label is original imported header').to.equal('z');
+      expect(nodeFieldLabels[`vx${importedSuffix}`], 'vx menu label is original imported header').to.equal('vx');
+      expect(nodeFieldLabels[`vy${importedSuffix}`], 'vy menu label is original imported header').to.equal('vy');
+      expect(nodeFieldLabels[`seq${importedSuffix}`], 'hidden seq collision keeps original imported header').to.equal('seq');
+      expect(nodeFieldLabels[`_lat${importedSuffix}`], 'hidden _lat collision keeps original imported header').to.equal('_lat');
+      expect(nodeFieldLabels[`_lon${importedSuffix}`], 'hidden _lon collision keeps original imported header').to.equal('_lon');
+      expect(nodeFieldLabels[`_id${importedSuffix}`], 'selectable _id collision keeps imported suffix in menu').to.equal(`_id${importedSuffix}`);
+      expect(nodeFieldLabels[`origin${importedSuffix}`], 'selectable origin collision keeps imported suffix in menu').to.equal(`origin${importedSuffix}`);
+      expect(linkFieldLabels[`hasDistance${importedSuffix}`], 'hasDistance menu label is original imported header').to.equal('hasDistance');
+      expect(linkFieldLabels[`_originAll${importedSuffix}`], '_originAll menu label is original imported header').to.equal('_originAll');
+      expect(linkFieldLabels[`distanceOrigin${importedSuffix}`], 'distanceOrigin menu label is original imported header').to.equal('distanceOrigin');
+      expect(linkFieldLabels[`Distance${importedSuffix}`], 'selectable Distance collision keeps imported suffix in menu').to.equal(`Distance${importedSuffix}`);
+      expect(linkFieldLabels[`origin${importedSuffix}`], 'selectable link origin collision keeps imported suffix in menu').to.equal(`origin${importedSuffix}`);
+      expect(linkFieldLabels[`id${importedSuffix}`], 'selectable link id collision keeps imported suffix in menu').to.equal(`id${importedSuffix}`);
       expect(nodeFields, 'selected node id field is not added as metadata').not.to.include.members([
         `id${importedSuffix}`,
         `id${importedSuffix} 2`,
@@ -325,14 +364,6 @@ describe('File Handling and Processing', () => {
         `source${importedSuffix}`,
         `target${importedSuffix}`,
         `distance${importedSuffix}`,
-      ]);
-      expect(nodeFields, 'raw map internal coordinate fields are not added as imported metadata').not.to.include.members([
-        '_lat',
-        '_lon',
-        '_jlat',
-        '_jlon',
-        '_j',
-        '_theta',
       ]);
     });
   });

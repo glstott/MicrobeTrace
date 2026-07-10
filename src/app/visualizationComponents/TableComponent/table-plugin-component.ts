@@ -497,18 +497,21 @@ import { CommonStoreService } from '@app/contactTraceCommonServices/common-store
             }
           }
   
+          const header = type === 'node' || type === 'link'
+            ? this.visuals.tableComp.commonService.getFieldDisplayLabel(d, type)
+            : d == 'nn'
+              ? 'Nearest Neighbor'
+              : d;
+
           const column = {
             field: d,
-            header:
-              d == 'nn'
-                ? 'Nearest Neighbor'
-                : d,
+            header,
             filterValue: filterValue,
             filterType: filterType
           };
   
           const foundAvailableColumn = tableData.availableColumns.find(
-            (x) => x.label === column.header
+            (x) => x.value.field === column.field
           );
   
           if (foundAvailableColumn) {
@@ -532,8 +535,9 @@ import { CommonStoreService } from '@app/contactTraceCommonServices/common-store
   
       tableData.tableColumns.forEach((x) => {
         const c = tableData.availableColumns.find(
-          (y) => y.value.header === x.header
+          (y) => y.value.field === x.field
         ).value;
+        x.header = c.header;
         x.filterValue = c.filterValue;
         x.filterType = c.filterType;
       });

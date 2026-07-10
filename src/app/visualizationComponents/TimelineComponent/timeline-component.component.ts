@@ -113,14 +113,15 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     const nodeFields = this.commonService.session.data['nodeFields'] || [];
     nodeFields.forEach((d) => {
         if (d != 'seq' && d != 'sequence') {
+            const label = this.commonService.getFieldDisplayLabel(d, 'node');
             this.FieldList.push(
                 {
-                    label: d,
+                    label,
                     value: d
                 });
             this.FieldListStack.push(
                 {
-                    label: d,
+                    label,
                     value: d
                 });
         }
@@ -589,12 +590,13 @@ generateLegend(epiCurve, colors, fieldNames) {
     let rowCount = 0;
     let y = this.height + this.margin.bottom - (Math.max(legendRowHeight, Math.round(this.labelSize * 1.5)) + 14);
     if (this.selectedGraphType=='Single Date Field' && this.widgets['epiCurve-stackColorBy'] == 'Node Color' && this.commonService.session.style.widgets['node-color-variable'] != 'None') {
-      let field = this.commonService.capitalize(this.commonService.session.style.widgets['node-color-variable']);
+      let field = this.commonService.getFieldDisplayLabel(this.commonService.session.style.widgets['node-color-variable'], 'node');
       epiCurve.append("text").attr("x", 70).attr("y", y).text(field + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
       prevLength += field.length + 3;
     } else if (this.selectedGraphType=='Single Date Field' && this.widgets['epiCurve-stackColorBy'] != 'Node Color' && this.widgets['epiCurve-stackColorBy'] != 'None') {
-      epiCurve.append("text").attr("x", 70).attr("y", y).text(this.widgets['epiCurve-stackColorBy'] + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
-      prevLength += this.widgets['epiCurve-stackColorBy'].length + 3;
+      const field = this.commonService.getFieldDisplayLabel(this.widgets['epiCurve-stackColorBy'], 'node');
+      epiCurve.append("text").attr("x", 70).attr("y", y).text(field + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
+      prevLength += field.length + 3;
     }
     fieldNames.forEach((name, i) => {
       // this first section calculates the location for each item/name in the legend
@@ -619,11 +621,12 @@ generateLegend(epiCurve, colors, fieldNames) {
   }
   let count = 0;
   if (this.selectedGraphType=='Single Date Field' && this.widgets['epiCurve-stackColorBy'] == 'Node Color' && this.commonService.session.style.widgets['node-color-variable'] != 'None') {
-    let field = this.commonService.capitalize(this.commonService.session.style.widgets['node-color-variable']);
+    let field = this.commonService.getFieldDisplayLabel(this.commonService.session.style.widgets['node-color-variable'], 'node');
     epiCurve.append("text").attr("x", xOffset).attr("y", legendRowHeight).text(field + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
     count += 1;
   } else if (this.selectedGraphType=='Single Date Field' && this.widgets['epiCurve-stackColorBy'] != 'Node Color' && this.widgets['epiCurve-stackColorBy'] != 'None') {
-    epiCurve.append("text").attr("x", xOffset).attr("y", legendRowHeight).text(this.widgets['epiCurve-stackColorBy'] + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
+    const field = this.commonService.getFieldDisplayLabel(this.widgets['epiCurve-stackColorBy'], 'node');
+    epiCurve.append("text").attr("x", xOffset).attr("y", legendRowHeight).text(field + ': ').style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
     count += 1;
   }
   fieldNames.forEach((name, i) => {

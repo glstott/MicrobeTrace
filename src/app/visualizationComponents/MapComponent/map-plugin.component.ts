@@ -301,7 +301,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
 
             this.FieldList.push(
                 {
-                    label: d,
+                    label: this.commonService.getFieldDisplayLabel(d, 'node'),
                     value: d
                 });
 
@@ -312,7 +312,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             if (d == 'source' || d == 'target' || d == 'nn') return;
 
             this.LinkToolTipList.push({
-                    label: d,
+                    label: this.commonService.getFieldDisplayLabel(d, 'link'),
                     value: d
                 });
         });

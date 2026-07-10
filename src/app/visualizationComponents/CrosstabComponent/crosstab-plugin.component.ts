@@ -351,7 +351,7 @@ export class CrosstabComponent extends BaseComponentDirective implements OnInit,
     this.commonService.session.data['nodeFields'].map((d) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(d)) return;
       this.fieldList.push({
-        label: d,
+        label: this.commonService.getFieldDisplayLabel(d, 'node'),
         value: d
       });
     })
@@ -479,8 +479,10 @@ export class CrosstabComponent extends BaseComponentDirective implements OnInit,
           }
         })
 
+        const yVariableLabel = this.commonService.getFieldDisplayLabel(this.yVariable, 'node');
+        const xVariableLabel = this.commonService.getFieldDisplayLabel(this.xVariable, 'node');
         let dataBody = [this.SelectedTableData.tableColumns.map(col => {
-          if (col.header == '') return this.commonService.capitalize(this.yVariable)      
+          if (col.header == '') return yVariableLabel
           return this.commonService.capitalize(col.header);
         })].concat(this.SelectedTableData.data.map(formatData)).concat([formatData(this.totalRow)]);
         
@@ -500,7 +502,7 @@ export class CrosstabComponent extends BaseComponentDirective implements OnInit,
             alignment: "center"
           },
           {
-            text: `${this.commonService.capitalize(this.xVariable)} vs ${this.commonService.capitalize(this.yVariable)}`,
+            text: `${xVariableLabel} vs ${yVariableLabel}`,
             style: "fontSize: 18",
             alignment: "center"
           },

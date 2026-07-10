@@ -203,15 +203,21 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     let total = 0;
     let rawdata;
 
+    const fieldLabel = dataset == 'Node'
+      ? this.commonService.getFieldDisplayLabel(field, 'node')
+      : dataset == 'Link'
+        ? this.commonService.getFieldDisplayLabel(field, 'link')
+        : this.commonService.capitalize(field);
+
     if (dataset == 'Node') {
       rawdata = this.commonService.getVisibleNodesIgnoringTimeline();
-      tableColumns = [{field:'groupName', header: this.commonService.capitalize(field)}, {field:'count', header:'Number of Nodes'}, {field:'percent', header:'Percent of Total Nodes'}];
+      tableColumns = [{field:'groupName', header: fieldLabel}, {field:'count', header:'Number of Nodes'}, {field:'percent', header:'Percent of Total Nodes'}];
     } else if (dataset == 'Link') {
       rawdata = this.commonService.getVisibleLinksIgnoringTimeline();
-      tableColumns = [{field:'groupName', header: this.commonService.capitalize(field)}, {field:'count', header:'Number of Links'}, {field:'percent', header:'Percent of Total Links'}];
+      tableColumns = [{field:'groupName', header: fieldLabel}, {field:'count', header:'Number of Links'}, {field:'percent', header:'Percent of Total Links'}];
     } else {
       rawdata = this.commonService.getVisibleClustersIgnoringTimeline();
-      tableColumns = [{field:'groupName', header: this.commonService.capitalize(field)}, {field:'count', header:'Number of Clusters'}, {field:'percent', header:'Percent of Total Clusters'}];
+      tableColumns = [{field:'groupName', header: fieldLabel}, {field:'count', header:'Number of Clusters'}, {field:'percent', header:'Percent of Total Clusters'}];
     }   
     
     const groupedRows = new Map<string, { groupName: string; count: number; percent?: number }>();
@@ -273,18 +279,20 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
   updateFieldOptions() {
     this.commonService.session.data['nodeFields'].map((d) => {
       if (['seq', 'origin', '_diff', '_ambiguity', 'index', '_id'].includes(d)) return;
+      const label = this.commonService.getFieldDisplayLabel(d, 'node');
       this.fieldOptions[0]['items'].push({
-        short_label: d,
-        label : `Node-${d}`,
+        short_label: label,
+        label : `Node-${label}`,
         value: `Node-${d}`
       });
     })
 
     this.commonService.session.data['linkFields'].map((d) => {
       if (['index', 'origin', 'nearest neighbor', 'nn'].includes(d)) return;
+      const label = this.commonService.getFieldDisplayLabel(d, 'link');
       this.fieldOptions[1]['items'].push({
-        short_label: d,
-        label : `Link-${d}`,
+        short_label: label,
+        label : `Link-${label}`,
         value: `Link-${d}`
       });
     })
@@ -304,10 +312,19 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
       return '';
     }
 
-    let fullField = inputString.split('-')
-    //let datasetName = this.commonService.capitalize(fullField[0]);
-    let colGroupName = this.commonService.capitalize(fullField.slice(1).join('-'));
-    return colGroupName;
+    const fullField = inputString.split('-');
+    const dataset = fullField[0];
+    const field = fullField.slice(1).join('-');
+
+    if (dataset == 'Node') {
+      return this.commonService.getFieldDisplayLabel(field, 'node');
+    }
+
+    if (dataset == 'Link') {
+      return this.commonService.getFieldDisplayLabel(field, 'link');
+    }
+
+    return this.commonService.capitalize(field);
   }
 
   updateNodeColors() {}
