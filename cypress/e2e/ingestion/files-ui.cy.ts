@@ -355,7 +355,7 @@ describe('File Handling and Processing', () => {
       expect(linkFieldLabels[`distanceOrigin${importedSuffix}`], 'distanceOrigin menu label is original imported header').to.equal('distanceOrigin');
       expect(linkFieldLabels[`Distance${importedSuffix}`], 'selectable Distance collision keeps imported suffix in menu').to.equal(`Distance${importedSuffix}`);
       expect(linkFieldLabels[`origin${importedSuffix}`], 'selectable link origin collision keeps imported suffix in menu').to.equal(`origin${importedSuffix}`);
-      expect(linkFieldLabels[`id${importedSuffix}`], 'selectable link id collision keeps imported suffix in menu').to.equal(`id${importedSuffix}`);
+      expect(linkFieldLabels[`id${importedSuffix}`], 'link id menu label is original imported header').to.equal('id');
       expect(nodeFields, 'selected node id field is not added as metadata').not.to.include.members([
         `id${importedSuffix}`,
         `id${importedSuffix} 2`,
