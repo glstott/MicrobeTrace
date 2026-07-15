@@ -23,6 +23,7 @@ import {
     buildThresholdSweepSummary,
     buildVisibleClusterSummary,
     type ThresholdAnalysisBaseEdge,
+    type ThresholdAnalysisPairEdge,
     type StoredDistanceEdgeCache,
     type ThresholdSweepSummary
 } from './threshold-analysis';
@@ -150,12 +151,19 @@ export class CommonService extends AppComponentBase implements OnInit {
 
     // Using lodash's debounce, for example
     public _debouncedUpdateNetworkVisuals = _.debounce(() => {
-        this.updateNetworkVisuals();
+        const threshold = Number(this.session.style.widgets["link-threshold"]);
+        this.ensurePatristicEdgesForThreshold(threshold)
+            .catch(error => {
+                console.error('Patristic threshold re-query failed:', error);
+            })
+            .finally(() => {
+                this.updateNetworkVisuals();
+            });
     }, 300);
 
     GlobalSettingsModel: any = {
         SelectedColorNodesByVariable: 'None',
-        SelectedColorLinksByVariable: 'None',
+        SelectedColorLinksByVariable: 'origin',
         SelectedNodeSymbolVariable: 'None',
         SelectedNodeColorVariable: 'None',
         SelectedLinkColorVariable: '#a6cee3',
@@ -163,8 +171,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         SelectedStatisticsTypesVariable: 'Hide',
         SelectedClusterMinimumSizeVariable: 0,
         SelectedLinkSortVariable: 'Distance',
-        SelectedLinkThresholdVariable: 0.015,
-        SelectedDistanceMetricVariable: 'tn93',
+        SelectedLinkThresholdVariable: 16,
+        SelectedDistanceMetricVariable: 'snps',
         SelectedLinkColorTableTypesVariable: 'Dock',
         SelectedNodeColorTableTypesVariable: 'Dock',
         SelectedNodeShapeTableTypesVariable: 'Dock',
@@ -327,6 +335,17 @@ export class CommonService extends AppComponentBase implements OnInit {
             floorplanImageHeight: null,
             tree: {},
             newickString: '',
+            newickSource: '',
+            auspiceMapData: {
+                countries: {
+                    type: 'FeatureCollection',
+                    features: []
+                },
+                states: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+            },
             reference: REFERENCE
         };
 
@@ -383,7 +402,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'choropleth-transparency': 0.3,
             'cluster-minimum-size': 1,
             'default-view': '2D Network', // 'Phylogenetic Tree' 'Alignment View'
-            'default-distance-metric': 'tn93',
+            'default-distance-metric': 'snps',
             'filtering-epsilon': -8,
             'flow-showNodes': 'selected',
             'gantt-date-list': '',
@@ -414,7 +433,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'link-color': '#a6cee3',
             'link-color-table-counts': true,
             'link-color-table-frequencies': false,
-            'link-color-variable': 'None',
+            'link-color-variable': 'origin',
             'link-directed': false,
             'link-bidirectional': false,
             'link-label-variable': 'None',
@@ -424,7 +443,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'link-opacity': 0,
             'link-show-nn': false,
             'link-sort-variable': 'distance',
-            'link-threshold': 0.015,
+            'link-threshold': 16,
             'tn93-distance-display-format': 'decimal',
             'link-tooltip-variable': ['None'],
             'link-width': 3,
@@ -434,6 +453,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'link-width-reciprocal': false,
             'link-origin-array-order': [],
             'map-basemap-show': false,
+            'map-auto-expand-selected': true,
             'map-collapsing-on': true,
             'map-counties-show': false,
             'map-countries-show': true,
@@ -450,6 +470,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'map-link-transparency': 0,
             'map-node-jitter': -2,
             'map-node-show': true,
+            'map-node-size': 24,
             'map-node-tooltip-variable': '_id',
             'map-node-transparency': 0,
             'map-satellite-show': false,
@@ -590,6 +611,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 linkAlphas: [1],
                 linkColors: d3.schemePaired,
                 linkValueNames: {},
+                keyTableColumnNames: {},
                 nodeAlphas: [1],
                 nodeColors: this.thirtyColorPalette,
                 nodeColorsTable: {},
@@ -613,32 +635,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                     'octagon',
                     'star',
                     'tag',
-                    'vee',
-                    'unknown',
-                    'house',
-                    'clinic',
-                    'school',
-                    'placeOfWorship',
-                    'farm',
-                    'city',
-                    'man',
-                    'woman',
-                    'person',
-                    'virus',
-                    'bacteria',
-                    'tick',
-                    'mosquito',
-                    'bat',
-                    'rodent',
-                    'pig',
-                    'cow',
-                    'chicken',
-                    'bird',
-                    'pet',
-                    'food', 
-                    'apple', 
-                    'flask', 
-                    'syringe',
+                    'vee'
                 ],
                 nodeSymbolsTable: {},
                 nodeSymbolsTableKeys: {},
@@ -666,7 +663,8 @@ export class CommonService extends AppComponentBase implements OnInit {
             analysis: {
                 version: 0,
                 storedDistanceCache: {},
-                thresholdSweepCache: {}
+                thresholdSweepCache: {},
+                patristicDistanceCache: {}
             },
             /* functions in style object get replaced If user decides to color a node, link, or polygon variable.
              * these functions are replaced with one from the d3 package usind d3.scaleOrdinal(...).domain(...)
@@ -686,6 +684,49 @@ export class CommonService extends AppComponentBase implements OnInit {
     temp: any = this.tempSkeleton();
     session = this.sessionSkeleton();
     private dataLoadGeneration = 0;
+
+    public clampStyleAlpha(value: any, fallback = 1): number {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return fallback;
+        }
+
+        return Math.min(1, Math.max(0, numericValue));
+    }
+
+    public getNodeFillStyle(node: any): { color: string; alpha: number } {
+        const widgets = this.session.style.widgets;
+        const variable = widgets['node-color-variable'];
+        const fallbackColor = widgets['node-color'] || '#1f77b4';
+
+        if (variable === 'None' || !variable || !node) {
+            return {
+                color: fallbackColor,
+                alpha: this.clampStyleAlpha(1 - Number(widgets['node-opacity'] ?? 0), 1)
+            };
+        }
+
+        const value = node[variable];
+        let color = fallbackColor;
+        let alpha = 1;
+
+        try {
+            color = this.temp.style.nodeColorMap?.(value) || fallbackColor;
+        } catch {
+            color = fallbackColor;
+        }
+
+        try {
+            alpha = this.temp.style.nodeAlphaMap?.(value) ?? 1;
+        } catch {
+            alpha = 1;
+        }
+
+        return {
+            color,
+            alpha: this.clampStyleAlpha(alpha, 1)
+        };
+    }
 
     beginDataLoad(): number {
         this.dataLoadGeneration += 1;
@@ -733,6 +774,22 @@ export class CommonService extends AppComponentBase implements OnInit {
     private toFinitePerformanceNumber(value: any): number | null {
         const numericValue = Number(value);
         return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    private buildWorkerTimingExtra(
+        responseData: any,
+        requestStartedAt: number,
+        responseReceivedAt: number
+    ): Record<string, number | null> {
+        const workerFinishedAt = this.toFinitePerformanceNumber(responseData?.start);
+
+        return {
+            workerComputeDurationMs: this.toFinitePerformanceNumber(responseData?.computeDurationMs),
+            roundTripDurationMs: responseReceivedAt - requestStartedAt,
+            responseTransitDurationMs: workerFinishedAt !== null
+                ? responseReceivedAt - workerFinishedAt
+                : null
+        };
     }
 
     private buildGraphDensitySnapshot(extra: Record<string, any>): Record<string, number> | null {
@@ -783,7 +840,8 @@ export class CommonService extends AppComponentBase implements OnInit {
             this.temp.analysis = {
                 version: 0,
                 storedDistanceCache: {},
-                thresholdSweepCache: {}
+                thresholdSweepCache: {},
+                patristicDistanceCache: {}
             };
         }
 
@@ -793,6 +851,10 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         if (!this.temp.analysis.thresholdSweepCache) {
             this.temp.analysis.thresholdSweepCache = {};
+        }
+
+        if (!this.temp.analysis.patristicDistanceCache) {
+            this.temp.analysis.patristicDistanceCache = {};
         }
 
         return this.temp.analysis;
@@ -805,8 +867,33 @@ export class CommonService extends AppComponentBase implements OnInit {
         analysis.thresholdSweepCache = {};
     }
 
+    private storedDistanceCacheMatchesCurrentNodes(cache: StoredDistanceEdgeCache): boolean {
+        const nodes = this.session.data.nodes || [];
+        if (cache.nodeIds.length !== nodes.length) {
+            return false;
+        }
+
+        return nodes.every((node, index) => {
+            const nodeId = String(node?._id ?? node?.id ?? '');
+            return cache.nodeIds[index] === nodeId;
+        });
+    }
+
     private getStoredDistanceEdgeCache(metric = this.session.style.widgets["link-sort-variable"]): StoredDistanceEdgeCache {
         const analysis = this.getAnalysisCache();
+        const patristicCache = analysis.patristicDistanceCache[metric] as StoredDistanceEdgeCache | undefined;
+
+        if (patristicCache) {
+            if (!this.storedDistanceCacheMatchesCurrentNodes(patristicCache)) {
+                delete analysis.patristicDistanceCache[metric];
+                delete analysis.storedDistanceCache[metric];
+            } else {
+                patristicCache.version = analysis.version;
+                analysis.storedDistanceCache[metric] = patristicCache;
+                return patristicCache;
+            }
+        }
+
         const cached = analysis.storedDistanceCache[metric] as StoredDistanceEdgeCache | undefined;
 
         if (cached && cached.version === analysis.version) {
@@ -822,6 +909,94 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         analysis.storedDistanceCache[metric] = rebuilt;
         return rebuilt;
+    }
+
+    private getNewickBackedSourceFile(): any {
+        return this.session.files?.find(file =>
+            file?.format === 'newick' || file?.format === 'auspice' ||
+            file?.datatype === 'newick' || file?.datatype === 'auspice'
+        );
+    }
+
+    private hasNewickBackedDistanceSource(newickString: any): boolean {
+        if (typeof newickString !== 'string' || newickString.trim().length === 0) {
+            return false;
+        }
+
+        if (this.getNewickBackedSourceFile()) {
+            return true;
+        }
+
+        const newickSource = String(this.session.data?.newickSource || '').toLowerCase();
+        if (newickSource === 'newick' || newickSource === 'auspice') {
+            return true;
+        }
+
+        const tree = this.session.data?.tree;
+        return tree && typeof tree === 'object' && Object.keys(tree).length > 0;
+    }
+
+    public setPatristicThresholdAnalysisEdges(
+        metric: string,
+        leafNames: string[],
+        edges: ThresholdAnalysisPairEdge[]
+    ): void {
+        const analysis = this.getAnalysisCache();
+        const nodeIds = this.session.data.nodes.map((node) => String(node?._id ?? node?.id ?? ''));
+        const nodeIndexById: Record<string, number> = Object.create(null);
+
+        nodeIds.forEach((nodeId, index) => {
+            nodeIndexById[nodeId] = index;
+        });
+
+        const leafIndexToNodeIndex = leafNames.map((leafName) => nodeIndexById[String(leafName)]);
+        const sortedEdges = edges
+            .map((edge, linkIndex) => {
+                const sourceIndex = leafIndexToNodeIndex[edge.sourceIndex];
+                const targetIndex = leafIndexToNodeIndex[edge.targetIndex];
+
+                if (
+                    sourceIndex === undefined ||
+                    targetIndex === undefined ||
+                    sourceIndex === targetIndex ||
+                    !Number.isFinite(edge.value)
+                ) {
+                    return null;
+                }
+
+                return {
+                    linkIndex,
+                    sourceId: nodeIds[sourceIndex],
+                    targetId: nodeIds[targetIndex],
+                    sourceIndex,
+                    targetIndex,
+                    value: edge.value
+                };
+            })
+            .filter((edge): edge is StoredDistanceEdgeCache['sortedEdges'][number] => edge !== null);
+
+        sortedEdges.sort((a, b) => {
+            if (a.value !== b.value) {
+                return a.value - b.value;
+            }
+
+            if (a.sourceId !== b.sourceId) {
+                return a.sourceId.localeCompare(b.sourceId);
+            }
+
+            return a.targetId.localeCompare(b.targetId);
+        });
+
+        analysis.patristicDistanceCache[metric] = {
+            metric,
+            version: analysis.version,
+            nodeIds,
+            nodeIndexById,
+            sortedEdges,
+            sortedValues: sortedEdges.map((edge) => edge.value)
+        };
+        analysis.storedDistanceCache[metric] = analysis.patristicDistanceCache[metric];
+        analysis.thresholdSweepCache = {};
     }
 
     public getThresholdSweepSummary(metric = this.session.style.widgets["link-sort-variable"]): ThresholdSweepSummary {
@@ -1041,32 +1216,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'octagon',
             'star',
             'tag',
-            'vee',
-            'unknown',
-            'house',
-            'clinic',
-            'school',
-            'placeOfWorship',
-            'farm',
-            'city',
-            'man',
-            'woman',
-            'person',
-            'virus',
-            'bacteria',
-            'tick',
-            'mosquito',
-            'bat',
-            'rodent',
-            'pig',
-            'cow',
-            'chicken',
-            'bird',
-            'pet',
-            'food', 
-            'apple', 
-            'flask', 
-            'syringe',
+            'vee'
         ]
     }
 
@@ -1591,6 +1741,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         } else {
             newLink.target = newLink.target.trim();
         }
+
+        newLink.origin = this.normalizeLinkOrigins(newLink.origin);
+        this.setLinkAllOrigins(newLink, this.getLinkAllOrigins(newLink));
     
         if (!matrix[newLink.source]) {
             matrix[newLink.source] = {};
@@ -1604,7 +1757,6 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         const ids = [newLink.source, newLink.target].sort();
         const id = `${ids[0]}-${ids[1]}`;
-
         let linkIsNew = 1;
 
         const sdlinks = serv.session.data.links;
@@ -1619,11 +1771,13 @@ export class CommonService extends AppComponentBase implements OnInit {
              // Ensure id is consistent during merge ---
              newLink.id = oldLink.id || id; // Prefer existing ID
 
-            let myorigin = this.uniq(newLink.origin.concat(oldLink.origin));
+            let myorigin = this.uniq(this.getLinkAllOrigins(newLink).concat(this.getLinkAllOrigins(oldLink)));
             // console.log(JSON.stringify(myorigin));
 
             // Ensure no empty origins
             myorigin = myorigin.filter(origin => origin != '');
+            this.setLinkAllOrigins(oldLink, myorigin);
+            this.setLinkAllOrigins(newLink, myorigin);
 
              // --- Start: Logic to manage global origin order ---
             if (myorigin.length > 1) {
@@ -1678,6 +1832,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             _.merge(oldLink, newLink);
 
             oldLink.origin = myorigin;
+            this.setLinkAllOrigins(oldLink, myorigin);
 
 
             if(newLink["bidirectional"]){
@@ -1692,11 +1847,12 @@ export class CommonService extends AppComponentBase implements OnInit {
              // Ensure id is consistent during merge ---
              newLink.id = oldLink.id || id; // Prefer existing ID
 
-            const origin = this.uniq(newLink.origin.concat(oldLink.origin));
+            const origin = this.uniq(this.getLinkAllOrigins(newLink).concat(this.getLinkAllOrigins(oldLink)));
             if(origin.length > 1) {
                 newLink.hasDistance = true;
             }
             Object.assign(oldLink, newLink, { origin: origin });
+            this.setLinkAllOrigins(oldLink, origin);
             linkIsNew = 0;
 
         } else {
@@ -1727,6 +1883,8 @@ export class CommonService extends AppComponentBase implements OnInit {
     
             }
 
+               newLink.origin = this.getLinkAllOrigins(newLink);
+               this.setLinkAllOrigins(newLink, newLink.origin);
                this.syncLinkDistanceOrigins(newLink);
                // Always add the new link without merging
                sdlinks.push(newLink);
@@ -1741,12 +1899,14 @@ export class CommonService extends AppComponentBase implements OnInit {
         if(!this.session.style.widgets['link-origin-array-order']){
             this.session.style.widgets['link-origin-array-order'] = [];
         }
-        if (newLink.origin.length > 1 && this.session.style.widgets['link-origin-array-order'].length === 0) {
-            this.session.style.widgets['link-origin-array-order'] = newLink.origin;
+        const newLinkAllOrigins = this.getLinkAllOrigins(newLink);
+        if (newLinkAllOrigins.length > 1 && this.session.style.widgets['link-origin-array-order'].length === 0) {
+            this.session.style.widgets['link-origin-array-order'] = [...newLinkAllOrigins];
         }
 
         const normalizedLink = matrix[newLink.source]?.[newLink.target] ?? matrix[newLink.target]?.[newLink.source];
         if (normalizedLink) {
+            this.setLinkAllOrigins(normalizedLink, this.getLinkAllOrigins(normalizedLink));
             this.syncLinkDistanceOrigins(normalizedLink);
         }
         
@@ -1781,6 +1941,49 @@ export class CommonService extends AppComponentBase implements OnInit {
             }
         }
         return out;
+    }
+
+    private normalizeLinkOrigins(origins: any): string[] {
+        const originArray = Array.isArray(origins)
+            ? origins
+            : (origins === undefined || origins === null ? [] : [origins]);
+
+        return this.uniq(
+            originArray
+                .map((origin: any) => typeof origin === 'string' ? origin : String(origin))
+                .filter((origin: string) => origin.length > 0)
+        );
+    }
+
+    private getLinkAllOrigins(link: any): string[] {
+        const canonicalOrigins = this.normalizeLinkOrigins(link?._originAll);
+
+        if (canonicalOrigins.length > 0) {
+            return canonicalOrigins;
+        }
+
+        return this.normalizeLinkOrigins(link?.origin);
+    }
+
+    private setLinkAllOrigins(link: any, origins: any): string[] {
+        const normalizedOrigins = this.normalizeLinkOrigins(origins);
+        link._originAll = normalizedOrigins;
+        return normalizedOrigins;
+    }
+
+    private orderLinkOriginsForDisplay(origins: any, globalOrder: any): string[] {
+        const normalizedOrigins = this.normalizeLinkOrigins(origins);
+        const normalizedOrder = this.normalizeLinkOrigins(globalOrder);
+
+        if (normalizedOrigins.length < 2 || normalizedOrder.length < 2) {
+            return normalizedOrigins;
+        }
+
+        const originSet = new Set(normalizedOrigins);
+        const orderedOrigins = normalizedOrder.filter(origin => originSet.has(origin));
+        const remainingOrigins = normalizedOrigins.filter(origin => !normalizedOrder.includes(origin));
+
+        return orderedOrigins.concat(remainingOrigins);
     }
 
     getLinkDistanceOrigins(link: any): string[] {
@@ -1861,6 +2064,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             }
 
             link.origin = remainingOrigins;
+            this.setLinkAllOrigins(link, remainingOrigins);
 
             if (remainingDistanceOrigins.length > 0) {
                 link.distanceOrigins = remainingDistanceOrigins;
@@ -2094,7 +2298,7 @@ export class CommonService extends AppComponentBase implements OnInit {
         //If anything here seems eccentric, assume it's to maintain compatibility with
         //session files from older versions of MicrobeTrace.
         this.beginDataLoad();
-        $("#launch").prop("disabled", true);
+        $(".files-launch-action, #launch").prop("disabled", true);
 
          // Set to false to indicate that the network is not fully loaded  as new network is launching
         this.session.network.isFullyLoaded = false;
@@ -2186,8 +2390,14 @@ export class CommonService extends AppComponentBase implements OnInit {
         if (typeof oldSession.data?.newickString === 'string') {
             this.session.data.newickString = oldSession.data.newickString;
         }
+        if (typeof oldSession.data?.newickSource === 'string') {
+            this.session.data.newickSource = oldSession.data.newickSource;
+        }
         if (oldSession.data?.tree) {
             this.session.data.tree = oldSession.data.tree;
+        }
+        if (oldSession.data?.auspiceMapData) {
+            this.setAuspiceMapData(oldSession.data.auspiceMapData);
         }
 
         // TODO: See about this process data functionality.  DO we need this?
@@ -2609,6 +2819,7 @@ parseFASTA(text): Promise<any> {
         this.session.meta.startTime = Date.now();
         this.session.data.tree = auspiceData['tree'];
         this.session.data.newickString = auspiceData['newick'];
+        this.session.data.newickSource = 'auspice';
         let nodeCount = 0;
         auspiceData['nodes'].forEach(node => {
             if (!/NODE0*/.exec(node.id)) {
@@ -2685,14 +2896,22 @@ align(params): Promise<any> {
       nodes = this.session.data.nodes.filter(d => d.seq);
     }
     return new Promise(resolve => {
+      const requestStart = Date.now();
       const consensusWorker = this.computer.getConsensusWorker();
       consensusWorker.postMessage({ data: nodes });
       
       const sub = consensusWorker.onmessage().subscribe((response) => {
+        const responseReceivedAt = Date.now();
         if (this.debugMode) {
-          console.log("Consensus Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
+          console.log("Consensus Transit time: ", (responseReceivedAt - response.data.start).toLocaleString(), "ms");
         }
-        resolve(this.decode(new Uint8Array(response.data.consensus)));
+        const consensus = this.decode(new Uint8Array(response.data.consensus));
+        this.recordPerformanceDuration('sequence', 'computeConsensus', responseReceivedAt - requestStart, {
+          sequences: nodes.length,
+          sequenceLength: consensus.length,
+          ...this.buildWorkerTimingExtra(response.data, requestStart, responseReceivedAt)
+        });
+        resolve(consensus);
         consensusWorker.terminate();
         sub.unsubscribe();
       });
@@ -2703,6 +2922,7 @@ align(params): Promise<any> {
   // Compute ambiguity counts using a fresh ambiguity counts worker
   computeAmbiguityCounts(): Promise<void> {
     return new Promise(resolve => {
+      const requestStart = Date.now();
       let nodes = this.session.data.nodes;
       let subset = nodes.filter(d => d.seq);
       const subsetLength = subset.length;
@@ -2711,7 +2931,8 @@ align(params): Promise<any> {
       ambiguityWorker.postMessage(subset);
       
       const sub = ambiguityWorker.onmessage().subscribe((response) => {
-        console.log("Ambiguity Count Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
+        const responseReceivedAt = Date.now();
+        console.log("Ambiguity Count Transit time: ", (responseReceivedAt - response.data.start).toLocaleString(), "ms");
         const start = Date.now();
         const dists = new Float32Array(response.data.counts);
         for (let j = 0; j < subsetLength; j++) {
@@ -2719,6 +2940,11 @@ align(params): Promise<any> {
         }
         this.session.data.nodeFields.push('_ambiguity');
         console.log("Ambiguity Count Merge time: ", (Date.now() - start).toLocaleString(), "ms");
+        this.recordPerformanceDuration('sequence', 'computeAmbiguityCounts', Date.now() - requestStart, {
+          sequences: subsetLength,
+          mergeDurationMs: Date.now() - start,
+          ...this.buildWorkerTimingExtra(response.data, requestStart, responseReceivedAt)
+        });
         resolve();
         ambiguityWorker.terminate();
         sub.unsubscribe();
@@ -2730,7 +2956,7 @@ align(params): Promise<any> {
   // Compute consensus distances using a fresh consensus worker
   computeConsensusDistances(): Promise<void> {
     return new Promise(resolve => {
-      let start = Date.now();
+      const requestStart = Date.now();
       let nodes = this.session.data.nodes;
       let nodesLength = nodes.length;
       let subset = [];
@@ -2748,18 +2974,25 @@ align(params): Promise<any> {
         data: {
           consensus: this.session.data['consensus'],
           subset: subset,
-          start: start
+          start: requestStart
         }
       });
       const sub = consensusWorker.onmessage().subscribe((response) => {
+        const responseReceivedAt = Date.now();
         const dists = new Uint16Array(response.data.dists);
-        console.log("Consensus Difference Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
-        start = Date.now();
+        console.log("Consensus Difference Transit time: ", (responseReceivedAt - response.data.start).toLocaleString(), "ms");
+        const mergeStart = Date.now();
         for (let j = 0; j < subsetLength; j++) {
           nodes[subset[j].index]._diff = dists[j];
         }
         this.session.data.nodeFields.push('_diff');
-        console.log("Consensus Difference Merge time: ", (Date.now() - start).toLocaleString(), "ms");
+        console.log("Consensus Difference Merge time: ", (Date.now() - mergeStart).toLocaleString(), "ms");
+        this.recordPerformanceDuration('sequence', 'computeConsensusDistances', Date.now() - requestStart, {
+          nodes: nodesLength,
+          sequences: subsetLength,
+          mergeDurationMs: Date.now() - mergeStart,
+          ...this.buildWorkerTimingExtra(response.data, requestStart, responseReceivedAt)
+        });
         resolve();
         consensusWorker.terminate();
         sub.unsubscribe();
@@ -2866,6 +3099,10 @@ align(params): Promise<any> {
           pairCount,
           generatedLinks: 0,
           skippedByGuardrail: true,
+          workerComputeDurationMs: null,
+          roundTripDurationMs: null,
+          responseTransitDurationMs: null,
+          mergeDurationMs: 0,
           guardrail
         });
         resolve(0);
@@ -2873,6 +3110,7 @@ align(params): Promise<any> {
       }
 
       const linksWorker = this.computer.getLinksWorker();
+      const workerRequestStart = Date.now();
       linksWorker.postMessage({
         nodes: subset,
         metric,
@@ -2881,14 +3119,16 @@ align(params): Promise<any> {
       });
       
       const sub = linksWorker.onmessage().subscribe((response) => {
+        const responseReceivedAt = Date.now();
+        const workerTiming = this.buildWorkerTimingExtra(response.data, workerRequestStart, responseReceivedAt);
         let dists = metric.toLowerCase() === 'snps'
           ? new Uint16Array(response.data.links)
           : new Float32Array(response.data.links);
         
         if (this.debugMode) {
-          console.log("Links Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
+          console.log("Links Transit time: ", (responseReceivedAt - response.data.start).toLocaleString(), "ms");
         }
-        let start = Date.now();
+        const start = Date.now();
         let check = this.session.files.length > 1;
         let l = 0;
         console.log('link same compute---', n);
@@ -2910,14 +3150,16 @@ align(params): Promise<any> {
         if (this.debugMode) {
           console.log("Links Merge time: ", (Date.now() - start).toLocaleString(), "ms");
         }
+        const mergeDurationMs = Date.now() - start;
         this.recordPerformanceDuration('load', 'computeLinks', Date.now() - computeLinksStart, {
           metric,
           sequences: n,
           pairCount,
           generatedLinks: k,
           skippedByGuardrail: false,
-          workerDurationMs: Date.now() - response.data.start,
-          mergeDurationMs: Date.now() - start,
+          workerDurationMs: workerTiming.responseTransitDurationMs,
+          mergeDurationMs,
+          ...workerTiming,
           ...(guardrail ? { guardrail } : {})
         });
         resolve(k);
@@ -3019,45 +3261,66 @@ align(params): Promise<any> {
       }
 
       computeMST(): Promise<void> {
+        const newickString = this.session.data?.newickString;
+        if (this.hasNewickBackedDistanceSource(newickString)) {
+            const firstDistanceLink = this.session.data.links.find(link => link?.hasDistance && link?.distanceOrigin);
+            const distanceOrigins = firstDistanceLink ? this.getLinkDistanceOrigins(firstDistanceLink) : [];
+            const distanceOrigin = distanceOrigins[0] || this.getNewickBackedSourceFile()?.name || 'Newick Tree';
+            const origin = [distanceOrigin];
+
+            return this.workerComputeService.computePatristicNearestNeighborEdges(
+                newickString,
+                this.addLink.bind(this),
+                this.filterXSS,
+                this.session,
+                this.temp,
+                {
+                    origin,
+                    distanceOrigin,
+                    check: true,
+                }
+            ).then(() => undefined);
+        }
+
         return new Promise((resolve, reject) => {
             const links = this.session.data.links;
-        const found = links.find(l => 
-        (l.source === "MZ712879" && l.target === "MZ745515") ||
-        (l.source === "MZ745515" && l.target === "MZ712879")
-        );
-        console.log(" common service Found link in links array?", found);
-          const mstWorker = this.computer.getMSTWorker();
-          mstWorker.postMessage({
-            links: this.session.data.links,
-            matrix: this.temp.matrix,
-            epsilon: this.session.style.widgets["filtering-epsilon"],
-            metric: this.session.style.widgets['link-sort-variable']
-          });
-          const sub = mstWorker.onmessage().subscribe((response) => {
-            if (response.data === "Error") {
-              return reject("MST washed out");
-            }
-            const output = new Uint8Array(response.data.links);
-            if (this.debugMode) {
-              console.log("MST Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
-            }
-            const start = Date.now();
-            let links = this.session.data.links;
-            const numLinks = links.length;
-            console.log('-----setting NN');
-            for (let i = 0; i < numLinks; i++) {
-              links[i].nn = output[i] ? true : false;
-              if(output[i] ? true : false){
-                console.log('-- NN true: ', _.cloneDeep(links[i]));
-              }
-            }
-            if (this.debugMode) {
-              console.log("MST Merge time: ", (Date.now() - start).toLocaleString(), "ms");
-            }
-            resolve();
-            mstWorker.terminate();
-            sub.unsubscribe();
-          });
+            const found = links.find(l =>
+                (l.source === "MZ712879" && l.target === "MZ745515") ||
+                (l.source === "MZ745515" && l.target === "MZ712879")
+            );
+            console.log(" common service Found link in links array?", found);
+            const mstWorker = this.computer.getMSTWorker();
+            mstWorker.postMessage({
+                links: this.session.data.links,
+                matrix: this.temp.matrix,
+                epsilon: this.session.style.widgets["filtering-epsilon"],
+                metric: this.session.style.widgets['link-sort-variable']
+            });
+            const sub = mstWorker.onmessage().subscribe((response) => {
+                if (response.data === "Error") {
+                    return reject("MST washed out");
+                }
+                const output = new Uint8Array(response.data.links);
+                if (this.debugMode) {
+                    console.log("MST Transit time: ", (Date.now() - response.data.start).toLocaleString(), "ms");
+                }
+                const start = Date.now();
+                let links = this.session.data.links;
+                const numLinks = links.length;
+                console.log('-----setting NN');
+                for (let i = 0; i < numLinks; i++) {
+                    links[i].nn = output[i] ? true : false;
+                    if(output[i] ? true : false){
+                        console.log('-- NN true: ', _.cloneDeep(links[i]));
+                    }
+                }
+                if (this.debugMode) {
+                    console.log("MST Merge time: ", (Date.now() - start).toLocaleString(), "ms");
+                }
+                resolve();
+                mstWorker.terminate();
+                sub.unsubscribe();
+            });
         });
       }
       
@@ -3069,15 +3332,15 @@ align(params): Promise<any> {
 
     ensurePatristicEdgesForThreshold(threshold: number): Promise<any> {
         const newickString = this.session.data?.newickString;
-        if (typeof newickString !== 'string' || newickString.trim().length === 0) {
+
+        if (!this.hasNewickBackedDistanceSource(newickString)) {
             return Promise.resolve(null);
         }
 
         const firstDistanceLink = this.session.data.links.find(link => link?.hasDistance && link?.distanceOrigin);
-        const distanceOrigin = firstDistanceLink?.distanceOrigin || this.session.files?.find(file => file?.format === 'newick')?.name || 'Newick Tree';
-        const origin = Array.isArray(firstDistanceLink?.origin) && firstDistanceLink.origin.length
-            ? firstDistanceLink.origin
-            : [distanceOrigin];
+        const distanceOrigins = firstDistanceLink ? this.getLinkDistanceOrigins(firstDistanceLink) : [];
+        const distanceOrigin = distanceOrigins[0] || this.getNewickBackedSourceFile()?.name || 'Newick Tree';
+        const origin = [distanceOrigin];
 
         return this.workerComputeService.ensurePatristicEdgesForThreshold(
             threshold,
@@ -3156,6 +3419,8 @@ align(params): Promise<any> {
             nodeFields: this.session.data.nodeFields.length,
             linkFields: this.session.data.linkFields.length
         });
+
+        // Files tab updates now choose explicitly whether settings are preserved or reset.
 
         // TODO:: See if this is needed
         // this.foldMultiSelect();
@@ -3284,6 +3549,9 @@ align(params): Promise<any> {
           this.setClusterVisibility(true);
           this.setNodeVisibility(true);
           this.setLinkVisibility(true);
+          // Link origin filtering can change the active color-domain during data updates.
+          this.createLinkColorMap();
+          this.visuals?.microbeTrace?.publishUpdateLinkColor?.();
           this.updateStatistics();
           if (!silent) this.store.setNetworkUpdated(true);
           let updatedNumberOfVisibleClusters = this.session.data.clusters.filter(cluster => cluster.visible).length;
@@ -3496,14 +3764,23 @@ align(params): Promise<any> {
      */
     updateStatistics() {
 
-        if ($("#network-statistics-hide").is(":checked")) return;
+        const start = Date.now();
+        if ($("#network-statistics-hide").is(":checked")) {
+            this.recordPerformanceTiming('statistics', 'updateStatistics', start, {
+                skipped: true,
+                reason: 'hidden'
+            });
+            return;
+        }
         let vnodes = this.getVisibleNodes();
         let vlinks = this.getVisibleLinks();
         console.log('vLinksStats', vlinks.length);
         let linkCount = 0;
         let clusterCount = 0;
         let singletons = 0;
-        if (this.session.style.widgets["timeline-date-field"] == 'None') {
+        const timelineDateField = this.session.style.widgets["timeline-date-field"];
+        const timelineMode = timelineDateField != 'None';
+        if (!timelineMode) {
             linkCount = vlinks.length;
             // const minSize = this.session.style.widgets['cluster-minimum-size'];
             clusterCount = this.session.data.clusters.filter(
@@ -3536,6 +3813,19 @@ align(params): Promise<any> {
             Number(this.session.style.widgets['link-threshold']),
             this.session.style.widgets['link-sort-variable']
         ));
+        this.recordPerformanceTiming('statistics', 'updateStatistics', start, {
+            timelineMode,
+            timelineDateField,
+            nodes: this.session.data.nodes.length,
+            links: this.session.data.links.length,
+            clusters: this.session.data.clusters.length,
+            visibleNodes: vnodes.length,
+            rawVisibleLinks: vlinks.length,
+            visibleLinks: linkCount,
+            visibleClusters: clusterCount,
+            singletonNodes: singletons,
+            selectedNodes: vnodes.filter(d => d.selected).length
+        });
     };
 
    /**
@@ -3755,8 +4045,7 @@ align(params): Promise<any> {
     };
 
     /**
-     * Sets the following objects back to default values: commonService.temp.matrix, commonService.temp.tree, commonService.session.data, commonService.session.network,
-     * commonService.session.style.widgets. Filters 'Demo_outbreak_NodeList.csv' from files
+     * Rebuilds loaded graph data while preserving the current analysis settings.
      */
     resetData() {
 
@@ -3787,15 +4076,6 @@ align(params): Promise<any> {
 
         this.session.files = files;
         this.session.meta = meta;
-        this.session.style.widgets = this.defaultWidgets();
-        
-
-        // default values are 'tn93' and 0.015, so not sure if this if statement is every true
-        if (this.session.style.widgets['default-distance-metric'] !== 'snps' &&
-          this.session.style.widgets['link-threshold'] >= 1) {
-          this.visuals.microbeTrace.SelectedLinkThresholdVariable = this.session.style.widgets['link-threshold'];
-          this.visuals.microbeTrace.onLinkThresholdChanged();
-        }
     };
 
     getJurisdictions(): Promise<JurisdictionItem[]>{
@@ -3826,6 +4106,84 @@ align(params): Promise<any> {
         // });
     }
 
+    setAuspiceMapData(mapData: any) {
+        const emptyMapData = this.dataSkeleton().auspiceMapData;
+        const normalizedMapData = {
+            countries: this.normalizeAuspiceMapLayer(mapData?.countries, emptyMapData.countries),
+            states: this.normalizeAuspiceMapLayer(mapData?.states, emptyMapData.states)
+        };
+
+        this.session.data.auspiceMapData = normalizedMapData;
+        delete this.temp.mapData.countries;
+        delete this.temp.mapData.states;
+    }
+
+    private normalizeAuspiceMapLayer(layer: any, fallback: any) {
+        return {
+            ...fallback,
+            ...layer,
+            features: Array.isArray(layer?.features) ? layer.features : []
+        };
+    }
+
+    private normalizeMapFeatureValue(value: any): string {
+        return String(value ?? '').trim().toLowerCase();
+    }
+
+    private getCountryMapAliases(value: any): string[] {
+        const normalizedValue = this.normalizeMapFeatureValue(value);
+        if (['us', 'usa', 'united states', 'united states of america'].includes(normalizedValue)) {
+            return ['us', 'usa', 'united states', 'united states of america'];
+        }
+
+        return [];
+    }
+
+    private getMapFeatureKeys(name: string, feature: any): string[] {
+        const properties = feature?.properties || {};
+        const keys = [feature?.id, properties.name];
+
+        if (name === 'states') {
+            keys.push(properties.usps);
+        } else if (name === 'countries') {
+            keys.push(...this.getCountryMapAliases(feature?.id));
+            keys.push(...this.getCountryMapAliases(properties.name));
+        }
+
+        return keys
+            .map(value => this.normalizeMapFeatureValue(value))
+            .filter(value => value !== '');
+    }
+
+    private mergeAuspiceMapData(name: string, mapData: any) {
+        const dynamicFeatures = this.session?.data?.auspiceMapData?.[name]?.features;
+        if (!Array.isArray(dynamicFeatures) || dynamicFeatures.length === 0 || !Array.isArray(mapData?.features)) {
+            return mapData;
+        }
+
+        const merged = {
+            ...mapData,
+            features: [...mapData.features]
+        };
+        const existingKeys = new Set<string>();
+
+        merged.features.forEach(feature => {
+            this.getMapFeatureKeys(name, feature).forEach(key => existingKeys.add(key));
+        });
+
+        dynamicFeatures.forEach(feature => {
+            const featureKeys = this.getMapFeatureKeys(name, feature);
+            if (featureKeys.length === 0 || featureKeys.some(key => existingKeys.has(key))) {
+                return;
+            }
+
+            merged.features.push(feature);
+            featureKeys.forEach(key => existingKeys.add(key));
+        });
+
+        return merged;
+    }
+
     async getMapData(type): Promise<any> {
 
         //return new Promise(resolve => {
@@ -3834,6 +4192,7 @@ align(params): Promise<any> {
             const name = parts[0],
                 format = parts[1];
             if (this.temp.mapData[name]) {
+                this.temp.mapData[name] = this.mergeAuspiceMapData(name, this.temp.mapData[name]);
                 return this.temp.mapData[name];
             }
 
@@ -3859,7 +4218,7 @@ align(params): Promise<any> {
                     if (format == "json") {
                         path = 'assets/common/data/countries.json';
                         const response = await firstValueFrom(this.http.get(path));
-                        this.temp.mapData[name] = response;
+                        this.temp.mapData[name] = this.mergeAuspiceMapData(name, response);
                         return this.temp.mapData[name];
                         // return this.http.get(path).toPromise()
                         //     .then(response => {
@@ -3883,7 +4242,7 @@ align(params): Promise<any> {
 
                         path = 'assets/common/data/states.json';
                         const response = await firstValueFrom(this.http.get(path));
-                        this.temp.mapData[name] = response;
+                        this.temp.mapData[name] = this.mergeAuspiceMapData(name, response);
                         return this.temp.mapData[name];
                         // return this.http.get(path).toPromise()
                         //     .then(response => {
@@ -3969,6 +4328,27 @@ align(params): Promise<any> {
         if (!thing) thing = this.session;
         return (JSON.stringify(thing).length / 1024 / 1024).toLocaleString() + 'MB';
     };
+
+    normalizeStyleCategoryValue(value: any): string {
+        if (value === undefined || value === null) {
+            return 'null';
+        }
+
+        if (typeof value === 'number' && Number.isNaN(value)) {
+            return 'null';
+        }
+
+        if (typeof value === 'string') {
+            const trimmedValue = value.trim().toLowerCase();
+            if (trimmedValue === '' || trimmedValue === 'nan') {
+                return 'null';
+            }
+
+            return String(value);
+        }
+
+        return String(value);
+    }
 
     /**
      * Converts commonly used titles to a standard output; for less common titles nothing is changed
@@ -4101,7 +4481,7 @@ align(params): Promise<any> {
         let clusters = this.session.data.clusters;
         let n = links.length;
         let visibleLinks = 0;
-        const globalOriginOrder = this.session.style.widgets['link-origin-array-order']; // Get the global order once
+        const globalOriginOrder = this.normalizeLinkOrigins(this.session.style.widgets['link-origin-array-order']);
     
     
         if(this.debugMode) {
@@ -4117,24 +4497,19 @@ align(params): Promise<any> {
     
             const link = links[i]; // Reference to the object in session.data.links
             const distanceOrigins = this.getLinkDistanceOrigins(link);
+            const allOrigins = this.getLinkAllOrigins(link);
 
-            // *** Step 1: Use a copy for checks ***
-            let finalOrigins = [...link.origin]; // Copy origins for visibility logic
-    
-            let visible = true;
-            let overrideNN = false;
-            let originWasFiltered = false; // *** Step 2: Add flag ***
-    
-            // Add back the distance origin to the *copy* if it was removed (Safeguard)
-            // Check against original link.origin, add to finalOrigins if needed
             distanceOrigins.forEach(distanceOrigin => {
-                if (!finalOrigins.includes(distanceOrigin)) {
-                    finalOrigins.push(distanceOrigin);
-                }
-                if (!link.origin.includes(distanceOrigin)) {
-                    link.origin.push(distanceOrigin);
+                if (!allOrigins.includes(distanceOrigin)) {
+                    allOrigins.push(distanceOrigin);
                 }
             });
+            this.setLinkAllOrigins(link, allOrigins);
+
+            let finalOrigins = [...allOrigins];
+
+            let visible = true;
+            let overrideNN = false;
     
     
             // Visibility Logic based on metric/threshold/hasDistance
@@ -4143,7 +4518,6 @@ align(params): Promise<any> {
                 if (finalOrigins.filter(fileName => !this.isDistanceBackedOrigin(fileName, distanceOrigins)).length > 0) {
                     // Filter the *copy* for visibility check
                     finalOrigins = finalOrigins.filter(fileName => !this.isDistanceBackedOrigin(fileName, distanceOrigins));
-                    originWasFiltered = true; // *** Mark as filtered ***
                     overrideNN = true;
                     visible = true;
                 } else {
@@ -4161,14 +4535,13 @@ align(params): Promise<any> {
                              }).length > 0
                         ) {
                             // Filter the *copy* for visibility check
-                             finalOrigins = finalOrigins.filter(fileName => {
-                                 const hasAuspice = /[Aa]uspice/.test(fileName);
-                                 const includesDistanceOrigin = this.isDistanceBackedOrigin(fileName, distanceOrigins);
-                                 return fileName && !includesDistanceOrigin && !hasAuspice;
-                             });
-                             originWasFiltered = true; // *** Mark as filtered ***
-                             overrideNN = true;
-                             visible = true;
+                              finalOrigins = finalOrigins.filter(fileName => {
+                                  const hasAuspice = /[Aa]uspice/.test(fileName);
+                                  const includesDistanceOrigin = this.isDistanceBackedOrigin(fileName, distanceOrigins);
+                                  return fileName && !includesDistanceOrigin && !hasAuspice;
+                              });
+                              overrideNN = true;
+                              visible = true;
                          }
                          // If only distance origin existed and it's above threshold, 'visible' remains false.
                     }
@@ -4186,10 +4559,9 @@ align(params): Promise<any> {
                  if (!visible && wasVisible) { // Check if NN made it invisible
                       // Check *copy* for other origins
                      if (finalOrigins.filter(fileName => !this.isDistanceBackedOrigin(fileName, distanceOrigins)).length > 0) {
-                         // Filter the *copy*
-                         finalOrigins = finalOrigins.filter(fileName => !this.isDistanceBackedOrigin(fileName, distanceOrigins));
-                         originWasFiltered = true; // *** Mark as filtered ***
-                         visible = true; // Keep visible due to non-distance origin
+                          // Filter the *copy*
+                          finalOrigins = finalOrigins.filter(fileName => !this.isDistanceBackedOrigin(fileName, distanceOrigins));
+                          visible = true; // Keep visible due to non-distance origin
                      }
                  }
             }
@@ -4200,30 +4572,7 @@ align(params): Promise<any> {
                 visible = visible && cluster.visible;
             }
     
-            // --- Step 3: Apply Final Origin Array Conditionally ---
-            if (visible) {
-                 if (originWasFiltered) {
-                     // If filtering occurred *during visibility checks*, assign the filtered result
-                     link.origin = finalOrigins;
-                 } else if (link.origin.length > 1 && globalOriginOrder.length > 1) {
-                      // If NO filtering occurred, it's visible, has multiple origins,
-                      // and global order exists, apply the global order.
-                     // Check if the link's current origins fundamentally match the global order content
-                     // (ignoring order initially) to prevent applying the wrong order set.
-                     const linkOriginSet = new Set(link.origin);
-                     const globalOrderSet = new Set(globalOriginOrder);
-                     if (linkOriginSet.size === globalOrderSet.size && [...linkOriginSet].every(item => globalOrderSet.has(item))) {
-                        link.origin = globalOriginOrder;
-                     } else {
-                        // Log a warning if sets don't match - indicates potential issue in global order management
-                         console.warn("Link origin set doesn't match global order set. Not applying global order.", link.id, link.origin, globalOriginOrder);
-                         // Keep link.origin as it was after addLink
-                     }
-                 }
-                 // If visible and single origin, or global order not set/relevant,
-                 // link.origin correctly retains its value from addLink.
-            }
-            // If not visible, link.origin is left as is.
+            link.origin = this.orderLinkOriginsForDisplay(finalOrigins, globalOriginOrder);
     
             link.visible = visible; // Set final visibility
             if (visible) visibleLinks++;
@@ -4313,7 +4662,7 @@ align(params): Promise<any> {
         let width = 260,
         height = 48,
         svg = null;
-        const readout = $("#threshold-sparkline-readout");
+        const getReadout = () => $("#threshold-sparkline-readout");
 
         // Update histogram so that it can be altered outside of the main wrapper 
         if(histogram){
@@ -4332,6 +4681,7 @@ align(params): Promise<any> {
         const sweepSummary = this.getThresholdSweepSummary(lsv);
 
         if (data.length === 0) {
+            const readout = getReadout();
             if (readout.length > 0) {
                 readout.text("No threshold readout available");
             }
@@ -4390,6 +4740,7 @@ align(params): Promise<any> {
         const formatThresholdValue = (value: number) => this.formatDisplayedDistanceValue(value, lsv);
         const formatClusterCount = (count: number) => `${count.toLocaleString()} ${count === 1 ? 'cluster' : 'clusters'}`;
         const setDefaultReadout = () => {
+            const readout = getReadout();
             if (readout.length === 0) {
                 return;
             }
@@ -4416,21 +4767,99 @@ align(params): Promise<any> {
         let hoverDot = null;
 
         if (sweepSummary.thresholds.length > 0) {
-            const maxClusterCount = Math.max(...sweepSummary.clusterCounts, 1);
+            const maxClusterCount = sweepSummary.clusterCounts.reduce(
+                (maxCount, clusterCount) => clusterCount > maxCount ? clusterCount : maxCount,
+                1
+            );
+            const buildSweepLinePoints = () => {
+                const thresholdCount = sweepSummary.thresholds.length;
+                const maxRenderedPoints = width * 8;
+
+                if (thresholdCount <= maxRenderedPoints) {
+                    return sweepSummary.thresholds.map((threshold, index) => ({
+                        threshold,
+                        clusterCount: sweepSummary.clusterCounts[index]
+                    }));
+                }
+
+                const bucketCount = Math.max(1, width * 2);
+                const thresholdMin = sweepSummary.thresholds[0];
+                const thresholdMax = sweepSummary.thresholds[thresholdCount - 1];
+                const thresholdSpan = thresholdMax - thresholdMin || 1;
+                const selectedIndexes = new Set<number>([0, thresholdCount - 1]);
+                let currentBucket = -1;
+                let firstIndex = 0;
+                let lastIndex = 0;
+                let minIndex = 0;
+                let maxIndex = 0;
+
+                const flushBucket = () => {
+                    selectedIndexes.add(firstIndex);
+                    selectedIndexes.add(minIndex);
+                    selectedIndexes.add(maxIndex);
+                    selectedIndexes.add(lastIndex);
+                };
+
+                for (let index = 0; index < thresholdCount; index++) {
+                    const threshold = sweepSummary.thresholds[index];
+                    const bucket = Math.max(
+                        0,
+                        Math.min(
+                            bucketCount - 1,
+                            Math.floor(((threshold - thresholdMin) / thresholdSpan) * bucketCount)
+                        )
+                    );
+
+                    if (bucket !== currentBucket) {
+                        if (currentBucket !== -1) {
+                            flushBucket();
+                        }
+
+                        currentBucket = bucket;
+                        firstIndex = index;
+                        lastIndex = index;
+                        minIndex = index;
+                        maxIndex = index;
+                        continue;
+                    }
+
+                    lastIndex = index;
+
+                    if (sweepSummary.clusterCounts[index] < sweepSummary.clusterCounts[minIndex]) {
+                        minIndex = index;
+                    }
+
+                    if (sweepSummary.clusterCounts[index] > sweepSummary.clusterCounts[maxIndex]) {
+                        maxIndex = index;
+                    }
+                }
+
+                flushBucket();
+
+                return Array
+                    .from(selectedIndexes)
+                    .sort((a, b) => a - b)
+                    .map((index) => ({
+                        threshold: sweepSummary.thresholds[index],
+                        clusterCount: sweepSummary.clusterCounts[index]
+                    }));
+            };
+
+            const sweepLinePoints = buildSweepLinePoints();
             clusterY = d3
                 .scaleLinear()
                 .domain([0, maxClusterCount])
                 .range([height - 2, 2]);
 
             const clusterLine = d3
-                .line<number>()
+                .line<{ threshold: number; clusterCount: number }>()
                 .curve(d3.curveStepAfter)
-                .x((_, index) => x(sweepSummary.thresholds[index]))
-                .y((value) => clusterY(value));
+                .x((point) => x(point.threshold))
+                .y((point) => clusterY(point.clusterCount));
 
             svg
                 .append("path")
-                .datum(sweepSummary.clusterCounts)
+                .datum(sweepLinePoints)
                 .attr("class", "threshold-cluster-sweep")
                 .attr("fill", "none")
                 .attr("stroke", "#ff8300")
@@ -4471,6 +4900,34 @@ align(params): Promise<any> {
             return x.invert(xc);
         }
 
+        function getClosestSweepIndex(threshold: number): number {
+            const thresholds = sweepSummary.thresholds;
+            if (thresholds.length === 0) {
+                return -1;
+            }
+
+            let low = 0;
+            let high = thresholds.length - 1;
+
+            while (low < high) {
+                const mid = Math.floor((low + high) / 2);
+                if (thresholds[mid] < threshold) {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+
+            if (low === 0) {
+                return 0;
+            }
+
+            const previous = low - 1;
+            return Math.abs(thresholds[previous] - threshold) <= Math.abs(thresholds[low] - threshold)
+                ? previous
+                : low;
+        }
+
         /**
          * Uses the position on the histogram to set the link thresehold value
          */
@@ -4490,20 +4947,16 @@ align(params): Promise<any> {
         }
 
         function updateHoverReadout() {
+            const readout = getReadout();
             if (readout.length === 0 || sweepSummary.thresholds.length === 0 || !clusterY) {
                 return;
             }
 
             const hoveredThreshold = getHoveredThresholdValue();
-            let closestIndex = 0;
-            let closestDistance = Math.abs(sweepSummary.thresholds[0] - hoveredThreshold);
+            const closestIndex = getClosestSweepIndex(hoveredThreshold);
 
-            for (let index = 1; index < sweepSummary.thresholds.length; index++) {
-                const distance = Math.abs(sweepSummary.thresholds[index] - hoveredThreshold);
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestIndex = index;
-                }
+            if (closestIndex < 0) {
+                return;
             }
 
             const thresholdValue = sweepSummary.thresholds[closestIndex];

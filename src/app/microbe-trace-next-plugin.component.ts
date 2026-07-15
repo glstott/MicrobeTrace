@@ -18,6 +18,7 @@ import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
 import { CommonStoreService } from './contactTraceCommonServices/common-store.services';
 import { ExportService, ExportOptions } from './contactTraceCommonServices/export.service';
+import { sanitizeExportRows } from './contactTraceCommonServices/export-sanitization';
 import * as XLSX from 'xlsx';
 import { buildDate, commitHash } from "src/environments/version";
 import { EmbedHandoffService } from './embed/embed-handoff.service';
@@ -129,10 +130,10 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     @ViewChild('linkColorTable') linkColorTable!: ElementRef;
     @ViewChild('nodeShapeTable') nodeShapeTable!: ElementRef;
 
-    public metric: string = "tn93";
+    public metric: string = "snps";
     public ambiguity: string = "Average";
     public launchView: string = "2D Network";
-    public threshold: string = "0.015";
+    public threshold: string = "16";
 
     commitHash: string = commitHash;
     widgets: object; 
@@ -181,7 +182,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     // messages to display in loading modal
     messages: string[] = [];
 
-    version: string = '2.1';
+    version: string = '2.2';
     auspiceUrlVal: string|null = '';
 
     private thresholdSubscription: Subscription;
@@ -261,7 +262,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     SelectedNodeSymbolVariable: string = 'None';
     SelectedNodeColorVariable: string = '#1f77b4';
     SelectedLinkColorVariable: string = '#1f77b4';
-    SelectedColorLinksByVariable: string = 'None';
+    SelectedColorLinksByVariable: string = 'origin';
 
     SelectedTimelineVariable: string = 'None';
     timelineSpeedOptions: number[] = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
@@ -1342,6 +1343,31 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
      * Uses search-field, search-whole-word, search-case-sensitive widgets, and searchText variable to search each node and select all nodes that meet current criteria.
      * Also populates search-results list, and sets function that selects the node for when an option in the list is selected.
      */
+    private getSearchNodeId(node: any): string | undefined {
+        if (node?._id === undefined || node?._id === null) {
+            return undefined;
+        }
+
+        return String(node._id);
+    }
+
+    private syncFilteredNodeSelectionFromSearch(): void {
+        const selectedById = new Map<string, boolean>();
+        (this.commonService.session.data.nodes || []).forEach((node: any) => {
+            const nodeId = this.getSearchNodeId(node);
+            if (nodeId !== undefined) {
+                selectedById.set(nodeId, node.selected === true);
+            }
+        });
+
+        (this.commonService.session.data.nodeFilteredValues || []).forEach((node: any) => {
+            const nodeId = this.getSearchNodeId(node);
+            if (nodeId !== undefined && selectedById.has(nodeId)) {
+                node.selected = selectedById.get(nodeId);
+            }
+        });
+    }
+
     public onSearch() {
         const nodes = this.commonService.session.data.nodes;
         const filteredNodes = this.commonService.session.data.nodeFilteredValues;
@@ -1459,6 +1485,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
           if (!nodes.some(node => node.selected)) console.log('no matches');
         }
 
+        this.syncFilteredNodeSelectionFromSearch();
         $(document).trigger("node-selected");
     }
 
@@ -1492,7 +1519,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
      * @param files (Files List)
      */
     prepareFilesLists($event) {
-
+        this.commonService.session.network.launched = false;
         if(this.commonService.debugMode) {
             console.log("Trying to prepare files");
         }
@@ -2093,6 +2120,140 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         });
     }
 
+    private getNodeValueNameMap(): Record<string, string> {
+        const style = this.commonService.session.style;
+        if (!style.nodeValueNames || typeof style.nodeValueNames !== 'object') {
+            style.nodeValueNames = {};
+        }
+
+        return style.nodeValueNames;
+    }
+
+    public getNodeValueDisplayName(rawValue: any): string {
+        const key = String(rawValue);
+        const nodeValueNames = this.getNodeValueNameMap();
+        return Object.prototype.hasOwnProperty.call(nodeValueNames, key)
+            ? nodeValueNames[key]
+            : this.commonService.titleize(key);
+    }
+
+    public setNodeValueDisplayName(rawValue: any, displayName: any): void {
+        if (rawValue === undefined) {
+            return;
+        }
+
+        const key = String(rawValue);
+        const nextDisplayName = String(displayName ?? '');
+        this.getNodeValueNameMap()[key] = nextDisplayName;
+        this.syncNodeValueDisplayNameCell(key, nextDisplayName);
+        this.cdref.markForCheck();
+    }
+
+    private syncNodeValueDisplayNameCell(rawValue: string, displayName: string, root?: ParentNode): void {
+        const tableIds = new Set([
+            'node-color-table',
+            'key-tables-node-table',
+            'node-shape-table',
+            'key-tables-node-shape-table'
+        ]);
+        const scope = root ?? document;
+
+        scope.querySelectorAll<HTMLElement>('td[data-value]').forEach(cell => {
+            if (String(cell.getAttribute('data-value')) !== rawValue) {
+                return;
+            }
+
+            const table = cell.closest('table');
+            if (!tableIds.has(String(table?.id))) {
+                return;
+            }
+
+            cell.textContent = displayName;
+        });
+    }
+
+    public syncNodeValueDisplayNameCells(root?: ParentNode): void {
+        Object.entries(this.getNodeValueNameMap()).forEach(([rawValue, displayName]) => {
+            this.syncNodeValueDisplayNameCell(rawValue, displayName, root);
+        });
+    }
+
+    public onNodeShapeNameBlur(event: FocusEvent, rawValue: any): void {
+        const cell = event.currentTarget as HTMLElement | null;
+        if (!cell) {
+            return;
+        }
+
+        this.setNodeValueDisplayName(rawValue, cell.textContent ?? '');
+    }
+
+    private getKeyTableColumnNameMap(): Record<string, string> {
+        const style = this.commonService.session.style as typeof this.commonService.session.style & {
+            keyTableColumnNames?: Record<string, string>;
+        };
+        if (!style.keyTableColumnNames || typeof style.keyTableColumnNames !== 'object') {
+            style.keyTableColumnNames = {};
+        }
+
+        return style.keyTableColumnNames;
+    }
+
+    private getKeyTableColumnNameKey(table: string, column: string): string {
+        return `${table}.${column}`;
+    }
+
+    public getKeyTableColumnDisplayName(table: string, column: string, fallback: string): string {
+        const keyTableColumnNames = this.getKeyTableColumnNameMap();
+        const key = this.getKeyTableColumnNameKey(table, column);
+        return Object.prototype.hasOwnProperty.call(keyTableColumnNames, key)
+            ? keyTableColumnNames[key]
+            : fallback;
+    }
+
+    public setKeyTableColumnDisplayName(table: string, column: string, displayName: any): void {
+        const nextDisplayName = String(displayName ?? '');
+        this.getKeyTableColumnNameMap()[this.getKeyTableColumnNameKey(table, column)] = nextDisplayName;
+        this.syncKeyTableColumnNameCell(table, column, nextDisplayName);
+        this.cdref.markForCheck();
+    }
+
+    private syncKeyTableColumnNameCell(table: string, column: string, displayName: string, root?: ParentNode): void {
+        const scope = root ?? document;
+
+        scope.querySelectorAll<HTMLElement>('[data-table-key][data-column-key]').forEach(cell => {
+            if (cell.getAttribute('data-table-key') !== table || cell.getAttribute('data-column-key') !== column) {
+                return;
+            }
+
+            cell.textContent = displayName;
+        });
+    }
+
+    public syncKeyTableColumnNameCells(root?: ParentNode): void {
+        Object.entries(this.getKeyTableColumnNameMap()).forEach(([key, displayName]) => {
+            const separatorIndex = key.lastIndexOf('.');
+            if (separatorIndex <= 0) {
+                return;
+            }
+
+            this.syncKeyTableColumnNameCell(
+                key.slice(0, separatorIndex),
+                key.slice(separatorIndex + 1),
+                displayName,
+                root
+            );
+        });
+    }
+
+    public onKeyTableColumnNameBlur(event: FocusEvent, table: string, column: string): void {
+        const cell = event.currentTarget as HTMLElement | null;
+        if (!cell) {
+            return;
+        }
+
+        this.setKeyTableColumnDisplayName(table, column, cell.textContent ?? '');
+    }
+
     private getDefaultNodeShape(): string {
         return this.mapPreviousShapeNameToCurrent(this.commonService.session.style.widgets['node-symbol'] ?? 'ellipse');
     }
@@ -2415,15 +2576,15 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         const widgets = this.commonService.session.style.widgets;
 
         this.SelectedColorNodesByVariable = 'None';
-        this.SelectedColorLinksByVariable = 'None';
+        this.SelectedColorLinksByVariable = 'origin';
         this.SelectedNodeSymbolVariable = 'None';
 
         this.commonService.GlobalSettingsModel.SelectedColorNodesByVariable = 'None';
-        this.commonService.GlobalSettingsModel.SelectedColorLinksByVariable = 'None';
+        this.commonService.GlobalSettingsModel.SelectedColorLinksByVariable = 'origin';
         this.commonService.GlobalSettingsModel.SelectedNodeSymbolVariable = 'None';
 
         widgets['node-color-variable'] = 'None';
-        widgets['link-color-variable'] = 'None';
+        widgets['link-color-variable'] = 'origin';
         widgets['node-symbol-variable'] = 'None';
 
         this.commonService.session.style.nodeColorsTable = {};
@@ -2544,13 +2705,16 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
     // The actual function that builds your color table
   generateNodeLinkTable(tableId: string, isEditable: boolean = true) {
+    const valueColumnName = this.getKeyTableColumnDisplayName('link-color', 'value', 'Link ' + this.commonService.titleize(this.SelectedColorLinksByVariable));
+    const countColumnName = this.getKeyTableColumnDisplayName('link-color', 'count', 'Count');
+    const frequencyColumnName = this.getKeyTableColumnDisplayName('link-color', 'frequency', 'Frequency');
     const linkColorTable = $(tableId).empty().append(
       '<tr>' +
-      "<th class='p-1 table-header-row'><div class='header-content'><span contenteditable>Link " + 
-        this.commonService.titleize(this.SelectedColorLinksByVariable) + 
+      "<th class='p-1 table-header-row'><div class='header-content'><span contenteditable data-table-key='link-color' data-column-key='value'>" +
+        valueColumnName +
       "</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>" +
-      `<th class='table-header-row tableCount' ${this.widgets['link-color-table-counts'] ? '' : 'style="display: none"'}><div class='header-content'><span contenteditable>Count</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
-      `<th class='table-header-row tableFrequency' ${this.widgets['link-color-table-frequencies'] ? '' : 'style="display: none"'}><div class='header-content'><span contenteditable>Frequency</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
+      `<th class='table-header-row tableCount' ${this.widgets['link-color-table-counts'] ? '' : 'style="display: none"'}><div class='header-content'><span contenteditable data-table-key='link-color' data-column-key='count'>${countColumnName}</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
+      `<th class='table-header-row tableFrequency' ${this.widgets['link-color-table-frequencies'] ? '' : 'style="display: none"'}><div class='header-content'><span contenteditable data-table-key='link-color' data-column-key='frequency'>${frequencyColumnName}</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
       '<th>Color</th>' +
       '</tr>'
     );
@@ -2567,9 +2731,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             : [];
         aggregateValues.forEach((value, i) => {
             let duoLinkRow = value == 'Duo-Link' && this.SelectedColorLinksByVariable == 'origin' ? true : false;
-            if (aggregates[value] == 0) {
-                return;
-            }
+            const hasBlankAggregate = aggregates[value] == 0;
+            const aggregateCountText = hasBlankAggregate ? '' : aggregates[value];
+            const aggregateFrequencyText = hasBlankAggregate || vlinks.length === 0
+                ? ''
+                : (aggregates[value] / vlinks.length).toLocaleString();
                 // console.log('link color aggregates value: ', aggregates[value]);
                 // console.log('link color value: ', value);
                 // console.log('link color map: ', this.commonService.temp.style.linkColorMap);
@@ -2651,8 +2817,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 "<td data-value='" + value + "'>" +
                 (this.commonService.session.style.linkValueNames[value] ? this.commonService.session.style.linkValueNames[value] : this.commonService.titleize("" + value)) +
                 "</td>" +
-                `<td class='tableCount' ${ this.widgets['link-color-table-counts'] ? "" : "style='display: none'"}>` + aggregates[value] + "</td>" +
-                `<td class='tableFrequency' ${ this.widgets['link-color-table-frequencies'] ? "" : "style='display: none'"}>` + (aggregates[value] / vlinks.length).toLocaleString() + "</td>" +
+                `<td class='tableCount' ${ this.widgets['link-color-table-counts'] ? "" : "style='display: none'"}>` + aggregateCountText + "</td>" +
+                `<td class='tableFrequency' ${ this.widgets['link-color-table-frequencies'] ? "" : "style='display: none'"}>` + aggregateFrequencyText + "</td>" +
                 "</tr>"
             );
 
@@ -2722,6 +2888,17 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                     this.commonService.session.style.linkValueNames[String(rawValue)] = $cell.text();
                     this.cdref.markForCheck();
+                });
+
+            linkColorTable
+                .find("[data-table-key][data-column-key]")
+                .on("focusout", (event) => {
+                    const cell = event.currentTarget as HTMLElement;
+                    this.setKeyTableColumnDisplayName(
+                        String(cell.getAttribute('data-table-key')),
+                        String(cell.getAttribute('data-column-key')),
+                        cell.textContent ?? ''
+                    );
                 });
         }
 
@@ -3151,20 +3328,22 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     }
 
     generateNodeColorTable(tableId: string, isEditable: boolean = true) {
+        const valueColumnName = this.getKeyTableColumnDisplayName('node-color', 'value', 'Node ' + this.commonService.titleize(this.SelectedColorNodesByVariable));
+        const countColumnName = this.getKeyTableColumnDisplayName('node-color', 'count', 'Count');
+        const frequencyColumnName = this.getKeyTableColumnDisplayName('node-color', 'frequency', 'Frequency');
         const nodeColorTable = $(tableId)
         .empty()
         .append(
             "<tr>" +
-            "<th class='p-1 table-header-row'><div class='header-content'><span contenteditable>Node " + this.commonService.titleize(this.SelectedColorNodesByVariable) + "</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>" +
-            `<th class='table-header-row tableCount' ${ this.widgets['node-color-table-counts'] ? "" : "style='display: none'"}><div class='header-content'><span contenteditable>Count</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
-            `<th class='table-header-row tableFrequency' ${ this.widgets['node-color-table-frequencies'] ? "": "style='display: none'"}><div class='header-content'><span contenteditable>Frequency</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
+            "<th class='p-1 table-header-row'><div class='header-content'><span contenteditable data-table-key='node-color' data-column-key='value'>" + valueColumnName + "</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>" +
+            `<th class='table-header-row tableCount' ${ this.widgets['node-color-table-counts'] ? "" : "style='display: none'"}><div class='header-content'><span contenteditable data-table-key='node-color' data-column-key='count'>${countColumnName}</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
+            `<th class='table-header-row tableFrequency' ${ this.widgets['node-color-table-frequencies'] ? "": "style='display: none'"}><div class='header-content'><span contenteditable data-table-key='node-color' data-column-key='frequency'>${frequencyColumnName}</span><a class='sort-button' style='cursor: pointer'>⇅</a></div></th>` +
             "<th>Color</th>" +
             "</tr>"
         );
 
 
-        if (!this.commonService.session.style.nodeValueNames)
-            this.commonService.session.style.nodeValueNames = {};
+        this.getNodeValueNameMap();
 
 
         const aggregates = this.commonService.createNodeColorMap();
@@ -3237,13 +3416,15 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                         // Update table with new alpha value
                         // Need to get value from id since "this" keyword is used by angular
-                        this.commonService.session.style.nodeAlphas.splice(i, 1, parseFloat(f.target['value'] as string));
+                        const alphaValue = this.commonService.clampStyleAlpha(parseFloat(f.target['value'] as string));
+                        this.commonService.session.style.nodeAlphas.splice(i, 1, alphaValue);
 
                         this.commonService.temp.style.nodeAlphaMap = d3
                             .scaleOrdinal(this.commonService.session.style.nodeAlphas)
                             .domain(aggregateValues);
 
-                        colorinput.trigger('change', this.commonService.temp.style.nodeColorMap(value))
+                        colorinput.css('opacity', alphaValue);
+                        this.publishUpdateNodeColors();
                         $("#color-transparency-wrapper").fadeOut();
 
                     });
@@ -3258,7 +3439,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             const row = $(
                 "<tr>" +
                 "<td data-value='" + value + "'>" +
-                (this.commonService.session.style.nodeValueNames[value] ? this.commonService.session.style.nodeValueNames[value] : this.commonService.titleize("" + value)) +
+                this.getNodeValueDisplayName(value) +
                 "</td>" +
                 `<td class='tableCount' ${ this.widgets['node-color-table-counts'] ? "" : "style='display: none'"}>` + aggregates[value] + "</td>" +
                 `<td class='tableFrequency' ${ this.widgets['node-color-table-frequencies'] ? "": "style='display: none'"}>` + (aggregates[value] / vnodes.length).toLocaleString() + "</td>" +
@@ -3270,17 +3451,26 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
         if (isEditable) {
             nodeColorTable
-                .find("td")
+                .find("td[data-value]")
                 .on("dblclick", function () {
                     $(this).attr("contenteditable", "true").focus();
                 })
-                .on("focusout", () => {
-
-                    const $this = $(this);
+                .on("focusout", (event) => {
+                    const $this = $(event.currentTarget);
                     $this.attr("contenteditable", "false");
 
-                    //this.commonService.session.style.nodeValueNames[$this.data("value")] = $this.find("input").value;
+                    this.setNodeValueDisplayName($this.data("value"), $this.text());
+                });
 
+            nodeColorTable
+                .find("[data-table-key][data-column-key]")
+                .on("focusout", (event) => {
+                    const cell = event.currentTarget as HTMLElement;
+                    this.setKeyTableColumnDisplayName(
+                        String(cell.getAttribute('data-table-key')),
+                        String(cell.getAttribute('data-column-key')),
+                        cell.textContent ?? ''
+                    );
                 });
         }
 
@@ -3784,14 +3974,25 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         return str;
     }
 
+    officialInstance(): boolean {
+        let url: URL;
+        try {
+            url = new URL(this.currentUrl, window.location.origin);
+        } catch {
+            return false;
+        }
 
-    officialInstance () {
-        const prodVal = RegExp(/https:\/\/microbetrace.cdc.gov\/MicrobeTrace/);
-        const devVal = RegExp(/https:\/\/cdcgov.github.io\/MicrobeTrace/);
-        const localVal = RegExp(/localhost/);
-        if (prodVal.test(this.currentUrl) || devVal.test(this.currentUrl) || localVal.test(this.currentUrl)) {
+        const hostname = url.hostname.toLowerCase();
+        const pathname = url.pathname.replace(/\/+$/, '');
+        if (hostname === 'localhost') {
             return true;
-        } 
+        }
+        if (url.protocol !== 'https:') {
+            return false;
+        }
+
+        const isMicrobeTracePath = pathname === '/MicrobeTrace' || pathname.startsWith('/MicrobeTrace/');
+        return (isMicrobeTracePath && (hostname === 'microbetrace.cdc.gov' || hostname === 'cdcgov.github.io'));
     }
 
     getHeight() {
@@ -4090,14 +4291,14 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                         if(clusterNode) {
 
-                        const blob = new Blob([Papa.unparse(cluster[0])], {type: 'text/csv;charset=utf-8'});
+                        const blob = new Blob([Papa.unparse(sanitizeExportRows(cluster[0]))], {type: 'text/csv;charset=utf-8'});
                         clusterFolder.file( "nodeList_cluster_" + cluster[0][0].cluster + ".csv", blob);
 
                         // Now get link list of cluster
                         const clusterLink = clusterLinkList.filter(LinkList => LinkList[0].cluster == currentCluster.id);
 
                         if(clusterLink) {
-                            const blob = new Blob([Papa.unparse(clusterLink[0])], {type: 'text/csv;charset=utf-8'});
+                            const blob = new Blob([Papa.unparse(sanitizeExportRows(clusterLink[0]))], {type: 'text/csv;charset=utf-8'});
                             clusterFolder.file("edgeList_cluster_" + cluster[0][0].cluster + ".csv", blob);
                         }
                         }
@@ -4107,16 +4308,16 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                     if(dyadNodeList.length > 0){
                         dyadFolder = zip.folder("dyads");
                         // Add all dyads in one shot
-                        const nodesBlob = new Blob([Papa.unparse(dyadNodeList)], {type: 'text/csv;charset=utf-8'});
+                        const nodesBlob = new Blob([Papa.unparse(sanitizeExportRows(dyadNodeList))], {type: 'text/csv;charset=utf-8'});
                         dyadFolder.file("nodeList_cluster.csv", nodesBlob);
-                        const edgesBlob = new Blob([Papa.unparse(dyadEdgeList)], {type: 'text/csv;charset=utf-8'});
+                        const edgesBlob = new Blob([Papa.unparse(sanitizeExportRows(dyadEdgeList))], {type: 'text/csv;charset=utf-8'});
                         dyadFolder.file("edgeList_cluster.csv", edgesBlob);
                       }
                 
                       if (singletonNodeList.length > 0) {
                         singletonFolder = zip.folder("singletons");
                         // Add all singletons in one shot
-                        const blob = new Blob([Papa.unparse(singletonNodeList)], {type: 'text/csv;charset=utf-8'});
+                        const blob = new Blob([Papa.unparse(sanitizeExportRows(singletonNodeList))], {type: 'text/csv;charset=utf-8'});
                         singletonFolder.file("nodeList_cluster.csv", blob);
                       }
                         
@@ -4218,7 +4419,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
               this.homepageTabs[0].componentRef.instance.removeAllFiles();
               this.commonService.clearData();
               this.resetKeyTablesForNewDataset();
-              const auspiceFile = { contents: out, name: this.getAuspiceName(auspiceUrl), extension: 'json'};
+              const auspiceFile = { contents: out, name: this.getAuspiceName(auspiceUrl), extension: 'json', format: 'auspice', datatype: 'auspice'};
               this.commonService.session.files.push(auspiceFile);
               this.homepageTabs[0].componentRef.instance.addToTable(auspiceFile);
             //   console.log(this.homepageTabs[0].componentRef);
@@ -4310,10 +4511,10 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
               break;
             }
             case "Add Data": {
-                
+
                 // If files tab exists, go to it
-                if(this.homepageTabs.length > 1 && this.homepageTabs.findIndex(x => x.label === "Files") !== -1) {
-                    this._goldenLayoutHostComponent.focusComponent("Files");
+                if(this.homepageTabs.findIndex(x => x.label === "Files") !== -1) {
+                    this.focusHomepageTab("Files");
                 } else {
                     this.addComponent('Files');
                 }
@@ -4435,7 +4636,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 instance.loadSettings();
                 if (this.metric === 'snps'){
                     this.commonService.session.style.widgets['default-distance-metric'] = 'snps';
-                    this.commonService.session.style.widgets['link-threshold'] = parseInt(this.threshold);
+                    this.commonService.session.style.widgets['link-threshold'] = Number(this.threshold);
                     this.onLinkThresholdChanged();
                 }
             }
@@ -4642,6 +4843,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 this.showRefresh = false;
                 this.showButtonGroup = false;
                 this.showSorting = false;
+                this.refreshKeyTablesView();
 
                 break;
             }
@@ -4832,6 +5034,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             this.clearFloatingKeyTable(table);
             this.ensureKeyTablesViewOpen(false);
             this.refreshKeyTablesView();
+            this.syncNodeValueDisplayNameCells();
+            this.syncKeyTableColumnNameCells();
             this.cdref.markForCheck();
             return;
         }
@@ -4858,6 +5062,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         this.buildFloatingKeyTable(table);
 
         this.refreshKeyTablesView();
+        this.syncNodeValueDisplayNameCells();
+        this.syncKeyTableColumnNameCells();
         if (!silent) {
             this.cdref.markForCheck();
         }

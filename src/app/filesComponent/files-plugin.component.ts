@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, OnInit, Inject, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef, NgZone } from '@angular/core';
+import { Component, Output, EventEmitter, OnInit, Inject, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef, NgZone, HostListener } from '@angular/core';
 import { CommonService } from '../contactTraceCommonServices/common.service';
 import * as XLSX from 'xlsx';
 import * as Papa from 'papaparse';
@@ -17,7 +17,7 @@ import { Subject, Subscription, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 import { relativeTimeThreshold } from 'moment';
 import { EmbedHandoffService } from '@app/embed/embed-handoff.service';
-import { ImportedEmbedFile } from '@app/embed/embed-handoff.types';
+import { EmbedLaunchOptionsV1, ImportedEmbedFile } from '@app/embed/embed-handoff.types';
 import {
   extractGeoJSONFeatureLocations,
   GEOJSON_FEATURE_ID_FIELD,
@@ -47,10 +47,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
   auspiceUrlVal: any;
 
-  SelectedDefaultDistanceMetricVariable: string = "tn93";
+  SelectedDefaultDistanceMetricVariable: string = "snps";
   SelectedAmbiguityResolutionStrategyVariable: string = "AVERAGE";
   SelectedAmbiguityThresholdVariable: any = 0.015;
-  SelectedDefaultDistanceThresholdVariable: any = 0.015;
+  SelectedDefaultDistanceThresholdVariable: any = 16;
   SelectedDefaultViewVariable: string = "2D Network";
   readonly DefaultViewOptions: string[] = [
     '2D Network',
@@ -110,6 +110,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
   displaySequenceSettings: boolean = false;
   displayloadingInformationModal: boolean = false;
   handoffError: string | null = null;
+
+  get hasLaunchableFiles(): boolean {
+    return !this.isLoadingFiles && (this.commonService.session?.files?.length ?? 0) > 0;
+  }
 
   nodeIds: { fileName: string; ids: string[] }[] = [];
   edgeIds: { fileName: string; ids: { source: string; target: string }[] }[] = [];
@@ -234,6 +238,50 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     });
   }
 
+  private isFileDragEvent(evt: DragEvent): boolean {
+    const transfer = evt.dataTransfer;
+    if (!transfer) {
+      return false;
+    }
+
+    return Array.from(transfer.types || []).includes('Files') || transfer.files.length > 0;
+  }
+
+  private isFilesViewVisible(): boolean {
+    const style = window.getComputedStyle(this.rootHtmlElement);
+
+    return style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      this.rootHtmlElement.getClientRects().length > 0;
+  }
+
+  private isFilesPageDropEnabled(): boolean {
+    return this.commonService.activeTab === FilesComponent.componentTypeName || this.isFilesViewVisible();
+  }
+
+  @HostListener('document:dragover', ['$event'])
+  onDocumentDragOver(evt: DragEvent): void {
+    if (!this.isFilesPageDropEnabled()) {
+      return;
+    }
+
+    evt.preventDefault();
+    if (evt.dataTransfer) {
+      evt.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
+  @HostListener('document:drop', ['$event'])
+  onDocumentDrop(evt: DragEvent): void {
+    if (!this.isFilesPageDropEnabled() || !this.isFileDragEvent(evt)) {
+      return;
+    }
+
+    evt.preventDefault();
+    evt.stopPropagation();
+    void this.processFiles(evt.dataTransfer?.files);
+  }
+
   private normalizeDefaultView(value: any): string {
     const normalizedView = this.commonService.normalizeViewName(value);
     return normalizedView && this.DefaultViewOptions.includes(normalizedView)
@@ -255,6 +303,108 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     }
 
     return normalizedView;
+  }
+
+  private setLaunchButtonsDisabled(disabled: boolean, focusPrimary: boolean = false): void {
+    $(this.rootHtmlElement).find('.files-launch-action').prop('disabled', disabled);
+    if (!disabled && focusPrimary) {
+      $(this.rootHtmlElement).find('#launch').focus();
+    }
+    this.refreshTemplateState();
+  }
+
+  private syncGlobalSettingsModelFromWidgets(): void {
+    const widgets = this.commonService.session.style.widgets;
+    Object.assign(this.commonService.GlobalSettingsModel, {
+      SelectedColorNodesByVariable: widgets['node-color-variable'] ?? 'None',
+      SelectedColorLinksByVariable: widgets['link-color-variable'] ?? 'origin',
+      SelectedNodeSymbolVariable: widgets['node-symbol-variable'] ?? 'None',
+      SelectedNodeColorVariable: widgets['node-color'] ?? '#1f77b4',
+      SelectedLinkColorVariable: widgets['link-color'] ?? '#a6cee3',
+      SelectedPruneWithTypesVariable: 'None',
+      SelectedStatisticsTypesVariable: 'Hide',
+      SelectedClusterMinimumSizeVariable: widgets['cluster-minimum-size'] ?? 1,
+      SelectedLinkSortVariable: widgets['link-sort-variable'] ?? 'distance',
+      SelectedLinkThresholdVariable: widgets['link-threshold'] ?? 16,
+      SelectedDistanceMetricVariable: widgets['default-distance-metric'] ?? 'snps',
+      SelectedLinkColorTableTypesVariable: 'Dock',
+      SelectedNodeColorTableTypesVariable: 'Dock',
+      SelectedNodeShapeTableTypesVariable: widgets['node-symbol-table-visible'] ?? 'Dock',
+      SelectedColorVariable: widgets['selected-color'] ?? '#ff8300',
+      SelectedBackgroundColorVariable: widgets['background-color'] ?? '#ffffff',
+      SelectedApplyStyleVariable: '',
+      SelectedRevealTypesVariable: 'Everything'
+    });
+  }
+
+  private syncFileSettingsControlsFromWidgets(): void {
+    const widgets = this.commonService.session.style.widgets;
+    const metric = String(widgets['default-distance-metric'] ?? 'snps').toLowerCase();
+    const threshold = widgets['link-threshold'] ?? 16;
+    const ambiguityStrategy = widgets['ambiguity-resolution-strategy'] ?? 'AVERAGE';
+    const ambiguityThreshold = widgets['ambiguity-threshold'] ?? 0.015;
+    const defaultView = this.normalizeDefaultView(widgets['default-view']);
+
+    this.SelectedDefaultDistanceMetricVariable = metric;
+    this.SelectedDefaultDistanceThresholdVariable = threshold;
+    this.SelectedAmbiguityResolutionStrategyVariable = ambiguityStrategy;
+    this.SelectedAmbiguityThresholdVariable = ambiguityThreshold;
+    this.SelectedDefaultViewVariable = defaultView;
+    widgets['default-view'] = defaultView;
+
+    $('#default-distance-metric').val(metric);
+    $('#default-distance-threshold').attr('step', metric === 'snps' ? 1 : 0.001).val(threshold);
+    $('#ambiguity-resolution-strategy').val(ambiguityStrategy);
+    $('#ambiguity-threshold').val(ambiguityThreshold);
+    $('#default-view').val(defaultView);
+
+    if (metric === 'snps') {
+      $('#ambiguities-row').slideUp();
+    } else {
+      $('#ambiguities-row').slideDown();
+    }
+
+    if (ambiguityStrategy === 'HIVTRACE-G') {
+      $('#ambiguity-threshold-row').slideDown();
+    } else {
+      $('#ambiguity-threshold-row').slideUp();
+    }
+
+    this.store.setMetricChanged(metric);
+    this.store.updatecurrentThresholdStepSize(metric);
+    this.store.setLinkThreshold(threshold);
+  }
+
+  private resetSettingsForLaunch(): void {
+    this.commonService.visuals?.microbeTrace?.resetKeyTablesForNewDataset?.();
+    this.commonService.session.style = cloneDeep(this.commonService.sessionSkeleton().style);
+    this.syncFileSettingsControlsFromWidgets();
+    this.syncGlobalSettingsModelFromWidgets();
+
+    const widgets = this.commonService.session.style.widgets;
+    const microbeTrace = this.commonService.visuals?.microbeTrace as any;
+    if (microbeTrace) {
+      microbeTrace.SelectedColorNodesByVariable = widgets['node-color-variable'] ?? 'None';
+      microbeTrace.SelectedColorLinksByVariable = widgets['link-color-variable'] ?? 'origin';
+      microbeTrace.SelectedNodeSymbolVariable = widgets['node-symbol-variable'] ?? 'None';
+      microbeTrace.SelectedNodeColorVariable = widgets['node-color'] ?? '#1f77b4';
+      microbeTrace.SelectedLinkColorVariable = widgets['link-color'] ?? '#a6cee3';
+      microbeTrace.SelectedBackgroundColorVariable = widgets['background-color'] ?? '#ffffff';
+      microbeTrace.SelectedDistanceMetricVariable = widgets['default-distance-metric'] ?? 'snps';
+      microbeTrace.metric = microbeTrace.SelectedDistanceMetricVariable;
+      microbeTrace.SelectedLinkThresholdVariable = widgets['link-threshold'] ?? 16;
+      microbeTrace.threshold = String(microbeTrace.SelectedLinkThresholdVariable);
+      microbeTrace.SelectedLinkSortVariable = widgets['link-sort-variable'] ?? 'distance';
+      microbeTrace.syncThresholdDisplayFromStoredValue?.();
+      microbeTrace.getGlobalSettingsData?.();
+      microbeTrace.refreshKeyTablesView?.();
+      microbeTrace.cdref?.markForCheck?.();
+    }
+
+    this.commonService.createNodeColorMap();
+    this.commonService.createLinkColorMap();
+    this.commonService.createPolygonColorMap();
+    this.refreshTemplateState();
   }
 
   ngOnInit() {
@@ -553,10 +703,6 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       this.refreshTemplateState();
     });
 
-    if(this.commonService.session.network.launched){
-      $('#launch').text('Update');
-    }
-
     // $.getJSON("../assets/outbreak.microbetrace", (window as any).context.commonService.applySession);
     // Use this when building production (.ie gh-pages branch)
     if (!this.auspiceUrlVal) {
@@ -607,24 +753,157 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     // console.log('session: ', this.commonService?.session?.files, this.commonService.session.files.length);
   }
 
-  private applyPatristicDistanceDefaults(maxDistance: number): number {
-    if (maxDistance > 1) {
-      this.commonService.session.style.widgets['default-distance-metric'] = 'snps';
-      this.SelectedDefaultDistanceMetricVariable = 'snps';
-      this.store.updatecurrentThresholdStepSize('snps');
-      this.commonService.GlobalSettingsModel.SelectedDistanceMetricVariable = 'snps';
-      $('#default-distance-metric').val('snps');
-      $('#default-distance-threshold').attr('step', 1).val(16);
-      this.commonService.session.style.widgets['link-threshold'] = 16;
-      this.SelectedDefaultDistanceThresholdVariable = '16';
-      this.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable = 16;
-      return 16;
+  private setDefaultDistanceControls(metric: 'snps' | 'tn93', threshold: number, step: number): void {
+    this.commonService.session.style.widgets['default-distance-metric'] = metric;
+    this.commonService.session.style.widgets['link-threshold'] = threshold;
+    this.SelectedDefaultDistanceMetricVariable = metric;
+    this.SelectedDefaultDistanceThresholdVariable = String(threshold);
+    this.store.updatecurrentThresholdStepSize(metric);
+    this.commonService.GlobalSettingsModel.SelectedDistanceMetricVariable = metric;
+    this.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable = threshold;
+    $('#default-distance-metric').val(metric);
+    $('#default-distance-threshold').attr('step', step).val(threshold);
+
+    const microbeTrace = this.commonService.visuals?.microbeTrace;
+    if (microbeTrace) {
+      microbeTrace.SelectedDistanceMetricVariable = metric;
+      microbeTrace.metric = metric;
+      microbeTrace.SelectedLinkThresholdVariable = threshold;
+      microbeTrace.threshold = String(threshold);
+      microbeTrace.syncThresholdDisplayFromStoredValue?.();
+    }
+  }
+
+  private applyEmbedLaunchOptions(launch: EmbedLaunchOptionsV1 | undefined, metadataDatasetName?: string): void {
+    const widgets = this.commonService.session.style.widgets;
+    const datasetName = launch?.datasetName ?? metadataDatasetName;
+
+    if (datasetName) {
+      const meta = this.commonService.session.meta as any;
+      meta.partnerEmbed = {
+        ...(meta.partnerEmbed || {}),
+        datasetName,
+      };
     }
 
+    if (!launch) {
+      return;
+    }
+
+    if (launch.distanceMetric || typeof launch.linkThreshold === 'number') {
+      const selectedMetric = launch.distanceMetric ?? String(widgets['default-distance-metric'] ?? 'snps').toLowerCase();
+      const metric = selectedMetric === 'tn93' ? 'tn93' : 'snps';
+      const currentThreshold = Number(widgets['link-threshold']);
+      const defaultThreshold = Number.isFinite(currentThreshold) ? currentThreshold : (metric === 'tn93' ? 0.015 : 16);
+      const threshold = launch.linkThreshold ?? (launch.distanceMetric ? (metric === 'tn93' ? 0.015 : 16) : defaultThreshold);
+
+      this.setDefaultDistanceControls(metric, threshold, metric === 'tn93' ? 0.001 : 1);
+    }
+
+    if (launch?.defaultView) {
+      this.setDefaultView(launch.defaultView, false);
+    }
+
+    if (launch?.ambiguityStrategy) {
+      widgets['ambiguity-resolution-strategy'] = launch.ambiguityStrategy;
+      this.SelectedAmbiguityResolutionStrategyVariable = launch.ambiguityStrategy;
+      $('#ambiguity-resolution-strategy').val(launch.ambiguityStrategy);
+    }
+
+    if (typeof launch?.ambiguityThreshold === 'number') {
+      widgets['ambiguity-threshold'] = launch.ambiguityThreshold;
+      this.SelectedAmbiguityThresholdVariable = launch.ambiguityThreshold;
+      $('#ambiguity-threshold').val(launch.ambiguityThreshold);
+    }
+
+    const globalSettings = launch?.globalSettings;
+    if (globalSettings) {
+      if (globalSettings.nodeColorBy) {
+        widgets['node-color-variable'] = globalSettings.nodeColorBy;
+      }
+      if (globalSettings.linkColorBy) {
+        widgets['link-color-variable'] = globalSettings.linkColorBy;
+      }
+      if (globalSettings.nodeShapeBy) {
+        widgets['node-symbol-variable'] = globalSettings.nodeShapeBy;
+      }
+      if (globalSettings.nodeColor) {
+        widgets['node-color'] = globalSettings.nodeColor;
+      }
+      if (globalSettings.linkColor) {
+        widgets['link-color'] = globalSettings.linkColor;
+      }
+      if (globalSettings.nodeShape) {
+        widgets['node-symbol'] = globalSettings.nodeShape;
+      }
+      if (globalSettings.selectedColor) {
+        widgets['selected-color'] = globalSettings.selectedColor;
+        widgets['selected-node-stroke-color'] = globalSettings.selectedColor;
+        widgets['selected-color-contrast'] = this.commonService.contrastColor(globalSettings.selectedColor);
+      }
+      if (typeof globalSettings.clusterMinimumSize === 'number') {
+        widgets['cluster-minimum-size'] = globalSettings.clusterMinimumSize;
+      }
+      if (globalSettings.backgroundColor) {
+        widgets['background-color'] = globalSettings.backgroundColor;
+        widgets['background-color-contrast'] = this.commonService.contrastColor(globalSettings.backgroundColor);
+      }
+      if (globalSettings.tn93DistanceDisplayFormat) {
+        widgets['tn93-distance-display-format'] = globalSettings.tn93DistanceDisplayFormat;
+      }
+    }
+
+    this.syncFileSettingsControlsFromWidgets();
+    this.syncGlobalSettingsModelFromWidgets();
+
+    const microbeTrace = this.commonService.visuals?.microbeTrace as any;
+    if (microbeTrace) {
+      microbeTrace.SelectedColorNodesByVariable = widgets['node-color-variable'] ?? 'None';
+      microbeTrace.SelectedColorLinksByVariable = widgets['link-color-variable'] ?? 'origin';
+      microbeTrace.SelectedNodeSymbolVariable = widgets['node-symbol-variable'] ?? 'None';
+      microbeTrace.SelectedClusterMinimumSizeVariable = widgets['cluster-minimum-size'] ?? 1;
+      microbeTrace.SelectedNodeColorVariable = widgets['node-color'] ?? '#1f77b4';
+      microbeTrace.SelectedLinkColorVariable = widgets['link-color'] ?? '#a6cee3';
+      microbeTrace.SelectedColorVariable = widgets['selected-color'] ?? '#ff8300';
+      microbeTrace.SelectedBackgroundColorVariable = widgets['background-color'] ?? '#ffffff';
+      microbeTrace.SelectedTN93DistanceDisplayFormatVariable = widgets['tn93-distance-display-format'] ?? 'decimal';
+      microbeTrace.SelectedDistanceMetricVariable = widgets['default-distance-metric'] ?? 'snps';
+      microbeTrace.metric = microbeTrace.SelectedDistanceMetricVariable;
+      microbeTrace.SelectedLinkThresholdVariable = widgets['link-threshold'] ?? 16;
+      microbeTrace.threshold = String(microbeTrace.SelectedLinkThresholdVariable);
+      microbeTrace.syncThresholdDisplayFromStoredValue?.();
+      microbeTrace.cdref?.markForCheck?.();
+    }
+  }
+
+  private applyPatristicDistanceDefaults(maxDistance: number): number {
     const configuredThreshold = parseFloat(
       `${this.commonService.session.style.widgets['link-threshold'] ?? this.SelectedDefaultDistanceThresholdVariable}`
     );
-    return Number.isFinite(configuredThreshold) ? configuredThreshold : 0.015;
+    const configuredMetric = String(
+      this.commonService.session.style.widgets['default-distance-metric'] ?? this.SelectedDefaultDistanceMetricVariable
+    ).toLowerCase();
+    const finiteConfiguredThreshold = Number.isFinite(configuredThreshold) ? configuredThreshold : undefined;
+
+    if (Number.isFinite(maxDistance) && maxDistance > 0 && maxDistance <= 1) {
+      const threshold = finiteConfiguredThreshold !== undefined && finiteConfiguredThreshold < 1
+        ? finiteConfiguredThreshold
+        : 0.015;
+      this.setDefaultDistanceControls('tn93', threshold, 0.001);
+      return threshold;
+    }
+
+    if (maxDistance > 1 || configuredMetric === 'snps') {
+      const threshold = finiteConfiguredThreshold !== undefined && finiteConfiguredThreshold >= 1
+        ? finiteConfiguredThreshold
+        : 16;
+      this.setDefaultDistanceControls('snps', threshold, 1);
+      return threshold;
+    }
+
+    const threshold = finiteConfiguredThreshold !== undefined ? finiteConfiguredThreshold : 0.015;
+    this.setDefaultDistanceControls('tn93', threshold, 0.001);
+    return threshold;
   }
 
   private async loadPendingEmbedHandoff() {
@@ -655,6 +934,15 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       this.commonService.session.files.push(file);
       this.addToTable(file);
     });
+
+    try {
+      this.applyEmbedLaunchOptions(result.handoff.launch, result.handoff.metadata?.datasetName);
+    } catch (error) {
+      this.isLoadingFiles = false;
+      this.handoffError = error instanceof Error ? error.message : 'Unable to apply the partner handoff launch options.';
+      this.cdr.markForCheck();
+      return;
+    }
 
     this.isLoadingFiles = false;
     this.commonService.session.network.initialLoad = true;
@@ -789,7 +1077,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
     console.log('---loadDefaultVisualization Called - stop loading modal');
 
-      $('#launch').prop('disabled', false).focus();
+      this.setLaunchButtonsDisabled(false, true);
 
       this.displayloadingInformationModal = false;
 
@@ -810,14 +1098,15 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
   
 
   /**
-   * Resets the value of session.data, temp.trees if previously launched (or more if not previously launched). Retains the values of following 
-   * widgets: link-threshold, default-distance-metric, ambiguity-resolution-strategy, and default view.
+   * Resets the value of session.data and temp.trees. Retains current settings by default,
+   * or resets all settings when requested by the Files tab reset update action.
    * Calls creatLaunchSequences to process the data files loaded.
    */
-  launchClick() {
+  launchClick(options: { resetSettings?: boolean } = {}) {
 
      // Set to false to indicate that the network is not fully loaded  as new network is launching
      const loadGeneration = this.commonService.beginDataLoad();
+     const wasAlreadyLaunched = this.commonService.session.network.launched;
      this.commonService.session.network.isFullyLoaded = false;
      
     // launching new network, so set network rendered to false to start loading modal
@@ -825,9 +1114,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     this.store.setNetworkUpdated(false);
     this.store.setSettingsLoaded(false);
 
-    this.commonService.cleanupData();
+    if (!wasAlreadyLaunched) {
+      this.commonService.updateLegacyNodeSymbols();
+    }
 
-    this.commonService.updateLegacyNodeSymbols();
     const thresholdOnLaunch = parseFloat(String(
       $('#default-distance-threshold').val() ??
       this.SelectedDefaultDistanceThresholdVariable ??
@@ -849,41 +1139,31 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       this.commonService.session.style.widgets["default-view"]
     );
 
+    if (options.resetSettings) {
+      this.resetSettingsForLaunch();
+    }
+
 
     console.log('launch click');
-    if( this.commonService.session.network.launched) {
-      console.log('launch click launched ', this.commonService.session.network.launched);
-
-      this.commonService.resetData();
-
-      $('#launch').text('Update');
-      // this.visuals.twoD.isLoading = true;
-      this.commonService.session.style.nodeColorsTable = {};
-      this.commonService.session.style.nodeColorsTableKeys = {};
-      this.commonService.session.style.nodeSymbolsTable = {};
-      this.commonService.session.style.nodeSymbolsTableKeys = {};
-    }
-    else if (!this.commonService.session.network.launched) {
-      console.log('launch click not launched ', this.commonService.session.network.launched);
-
-      this.commonService.resetData();
-      this.commonService.session.network.launched = true;
+    this.commonService.resetData();
+    this.commonService.session.network.launched = true;
+    this.refreshTemplateState();
+    if (wasAlreadyLaunched) {
+      console.log('launch click launched ', wasAlreadyLaunched);
+    } else {
+      console.log('launch click not launched ', wasAlreadyLaunched);
     }
 
-    this.commonService.GlobalSettingsModel.SelectedNodeSymbolVariable = 'None';
-    this.commonService.GlobalSettingsModel.SelectedNodeShapeTableTypesVariable = 'Dock';
-    this.commonService.session.style.widgets['node-symbol-variable'] = 'None';
-    this.commonService.session.style.widgets['node-symbol-table-visible'] = 'Dock';
-    this.commonService.visuals.microbeTrace?.resetNodeShapeSelectionForNewDataset();
-
-    this.commonService.session.style.widgets["link-threshold"] = thresholdOnLaunch;
     this.commonService.session.style.widgets["default-distance-metric"] = metricOnLaunch;
     this.commonService.session.style.widgets["ambiguity-resolution-strategy"] = ambiguityOnLaunch;
     this.commonService.session.style.widgets["default-view"] = viewOnLaunch;
-    this.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable = thresholdOnLaunch;
     this.commonService.GlobalSettingsModel.SelectedDistanceMetricVariable = metricOnLaunch;
-    this.store.setLinkThreshold(thresholdOnLaunch);
     this.store.setMetricChanged(metricOnLaunch);
+
+    this.SelectedDefaultDistanceThresholdVariable = thresholdOnLaunch;
+    this.commonService.session.style.widgets["link-threshold"] = thresholdOnLaunch;
+    this.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable = thresholdOnLaunch;
+    this.store.setLinkThreshold(thresholdOnLaunch);
 
     this.commonService.session.messages = [];
     this.messages = [];
@@ -917,7 +1197,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     }
 
     this.commonService.session.meta.startTime = Date.now();
-    $('#launch').prop('disabled', true);
+    this.setLaunchButtonsDisabled(true);
 
     // $('#loading-information').html('');
     this.commonService.temp.messageTimeout = setTimeout(() => {
@@ -950,8 +1230,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         this.commonService.applyAuspice(file.contents).then(async auspiceData => {
           if (!isCurrentLoad()) return 0;
 
+          const files = this.commonService.session.files.slice();
           this.commonService.clearData();
-          this.commonService.session = this.commonService.sessionSkeleton();
+          this.commonService.session.files = files;
+          this.commonService.setAuspiceMapData(auspiceData['mapData']);
 
           console.log(auspiceData["tree"]["children"][0]);
           // This is a bizarre line, but I need to check if the div values are more or less than one. The first one is always zero, so we need to go to the second one
@@ -983,6 +1265,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           this.commonService.session.meta.startTime = Date.now();
           this.commonService.session.data.tree = auspiceData['tree'];
           this.commonService.session.data.newickString = auspiceData['newick'];
+          this.commonService.session.data.newickSource = 'auspice';
           let nodeCount = 0;
           const nodeRegex = /^NODE_[0-9]{7}$/i;
           auspiceData['nodes'].forEach(node => {
@@ -1021,13 +1304,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
             return nodeCount;
           }
 
-          this.commonService.runHamsters();
           this.showMessage(` - Parsed ${nodeCount} New Nodes and ${linkCount} new Links from Auspice file.`);
           if (fileNum === nFiles) this.processData(loadGeneration);
           return nodeCount;
         });
-        this.commonService._debouncedUpdateNetworkVisuals();
-        this.commonService.updateStatistics();
         if(this.commonService.debugMode) {
           console.log(this.commonService.session);
         }
@@ -1599,34 +1879,49 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       } else { // if(file.format === 'newick'){
 
         this.commonService.session.data.newickString = file.contents;
-        const initialThreshold = parseFloat(`${this.commonService.session.style.widgets['link-threshold']}`);
-        const computedInitialThreshold = Number.isFinite(initialThreshold) ? initialThreshold : 0.015;
+        this.commonService.session.data.newickSource = 'newick';
         const patristicStart = Date.now();
-        this.workerComputeService.computePatristicEdges(
-          file.contents,
-          computedInitialThreshold,
-          this.commonService.addLink.bind(this.commonService),
-          this.commonService.filterXSS,
-          this.commonService.session,
-          {
-            origin,
-            distanceOrigin: file.name,
-            check,
-          }
-        ).then(async patristicResult => {
+        this.workerComputeService.initPatristicTree(file.contents).then(async treeReady => {
           if (!isCurrentLoad()) return;
 
-          this.commonService.recordPerformanceTiming('ingestion', 'computeNewickPatristicEdges', patristicStart, {
+          this.commonService.recordPerformanceTiming('ingestion', 'preprocessNewickPatristicTree', patristicStart, {
             file: file.name,
-            leaves: patristicResult.leafNames.length,
-            threshold: computedInitialThreshold,
-            totalLinks: patristicResult.totalLinks,
-            newLinks: patristicResult.newLinks
+            leaves: treeReady.leafCount,
+            maxDistance: treeReady.maxDistance,
+            timings: treeReady.timings
           });
-          const activeThreshold = this.applyPatristicDistanceDefaults(patristicResult.treeReady.maxDistance);
+
+          const activeThreshold = this.applyPatristicDistanceDefaults(treeReady.maxDistance);
+          const requeryStart = Date.now();
+          const patristicResult = await this.workerComputeService.ensurePatristicEdgesForThreshold(
+            activeThreshold,
+            this.commonService.addLink.bind(this.commonService),
+            this.commonService.filterXSS,
+            this.commonService.session,
+            {
+              origin,
+              distanceOrigin: file.name,
+              check,
+              newickString: file.contents,
+            }
+          );
+
+          if (!isCurrentLoad()) return;
+
+          const leafNames = patristicResult?.leafNames?.length
+            ? patristicResult.leafNames
+            : this.workerComputeService.getPatristicLeafNames().map(this.commonService.filterXSS);
+
+          this.commonService.recordPerformanceTiming('ingestion', 'computeNewickPatristicEdges', requeryStart, {
+            file: file.name,
+            leaves: leafNames.length,
+            threshold: activeThreshold,
+            totalLinks: patristicResult?.totalLinks ?? 0,
+            newLinks: patristicResult?.newLinks ?? 0
+          });
           let newNodes = 0;
           const mergeStart = Date.now();
-          for (const source of patristicResult.leafNames) {
+          for (const source of leafNames) {
             newNodes += this.commonService.addNode({
               _id: source,
               origin: origin
@@ -1635,30 +1930,29 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           this.commonService.recordPerformanceTiming('ingestion', 'mergeNewickNodes', mergeStart, {
             file: file.name,
             newNodes,
-            totalLeaves: patristicResult.leafNames.length
+            totalLeaves: leafNames.length
           });
 
-          let newLinks = patristicResult.newLinks;
-          let links = patristicResult.totalLinks;
-          let guardrail = patristicResult.guardrail;
+          const analysisStart = Date.now();
+          const analysisResult = await this.workerComputeService.collectPatristicDistanceAnalysisEdges(
+            this.commonService.session
+          );
+          if (!isCurrentLoad()) return;
 
-          if (activeThreshold > computedInitialThreshold) {
-            const requeryResult = await this.workerComputeService.ensurePatristicEdgesForThreshold(
-              activeThreshold,
-              this.commonService.addLink.bind(this.commonService),
-              this.commonService.filterXSS,
-              this.commonService.session,
-              {
-                origin,
-                distanceOrigin: file.name,
-                check: true,
-                newickString: file.contents,
-              }
-            );
-            newLinks += requeryResult?.newLinks ?? 0;
-            links = Math.max(links, requeryResult?.totalLinks ?? 0);
-            guardrail = requeryResult?.guardrail ?? guardrail;
+          if (!analysisResult.skipped && analysisResult.edges.length > 0) {
+            this.commonService.setPatristicThresholdAnalysisEdges('distance', leafNames, analysisResult.edges);
           }
+          this.commonService.recordPerformanceTiming('ingestion', 'buildNewickThresholdAnalysis', analysisStart, {
+            file: file.name,
+            totalPairs: analysisResult.totalPairs,
+            sampledPairs: analysisResult.edges.length,
+            skipped: analysisResult.skipped,
+            skipReason: analysisResult.skipReason
+          });
+
+          let newLinks = patristicResult?.newLinks ?? 0;
+          let links = patristicResult?.totalLinks ?? 0;
+          let guardrail = patristicResult?.guardrail;
 
           if (!isCurrentLoad()) return;
 
@@ -1666,13 +1960,12 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           this.commonService.recordPerformanceTiming('ingestion', 'parseAndMergeNewick', start, {
             file: file.name,
             newNodes,
-            totalLeaves: patristicResult.leafNames.length,
+            totalLeaves: leafNames.length,
             newLinks,
             totalLinks: links,
-            initialThreshold: computedInitialThreshold,
             activeThreshold
           });
-          this.showMessage(` - Parsed ${newNodes} New, ${patristicResult.leafNames.length} Total Nodes from Newick Tree.`);
+          this.showMessage(` - Parsed ${newNodes} New, ${leafNames.length} Total Nodes from Newick Tree.`);
           if (guardrail?.message) {
             this.showMessage(` - ${guardrail.message}`);
           }
@@ -1725,12 +2018,19 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
    * If sequences are present, processes them by aligning if needed, computing consensus, consensus distances, ambiguity counts, and then links
    */
   async processSequence(loadGeneration: number = this.commonService.getDataLoadGeneration()) {
+    const processSequenceStart = Date.now();
     const isCurrentLoad = () => this.commonService.isCurrentDataLoad(loadGeneration);
     if (!isCurrentLoad()) {
       return;
     }
 
-    if (!this.commonService.session.meta.anySequences) return this.commonService.runHamsters();
+    if (!this.commonService.session.meta.anySequences) {
+      this.commonService.recordPerformanceTiming('sequence', 'processSequenceTotal', processSequenceStart, {
+        skipped: true,
+        reason: 'no-sequences'
+      });
+      return this.commonService.runHamsters();
+    }
     this.commonService.session.data.nodeFields.push('seq');
     let subset = [];
     if (this.commonService.debugMode) {
@@ -1751,6 +2051,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     if (this.commonService.debugMode) {
       console.log('link same nodes33: ', subset);
     }
+    const sequenceLength = subset[0]?.seq?.length ?? 0;
 
     if (this.commonService.session.style.widgets['align-sw']) {
       this.showMessage('Aligning Sequences...');
@@ -1778,6 +2079,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       node['_seqInt'] = tn93.toInts(node['seq']);
     }
     console.log("Integer Sequence Translation time: ", (Date.now() - start).toLocaleString(), "ms");
+    this.commonService.recordPerformanceTiming('sequence', 'translateToInts', start, {
+      nodes: n,
+      sequences: subset.length,
+      sequenceLength
+    });
 
     const consensus = await this.commonService.computeConsensus();
     if (!isCurrentLoad()) {
@@ -1801,6 +2107,12 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       return;
     }
 
+    this.commonService.recordPerformanceTiming('sequence', 'processSequenceTotal', processSequenceStart, {
+      nodes: n,
+      sequences: subset.length,
+      sequenceLength,
+      generatedLinks: k
+    });
     this.showMessage(` - Found ${k} New Links from Genomic Proximity`);
     this.commonService.runHamsters();
 
@@ -1960,7 +2272,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
             const output = JSON.parse(contents);
             console.log(output);
             if (output.meta && output.tree) {
-              const auspiceFile = { contents: output, name: fileName, extension: extension};
+              const auspiceFile = { contents: output, name: fileName, extension: extension, format: 'auspice', datatype: 'auspice'};
               this.commonService.session.files.push(auspiceFile);
               this.addToTable(auspiceFile);
             } else if (isGeoJSONData(output)) {
@@ -2015,6 +2327,75 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     this.refreshTemplateState();
   }
 
+  private normalizeFileTypeSignal(value: any): string {
+    return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private inferTabularFileFormat(
+    file: any,
+    headers: any[] = [],
+    hints: { isFasta?: boolean; isNewick?: boolean; isAuspice?: boolean } = {}
+  ): string {
+    const explicitFormat = String(file?.format ?? '').toLowerCase();
+    const knownFormats = ['link', 'node', 'matrix', 'fasta', 'newick', 'auspice', 'geojson'];
+    if (knownFormats.includes(explicitFormat)) {
+      return explicitFormat;
+    }
+
+    if (hints.isAuspice) {
+      return 'auspice';
+    }
+    if (hints.isFasta) {
+      return 'fasta';
+    }
+    if (hints.isNewick) {
+      return 'newick';
+    }
+
+    const normalizedHeaders = (headers || []).map(header => this.normalizeFileTypeSignal(header));
+    const hasHeader = (aliases: string[]) => aliases.some(alias => normalizedHeaders.includes(this.normalizeFileTypeSignal(alias)));
+    const hasHeaderPair = (sourceAliases: string[], targetAliases: string[]) => hasHeader(sourceAliases) && hasHeader(targetAliases);
+    const normalizedFileName = this.normalizeFileTypeSignal(file?.name);
+    const fileNameIncludes = (signals: string[]) => signals.some(signal => normalizedFileName.includes(this.normalizeFileTypeSignal(signal)));
+
+    const hasLinkHeaders = hasHeaderPair(
+      ['source', 'src', 'from', 'id1', 'node1', 'nodea', 'sample1', 'case1'],
+      ['target', 'dst', 'to', 'id2', 'node2', 'nodeb', 'sample2', 'case2']
+    );
+
+    if (hasLinkHeaders) {
+      return 'link';
+    }
+
+    if (fileNameIncludes(['link', 'links', 'linklist', 'edge', 'edges', 'edgelist', 'contacttracing', 'contacttrace'])) {
+      return 'link';
+    }
+
+    if (fileNameIncludes(['node', 'nodes', 'nodelist', 'metadata', 'meta', 'sample', 'samples', 'isolate', 'isolates'])) {
+      return 'node';
+    }
+
+    const hasNodeHeaders = hasHeader([
+      'id',
+      '_id',
+      'nodeid',
+      'sampleid',
+      'caseid',
+      'isolateid',
+      'accession',
+      'strain',
+      'virusname',
+      'seq',
+      'sequence'
+    ]);
+
+    if (hasNodeHeaders) {
+      return 'node';
+    }
+
+    return normalizedHeaders.length > 2 ? 'node' : 'link';
+  }
+
   /**
    * Gets information from file about extension, file type, and header and uses that information to addTableTile for file-table
    */
@@ -2030,6 +2411,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     const isXL = (extension === 'xlsx' || extension === 'xls');
     const isJSON = (extension === 'json');
     const isAuspice = (extension === 'json' && file.contents && typeof file.contents === 'object' && file.contents.meta && file.contents.tree);
+    const tableFormatHints = { isFasta, isNewick, isAuspice };
     let parsedGeoJSONData: any = null;
     let isGeoJSON = false;
 
@@ -2091,12 +2473,12 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           data = [file.contents];
         }
 
-        addTableTile(Object.keys(data[0]).map(this.commonService.filterXSS), this);
+        const detectedFormat = addTableTile(Object.keys(data[0]).map(this.commonService.filterXSS), this);
 
-        if (!isFasta && !isNewick && isNode) {
+        if (detectedFormat === 'node') {
           this.loadNodes(file.name, data, true);
         }
-        if (!isFasta && !isNewick && !isNode) {
+        if (detectedFormat === 'link') {
           this.loadEdges(file.name, data, true);
         }
 
@@ -2114,12 +2496,12 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         header: true,
         skipEmptyLines: true,
         complete: output => {
-          addTableTile(output.meta.fields.map(this.commonService.filterXSS), this);
+          const detectedFormat = addTableTile(output.meta.fields.map(this.commonService.filterXSS), this);
 
-          if (!isFasta && !isNewick && isNode) {
+          if (detectedFormat === 'node') {
             this.loadNodes(file.name, output, false);
           }
-          if (!isFasta && !isNewick && !isNode) {
+          if (detectedFormat === 'link') {
             this.loadEdges(file.name, output, false);
           }
 
@@ -2148,6 +2530,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
       console.log('addTableTile: ', headers);
       const parentContext = context;
+      const detectedFormat = parentContext.inferTabularFileFormat(file, headers, tableFormatHints);
+      file.format = detectedFormat;
+      const isNode = detectedFormat === 'node';
+      const showsColumnMapping = detectedFormat === 'node' || detectedFormat === 'link';
       const root = $('<div class="file-table-row" style="position: relative; z-index: 1;margin-bottom: 24px;"></div>').data('filename', file.name);
       const fnamerow = $('<div class="row w-100"></div>');
       const createFileTypeToggle = (type: string, label: string, checked: boolean) => {
@@ -2197,10 +2583,16 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
       $('<div class="file-name col"></div>')
         .append($('<a href="javascript:void(0);" class="far flaticon-delete-1 align-middle p-1" title="Remove this file"></a>').on('click', () => {
-          parentContext.commonService.session.files.splice(parentContext.commonService.session.files.findIndex(f => f.name === file.name), 1);
+          const fileIndex = parentContext.commonService.session.files.findIndex(f => f.name === file.name);
+          if (fileIndex >= 0) {
+            parentContext.commonService.session.files.splice(fileIndex, 1);
+          }
           parentContext.removeFile(file.name);
-          $('#launch').prop('disabled', false).focus();
-          $('#launch').text('Update');
+          if (parentContext.commonService.session.files.length === 0) {
+            parentContext.setLaunchButtonsDisabled(true);
+          } else {
+            parentContext.setLaunchButtonsDisabled(false, true);
+          }
           root.slideUp(() => root.remove());
           parentContext.refreshTemplateState();
         }))
@@ -2214,13 +2606,13 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         .append($('<span class="p-1"></span>').text(file.name))
         .append(
           $('<div class="btn-group btn-group-toggle btn-group-sm float-right" data-toggle="buttons"></div>')
-            .append(createFileTypeToggle('link', 'Link', !isFasta && !isNewick && !isNode && !isAuspice && !isGeoJSON))
-            .append(createFileTypeToggle('node', 'Node', !isFasta && !isNewick && isNode && !isGeoJSON))
-            .append(createFileTypeToggle('matrix', 'Matrix', false))
-            .append(createFileTypeToggle('fasta', 'FASTA', isFasta))
-            .append(createFileTypeToggle('newick', 'Newick', isNewick))
-            .append(createFileTypeToggle('auspice', 'Auspice', isAuspice))
-            .append(createFileTypeToggle('geojson', 'GeoJSON', isGeoJSON))
+            .append(createFileTypeToggle('link', 'Link', detectedFormat === 'link'))
+            .append(createFileTypeToggle('node', 'Node', detectedFormat === 'node'))
+            .append(createFileTypeToggle('matrix', 'Matrix', detectedFormat === 'matrix'))
+            .append(createFileTypeToggle('fasta', 'FASTA', detectedFormat === 'fasta'))
+            .append(createFileTypeToggle('newick', 'Newick', detectedFormat === 'newick'))
+            .append(createFileTypeToggle('auspice', 'Auspice', detectedFormat === 'auspice'))
+            .append(createFileTypeToggle('geojson', 'GeoJSON', detectedFormat === 'geojson'))
         ).appendTo(fnamerow);
 
       fnamerow.appendTo(root);
@@ -2278,7 +2670,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       const fileTable = parentContext.rootHtmlElement.querySelector('#file-table');
       if (!fileTable) {
         console.log('Skipping file table row render because the Files view is no longer mounted.', file.name);
-        return;
+        return detectedFormat;
       }
 
       root.appendTo(fileTable);
@@ -2310,7 +2702,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         }
         parentContext.updateMetadata(file);
 
-        $('#launch').prop('disabled', false).focus();
+        parentContext.setLaunchButtonsDisabled(false, true);
       };
 
       const selectElements = root[0].querySelectorAll('select');
@@ -2327,6 +2719,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
       root.find('input[type="radio"]').on("change", refit);
       refit();
+      return detectedFormat;
     }
   };
 

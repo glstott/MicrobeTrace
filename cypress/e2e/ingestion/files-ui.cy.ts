@@ -5,7 +5,9 @@ import { byTestId, testIds } from '../../support/selectors';
 
 describe('File Handling and Processing', () => {
   const nodeFile = 'AngularTesting_nodelist_withseqs_TN93_BS.csv';
+  const compatibleNodeFile = 'AngularTesting_nodes_Map.csv';
   const linkFile = 'AngularTesting_Epi_linklist_BS.csv';
+  const additionalNodeFile = compatibleNodeFile;
   const loadNodeFile = () => cy.loadFiles([{ name: nodeFile, datatype: 'node' }]);
   const hideLocalUrlWarning = () => {
     cy.get('body').then(($body) => {
@@ -88,7 +90,7 @@ describe('File Handling and Processing', () => {
     cy.get('#overlay', { timeout: 15000 }).should('not.be.visible');
     cy.contains('#file-table .file-table-row', nodeFile, { timeout: 20000 }).should('be.visible');
     cy.contains('#file-table .file-table-row', linkFile, { timeout: 20000 }).should('be.visible');
-    cy.get('body').should('not.contain.text', 'Unexpected application error');
+    cy.get('.runtime-error-banner').should('not.exist');
     cy.get('#launch').should('not.be.disabled').click({ force: true });
     cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', '2D Network');
   });
@@ -210,6 +212,187 @@ describe('File Handling and Processing', () => {
         (l.source === 'KF773571' && l.target === 'KF773578')
       );
       expect(link.Contact).to.equal('Bar');
+    });
+  });
+
+  it('appends files dropped onto the Files tab after a network has launched', () => {
+    cy.loadFiles([
+      { name: nodeFile, datatype: 'node' },
+      { name: linkFile, datatype: 'link' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', '2D Network');
+
+    cy.get(byTestId(testIds.appFileMenuButton)).click({ force: true });
+    cy.contains('[role="menuitem"]', 'Add Data').click({ force: true });
+    cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', 'Files');
+
+    cy.get('body', { timeout: 20000 })
+      .selectFile(`${Cypress.config('fixturesFolder')}/${additionalNodeFile}`, {
+        action: 'drag-drop',
+        force: true,
+      });
+
+    cy.contains('#file-table .file-table-row', additionalNodeFile, { timeout: 20000 }).should('be.visible');
+    cy.get('#launch', { timeout: 20000 }).should('not.be.disabled');
+
+    cy.window().its('commonService.session.files').should((files: any[]) => {
+      const fileNames = files.map((file) => file.name);
+
+      expect(files, 'session files').to.have.length(3);
+      expect(fileNames).to.include.members([nodeFile, linkFile, additionalNodeFile]);
+    });
+  });
+
+  it('preserves analysis styling when files are removed and added back', () => {
+    const customNodeColor = '#cc3366';
+
+    cy.loadFiles([
+      { name: nodeFile, datatype: 'node' },
+      { name: linkFile, datatype: 'link' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+
+    cy.window().then((win) => {
+      const microbeTrace = win.commonService.visuals.microbeTrace;
+      microbeTrace.SelectedNodeColorVariable = customNodeColor;
+      microbeTrace.onNodeColorChanged(true);
+    });
+    cy.window()
+      .its('commonService.session.style.widgets.node-color')
+      .should('equal', customNodeColor);
+
+    cy.contains('#file-table .file-table-row', linkFile)
+      .find('.flaticon-delete-1')
+      .click({ force: true });
+    cy.contains('#file-table .file-table-row', linkFile).should('not.exist');
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+    cy.window()
+      .its('commonService.session.style.widgets.node-color')
+      .should('equal', customNodeColor);
+
+    cy.loadFiles([{ name: linkFile, datatype: 'link' }]);
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+    cy.window()
+      .its('commonService.session.style.widgets.node-color')
+      .should('equal', customNodeColor);
+  });
+
+  it('preserves field-backed styling when files are updated without resetting settings', () => {
+    const customNodeColor = '#cc3366';
+    const shapeVariable = 'subtype';
+
+    cy.loadFiles([
+      { name: nodeFile, datatype: 'node' },
+      { name: linkFile, datatype: 'link' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+
+    cy.window().then((win) => {
+      const microbeTrace = win.commonService.visuals.microbeTrace;
+      microbeTrace.SelectedNodeColorVariable = customNodeColor;
+      microbeTrace.onNodeColorChanged(true);
+      microbeTrace.onNodeShapeByChanged(true, false, shapeVariable);
+    });
+    cy.window()
+      .its('commonService.session.style.widgets.node-color')
+      .should('equal', customNodeColor);
+    cy.window()
+      .its('commonService.session.style.widgets.node-symbol-variable')
+      .should('equal', shapeVariable);
+
+    cy.contains('#file-table .file-table-row', nodeFile)
+      .find('.flaticon-delete-1')
+      .click({ force: true });
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+    cy.window().then((win) => {
+      expect(win.commonService.session.data.nodeFields).not.to.include(shapeVariable);
+      expect(win.commonService.session.style.widgets['node-symbol-variable']).to.equal(shapeVariable);
+      expect(win.commonService.GlobalSettingsModel.SelectedNodeSymbolVariable).to.equal(shapeVariable);
+      expect(win.commonService.session.style.widgets['node-color']).to.equal(customNodeColor);
+    });
+
+    cy.loadFiles([{ name: compatibleNodeFile, datatype: 'node', field1: '_id', field2: 'seq' }]);
+    cy.get('#launch').should('contain.text', 'Update').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+    cy.window().then((win) => {
+      expect(win.commonService.session.data.nodeFields).to.include(shapeVariable);
+      expect(win.commonService.session.style.widgets['node-symbol-variable']).to.equal(shapeVariable);
+      expect(win.commonService.GlobalSettingsModel.SelectedNodeSymbolVariable).to.equal(shapeVariable);
+      expect(win.commonService.session.style.widgets['node-color']).to.equal(customNodeColor);
+    });
+  });
+
+  it('resets all settings when files are updated with reset settings', () => {
+    const customNodeColor = '#cc3366';
+    const shapeVariable = 'subtype';
+
+    cy.loadFiles([
+      { name: nodeFile, datatype: 'node' },
+      { name: linkFile, datatype: 'link' },
+    ]);
+
+    cy.get('#launch').click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+
+    cy.window().then((win) => {
+      const microbeTrace = win.commonService.visuals.microbeTrace;
+      microbeTrace.SelectedNodeColorVariable = customNodeColor;
+      microbeTrace.onNodeColorChanged(true);
+      microbeTrace.onNodeShapeByChanged(true, false, shapeVariable);
+      win.commonService.session.style.widgets['default-distance-metric'] = 'tn93';
+      win.commonService.session.style.widgets['link-threshold'] = 0.015;
+      win.commonService.session.style.widgets['default-view'] = 'Map';
+      win.commonService.GlobalSettingsModel.SelectedDistanceMetricVariable = 'tn93';
+      win.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable = 0.015;
+    });
+
+    cy.contains('#file-table .file-table-row', nodeFile)
+      .find('.flaticon-delete-1')
+      .click({ force: true });
+    cy.get('#launch-reset-settings', { timeout: 20000 })
+      .should('exist')
+      .click({ force: true });
+    cy.window({ timeout: 30000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('be.true');
+
+    cy.window().then((win) => {
+      const widgets = win.commonService.session.style.widgets;
+
+      expect(win.commonService.session.data.nodeFields).not.to.include(shapeVariable);
+      expect(widgets['node-color']).to.equal('#1f77b4');
+      expect(win.commonService.session.style.widgets['node-symbol-variable']).to.equal('None');
+      expect(widgets['default-distance-metric']).to.equal('snps');
+      expect(widgets['link-threshold']).to.equal(16);
+      expect(widgets['default-view']).to.equal('2D Network');
+      expect(win.commonService.GlobalSettingsModel.SelectedNodeSymbolVariable).to.equal('None');
+      expect(win.commonService.GlobalSettingsModel.SelectedDistanceMetricVariable).to.equal('snps');
+      expect(win.commonService.GlobalSettingsModel.SelectedLinkThresholdVariable).to.equal(16);
+      expect(win.commonService.session.style.nodeColorsTable).to.deep.equal({});
+      expect(win.commonService.session.style.nodeSymbolsTable).to.deep.equal({});
     });
   });
 });
