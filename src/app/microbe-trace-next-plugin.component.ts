@@ -18,6 +18,7 @@ import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
 import { CommonStoreService } from './contactTraceCommonServices/common-store.services';
 import { ExportService, ExportOptions } from './contactTraceCommonServices/export.service';
+import { sanitizeExportRows } from './contactTraceCommonServices/export-sanitization';
 import * as XLSX from 'xlsx';
 import { buildDate, commitHash } from "src/environments/version";
 import { EmbedHandoffService } from './embed/embed-handoff.service';
@@ -4247,14 +4248,14 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
 
                         if(clusterNode) {
 
-                        const blob = new Blob([Papa.unparse(cluster[0])], {type: 'text/csv;charset=utf-8'});
+                        const blob = new Blob([Papa.unparse(sanitizeExportRows(cluster[0]))], {type: 'text/csv;charset=utf-8'});
                         clusterFolder.file( "nodeList_cluster_" + cluster[0][0].cluster + ".csv", blob);
 
                         // Now get link list of cluster
                         const clusterLink = clusterLinkList.filter(LinkList => LinkList[0].cluster == currentCluster.id);
 
                         if(clusterLink) {
-                            const blob = new Blob([Papa.unparse(clusterLink[0])], {type: 'text/csv;charset=utf-8'});
+                            const blob = new Blob([Papa.unparse(sanitizeExportRows(clusterLink[0]))], {type: 'text/csv;charset=utf-8'});
                             clusterFolder.file("edgeList_cluster_" + cluster[0][0].cluster + ".csv", blob);
                         }
                         }
@@ -4264,16 +4265,16 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                     if(dyadNodeList.length > 0){
                         dyadFolder = zip.folder("dyads");
                         // Add all dyads in one shot
-                        const nodesBlob = new Blob([Papa.unparse(dyadNodeList)], {type: 'text/csv;charset=utf-8'});
+                        const nodesBlob = new Blob([Papa.unparse(sanitizeExportRows(dyadNodeList))], {type: 'text/csv;charset=utf-8'});
                         dyadFolder.file("nodeList_cluster.csv", nodesBlob);
-                        const edgesBlob = new Blob([Papa.unparse(dyadEdgeList)], {type: 'text/csv;charset=utf-8'});
+                        const edgesBlob = new Blob([Papa.unparse(sanitizeExportRows(dyadEdgeList))], {type: 'text/csv;charset=utf-8'});
                         dyadFolder.file("edgeList_cluster.csv", edgesBlob);
                       }
                 
                       if (singletonNodeList.length > 0) {
                         singletonFolder = zip.folder("singletons");
                         // Add all singletons in one shot
-                        const blob = new Blob([Papa.unparse(singletonNodeList)], {type: 'text/csv;charset=utf-8'});
+                        const blob = new Blob([Papa.unparse(sanitizeExportRows(singletonNodeList))], {type: 'text/csv;charset=utf-8'});
                         singletonFolder.file("nodeList_cluster.csv", blob);
                       }
                         
@@ -4375,7 +4376,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
               this.homepageTabs[0].componentRef.instance.removeAllFiles();
               this.commonService.clearData();
               this.resetKeyTablesForNewDataset();
-              const auspiceFile = { contents: out, name: this.getAuspiceName(auspiceUrl), extension: 'json'};
+              const auspiceFile = { contents: out, name: this.getAuspiceName(auspiceUrl), extension: 'json', format: 'auspice', datatype: 'auspice'};
               this.commonService.session.files.push(auspiceFile);
               this.homepageTabs[0].componentRef.instance.addToTable(auspiceFile);
             //   console.log(this.homepageTabs[0].componentRef);
@@ -4592,7 +4593,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 instance.loadSettings();
                 if (this.metric === 'snps'){
                     this.commonService.session.style.widgets['default-distance-metric'] = 'snps';
-                    this.commonService.session.style.widgets['link-threshold'] = parseInt(this.threshold);
+                    this.commonService.session.style.widgets['link-threshold'] = Number(this.threshold);
                     this.onLinkThresholdChanged();
                 }
             }
