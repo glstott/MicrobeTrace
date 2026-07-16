@@ -333,6 +333,8 @@ export class CommonService extends AppComponentBase implements OnInit {
             floorplanImageBounds: null,
             floorplanImageWidth: null,
             floorplanImageHeight: null,
+            floorplanBoundaryField: 'None',
+            floorplanBoundaries: [],
             tree: {},
             newickString: '',
             newickSource: '',
@@ -465,6 +467,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'map-field-state': 'None',
             'map-field-country': 'None',
             'map-user-geojson-show': false,
+            'map-floorplan-boundaries-show': true,
             'map-link-show': true,
             'map-link-tooltip-variable': 'None',
             'map-link-transparency': 0,
@@ -2423,6 +2426,11 @@ export class CommonService extends AppComponentBase implements OnInit {
             this.session.data['floorplanImageWidth'] = oldSession.data.floorplanImageWidth || null;
             this.session.data['floorplanImageHeight'] = oldSession.data.floorplanImageHeight || null;
         }
+
+        this.session.data['floorplanBoundaryField'] = oldSession.data.floorplanBoundaryField || 'None';
+        this.session.data['floorplanBoundaries'] = Array.isArray(oldSession.data.floorplanBoundaries)
+            ? oldSession.data.floorplanBoundaries
+            : [];
 
         // previous versions of MT had bug where nodeColorsTableHistory stored jQuery events instead of color string in session file, this section resolves that bug
         Object.keys(this.session.style.nodeColorsTableHistory).forEach(key => {
