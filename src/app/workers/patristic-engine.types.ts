@@ -103,6 +103,11 @@ export interface PatristicExportMatrixRequest {
   jobId: number;
 }
 
+export interface PatristicRootDistancesRequest {
+  type: 'GET_ROOT_DISTANCES';
+  jobId: number;
+}
+
 export interface PatristicCancelRequest {
   type: 'CANCEL';
   jobId: number;
@@ -113,6 +118,7 @@ export type PatristicWorkerRequest =
   | PatristicBuildEdgesRequest
   | PatristicBuildNearestNeighborRequest
   | PatristicExportMatrixRequest
+  | PatristicRootDistancesRequest
   | PatristicCancelRequest;
 
 // ─── Worker response messages ────────────────────────────────────────────────
@@ -162,6 +168,15 @@ export interface PatristicMatrixChunkResponse {
   done: boolean;
 }
 
+export interface PatristicRootDistancesResponse {
+  type: 'ROOT_DISTANCES';
+  jobId: number;
+  /** Leaf labels in the same order as distances. */
+  leafNames: string[];
+  /** Cumulative branch length from the Newick root to each leaf. */
+  distances: Float64Array;
+}
+
 export interface PatristicNearestNeighborBatchResponse {
   type: 'NN_EDGE_BATCH';
   jobId: number;
@@ -190,5 +205,6 @@ export type PatristicWorkerResponse =
   | PatristicProgressResponse
   | PatristicEdgeBatchResponse
   | PatristicMatrixChunkResponse
+  | PatristicRootDistancesResponse
   | PatristicNearestNeighborBatchResponse
   | PatristicErrorResponse;

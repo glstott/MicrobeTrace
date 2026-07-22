@@ -4582,7 +4582,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             ) {
                 instance.onLoadNewData();
             } else if (
-                viewName === 'Waterfall' &&
+                ['Waterfall', 'Evolutionary Rate'].includes(viewName) &&
                 instance.onFilterDataChange
             ) {
                 instance.onFilterDataChange();
@@ -4784,6 +4784,18 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 this.showSettings = true;
                 this.showExport = true;
                 this.showCenter = true;
+                this.showPinAllNodes = false;
+                this.showRefresh = false;
+                this.showButtonGroup = false;
+                this.showSorting = false;
+
+                break;
+            }
+            case "Evolutionary Rate": {
+
+                this.showSettings = true;
+                this.showExport = true;
+                this.showCenter = false;
                 this.showPinAllNodes = false;
                 this.showRefresh = false;
                 this.showButtonGroup = false;

@@ -79,7 +79,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         'Heatmap',
         'Bubble',
         'Sankey',
-        'Waterfall'
+        'Waterfall',
+        'Evolutionary Rate'
     ]);
 
     private readonly legacyViewNameMap: { [key: string]: string } = {
@@ -109,6 +110,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         'bubble': 'Bubble',
         'sankey': 'Sankey',
         'waterfall': 'Waterfall',
+        'evolutionary_rate': 'Evolutionary Rate',
+        'evolutionaryrate': 'Evolutionary Rate',
         'files': 'Files'
     };
 
@@ -396,6 +399,17 @@ export class CommonService extends AppComponentBase implements OnInit {
             'cluster-minimum-size': 1,
             'default-view': '2D Network', // 'Phylogenetic Tree' 'Alignment View'
             'default-distance-metric': 'snps',
+            'evolutionary-rate-date-field': 'None',
+            'evolutionary-rate-table-visible': 'Show',
+            'evolutionary-rate-node-label-variable': 'None',
+            'evolutionary-rate-node-label-size': 16,
+            'evolutionary-rate-node-label-orientation': 'Right',
+            'evolutionary-rate-node-tooltip-variable': ['_id'],
+            'evolutionary-rate-node-radius-variable': 'None',
+            'evolutionary-rate-node-radius': 20,
+            'evolutionary-rate-node-radius-min': 15,
+            'evolutionary-rate-node-radius-max': 85,
+            'evolutionary-rate-node-border-width': 2,
             'filtering-epsilon': -8,
             'flow-showNodes': 'selected',
             'gantt-date-list': '',
@@ -926,6 +940,50 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         const tree = this.session.data?.tree;
         return tree && typeof tree === 'object' && Object.keys(tree).length > 0;
+    }
+
+    /** True when distances came from an uploaded Newick/Auspice phylogeny. */
+    public hasPhylogeneticDistanceSource(): boolean {
+        return this.hasNewickBackedDistanceSource(this.session.data?.newickString);
+    }
+
+    /**
+     * Root-to-tip patristic distances keyed by the corresponding MicrobeTrace node ID.
+     * This deliberately uses the same cached Newick worker as the network distance path.
+     */
+    public async getPatristicRootDistanceMap(): Promise<Map<string, number>> {
+        const newickString = this.session.data?.newickString;
+        if (!this.hasNewickBackedDistanceSource(newickString)) {
+            return new Map<string, number>();
+        }
+
+        const result = await this.workerComputeService.getPatristicRootDistances(newickString);
+        const distances = new Map<string, number>();
+        result.leafNames.forEach((leafName, index) => {
+            const value = result.distances[index];
+            if (Number.isFinite(value)) {
+                distances.set(this.filterXSS(String(leafName)), value);
+            }
+        });
+        return distances;
+    }
+
+    /**
+     * Read the active genetic distance between two nodes from the canonical link matrix.
+     * Sequence metric changes rewrite `distance`, which is also what the network views use.
+     */
+    public getActiveNodePairDistance(sourceId: any, targetId: any): number | null {
+        const source = String(sourceId ?? '');
+        const target = String(targetId ?? '');
+        if (!source || !target) return null;
+        if (source === target) return 0;
+
+        const link = this.temp.matrix?.[source]?.[target]
+            ?? this.temp.matrix?.[target]?.[source];
+        if (!link || link.hasDistance === false) return null;
+
+        const value = Number(link.distance);
+        return Number.isFinite(value) ? value : null;
     }
 
     public setPatristicThresholdAnalysisEdges(

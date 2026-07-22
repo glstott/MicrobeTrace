@@ -10,6 +10,7 @@ import type {
   PatristicNearestNeighborBatchResponse,
   PatristicProgressResponse,
   PatristicErrorResponse,
+  PatristicRootDistancesResponse,
 } from '../workers/patristic-engine.types';
 
 interface ComputePatristicOptions {
@@ -875,6 +876,40 @@ export class WorkerComputeService {
         type: 'INIT_TREE',
         jobId,
         newickString,
+      } as PatristicWorkerRequest);
+    });
+  }
+
+  /**
+   * Return cumulative root-to-leaf branch lengths for the active Newick tree.
+   * The same cached worker tree used for pairwise patristic links is reused.
+   */
+  public async getPatristicRootDistances(newickString: string): Promise<PatristicRootDistancesResponse> {
+    if (newickString !== this.patristicNewickString || this.patristicLeafNames.length === 0) {
+      await this.initPatristicTree(newickString);
+    }
+
+    return new Promise((resolve, reject) => {
+      const worker = this.computer.getPatristicWorker();
+      const jobId = ++this.patristicJobId;
+
+      const handler = (event: MessageEvent<PatristicWorkerResponse>) => {
+        const msg = event.data;
+        if (msg.jobId !== jobId) return;
+
+        if (msg.type === 'ROOT_DISTANCES') {
+          worker.removeEventListener('message', handler);
+          resolve(msg);
+        } else if (msg.type === 'ERROR') {
+          worker.removeEventListener('message', handler);
+          reject(new Error(msg.message));
+        }
+      };
+
+      worker.addEventListener('message', handler);
+      worker.postMessage({
+        type: 'GET_ROOT_DISTANCES',
+        jobId,
       } as PatristicWorkerRequest);
     });
   }

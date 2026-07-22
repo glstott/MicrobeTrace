@@ -54,7 +54,8 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
     'Phylogenetic Tree',
     'Alignment View',
     'Heatmap',
-    'Waterfall'
+    'Waterfall',
+    'Evolutionary Rate'
   ];
 
   AlignTypes: any = [

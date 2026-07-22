@@ -880,6 +880,28 @@ addEventListener('message', ({ data }: { data: PatristicWorkerRequest }) => {
         break;
       }
 
+      case 'GET_ROOT_DISTANCES': {
+        const { jobId } = data;
+
+        if (!currentTree) {
+          respond({ type: 'ERROR', jobId, message: 'No tree initialized. Call INIT_TREE first.' });
+          return;
+        }
+
+        const distances = new Float64Array(currentTree.leafCount);
+        for (let leafIndex = 0; leafIndex < currentTree.leafCount; leafIndex++) {
+          distances[leafIndex] = currentTree.rootDepth[currentTree.leafNodeIndex[leafIndex]];
+        }
+
+        postMessage({
+          type: 'ROOT_DISTANCES',
+          jobId,
+          leafNames: [...currentTree.leafNames],
+          distances,
+        }, [distances.buffer] as any);
+        break;
+      }
+
       case 'CANCEL': {
         cancelledJobs.add(data.jobId);
         break;
