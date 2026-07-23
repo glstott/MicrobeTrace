@@ -8,6 +8,7 @@ export class InlineWorker {
     private static sharedWorkers = new Map<ComputeWorkerTask, Worker>();
 
     private readonly worker: Worker;
+    private readonly ownsWorker: boolean;
     private readonly jobId: number;
     private onMessage = new Subject<MessageEvent>();
     private onError = new Subject<ErrorEvent>();
@@ -16,14 +17,17 @@ export class InlineWorker {
         error: new Map<EventListenerOrEventListenerObject, EventListener>()
     };
 
-    constructor(private readonly task: ComputeWorkerTask) {
+    constructor(private readonly task: ComputeWorkerTask, shared = true) {
         const WORKER_ENABLED = !!(Worker);
 
         if (!WORKER_ENABLED) {
             throw new Error('WebWorker is not enabled');
         }
 
-        this.worker = InlineWorker.getWorker(task);
+        this.ownsWorker = !shared;
+        this.worker = shared
+            ? InlineWorker.getWorker(task)
+            : InlineWorker.createWorker(task);
         this.jobId = InlineWorker.nextJobId++;
 
         this.worker.addEventListener('message', this.handleMessage);
@@ -33,13 +37,17 @@ export class InlineWorker {
     private static getWorker(task: ComputeWorkerTask): Worker {
         let worker = InlineWorker.sharedWorkers.get(task);
         if (!worker) {
-            worker = new Worker(
-                new URL('../workers/compute.worker', import.meta.url),
-                { type: 'module', name: `mt-${task}` }
-            );
+            worker = InlineWorker.createWorker(task);
             InlineWorker.sharedWorkers.set(task, worker);
         }
         return worker;
+    }
+
+    private static createWorker(task: ComputeWorkerTask): Worker {
+        return new Worker(
+            new URL('../workers/compute.worker', import.meta.url),
+            { type: 'module', name: `mt-${task}` }
+        );
     }
 
     private handleMessage = (data: MessageEvent) => {
@@ -84,13 +92,13 @@ export class InlineWorker {
         this.listenerWrappers[type].delete(listener);
     }
 
-    postMessage(data) {
+    postMessage(data, transfer: Transferable[] = []) {
         const message: ComputeWorkerRequest = {
             jobId: this.jobId,
             task: this.task,
             payload: data
         };
-        this.worker.postMessage(message);
+        this.worker.postMessage(message, transfer);
     }
 
     onmessage(): Observable<MessageEvent> {
@@ -112,6 +120,9 @@ export class InlineWorker {
         this.listenerWrappers.error.clear();
         this.worker.removeEventListener('message', this.handleMessage);
         this.worker.removeEventListener('error', this.handleError);
+        if (this.ownsWorker) {
+            this.worker.terminate();
+        }
         this.onMessage.complete();
         this.onError.complete();
     }

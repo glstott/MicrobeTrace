@@ -4,7 +4,19 @@ import * as bioseq from 'bioseq';
 import * as patristic from 'patristic';
 import * as tn93 from 'tn93';
 
-import type { ComputeWorkerRequest } from './compute-worker.types';
+import type {
+  ComputeWorkerRequest,
+  Tn93LinkComputationPhase,
+} from './compute-worker.types';
+import {
+  decideTn93ThresholdFilter,
+  scanTn93DefiniteMismatchLowerBound,
+} from './tn93-threshold-filter';
+import {
+  type PackedTn93Sequences,
+  unpackTn93Sequences,
+} from './tn93-worker-payload';
+import { tn93DistanceOnInts } from './tn93-distance';
 
 function postBufferResponse(
   field: string,
@@ -126,6 +138,7 @@ function handleConsensus(payload: any, jobId: number): void {
     ? data.consensus
     : computeConsensusString(subset);
   const dists = computeConsensusDifferences(consensus, subset);
+
   const workerFinishedAt = Date.now();
   postBufferResponse('dists', dists.buffer, workerFinishedAt, jobId, {
     computeDurationMs: workerFinishedAt - computeStart,
@@ -165,13 +178,37 @@ function snps(s1: Uint8Array, s2: Uint8Array): number {
   return sum;
 }
 
+function tn93PairMode(
+  strategy: string,
+  ambiguityThreshold: number,
+  source: any,
+  target: any,
+): string {
+  return strategy === 'HIVTRACE-G'
+    ? (
+      source._ambiguity < ambiguityThreshold
+      && target._ambiguity < ambiguityThreshold
+        ? 'RESOLVE'
+        : 'AVERAGE'
+    )
+    : strategy;
+}
+
+const TN93_FOREGROUND_RESULT_CHUNK_SIZE = 4096;
+
 function handleLinks(payload: any, jobId: number): void {
   const computeStart = Date.now();
-  const subset = payload.nodes;
+  const subset = payload.packedSequences
+    ? unpackTn93Sequences(payload.packedSequences as PackedTn93Sequences)
+    : payload.nodes;
   const n = subset.length;
   const threshold = parseFloat(payload.threshold);
-  const strategy = payload.strategy.toUpperCase();
-  const metric = payload.metric;
+  const strategy = String(payload.strategy || 'AVERAGE').toUpperCase();
+  const metric = String(payload.metric || '').toLowerCase();
+  const requestedPhase = String(payload.phase || 'all') as Tn93LinkComputationPhase;
+  let phase: Tn93LinkComputationPhase = metric === 'tn93' ? requestedPhase : 'all';
+  const heuristicThreshold = Number(payload.heuristicThreshold);
+  const pairCount = (n * (n - 1)) / 2;
   let output: Uint16Array | Float32Array;
   let t = 0;
 
@@ -183,32 +220,157 @@ function handleLinks(payload: any, jobId: number): void {
         output[t++] = snps(source._seqInt, subset[j]._seqInt);
       }
     }
-  } else {
-    output = new Float32Array((n * n - n) / 2);
-    if (strategy !== 'HIVTRACE-G') {
-      for (let i = 0; i < n; i++) {
-        const source = subset[i]._seqInt;
-        for (let j = 0; j < i; j++) {
-          output[t++] = tn93.onInts(source, subset[j]._seqInt, strategy);
-        }
+  } else if (phase === 'all') {
+    output = new Float32Array(pairCount);
+    for (let i = 0; i < n; i++) {
+      const source = subset[i];
+      const sourceSeq = source._seqInt;
+      for (let j = 0; j < i; j++) {
+        const target = subset[j];
+        const mode = tn93PairMode(strategy, threshold, source, target);
+        output[t++] = tn93DistanceOnInts(sourceSeq, target._seqInt, mode);
       }
-    } else {
+    }
+  } else {
+    const thresholdFilterDecision = phase === 'foreground'
+      ? decideTn93ThresholdFilter(
+        subset.map(node => node._seqInt as Uint8Array),
+        heuristicThreshold,
+      )
+      : null;
+    if (phase === 'foreground' && !thresholdFilterDecision?.useThresholdFilter) {
+      phase = 'all';
+      output = new Float32Array(pairCount);
       for (let i = 0; i < n; i++) {
         const source = subset[i];
-        const sourceInThreshold = source._ambiguity < threshold;
         const sourceSeq = source._seqInt;
         for (let j = 0; j < i; j++) {
           const target = subset[j];
-          const mode = sourceInThreshold && target._ambiguity < threshold ? 'RESOLVE' : 'AVERAGE';
-          output[t++] = tn93.onInts(sourceSeq, target._seqInt, mode);
+          const mode = tn93PairMode(strategy, threshold, source, target);
+          output[t++] = tn93DistanceOnInts(sourceSeq, target._seqInt, mode);
+        }
+      }
+
+      const workerFinishedAt = Date.now();
+      postBufferResponse('links', output.buffer, workerFinishedAt, jobId, {
+        computeDurationMs: workerFinishedAt - computeStart,
+        phase,
+        selectedPairCount: pairCount,
+        deferredPairCount: 0,
+        pairCount,
+        adaptiveFallback: true,
+        thresholdFilterDecision,
+      });
+      return;
+    }
+
+    const useChunkedOutput = phase === 'foreground';
+    const excludedPairIndices = phase === 'background' && payload.excludedPairIndices
+      ? new Uint32Array(payload.excludedPairIndices)
+      : null;
+    let excludedPairCursor = 0;
+    const distanceChunks: Float32Array[] = [];
+    const pairIndexChunks: Uint32Array[] = [];
+    let distanceChunk = useChunkedOutput
+      ? new Float32Array(TN93_FOREGROUND_RESULT_CHUNK_SIZE)
+      : new Float32Array(pairCount);
+    let pairIndexChunk = useChunkedOutput
+      ? new Uint32Array(TN93_FOREGROUND_RESULT_CHUNK_SIZE)
+      : new Uint32Array(pairCount);
+    let chunkIndex = 0;
+    let pairIndex = 0;
+    let inspectedSites = 0;
+    for (let i = 0; i < n; i++) {
+      const source = subset[i];
+      const sourceSeq = source._seqInt;
+      for (let j = 0; j < i; j++, pairIndex++) {
+        const target = subset[j];
+        let selected: boolean;
+        if (excludedPairIndices) {
+          while (
+            excludedPairCursor < excludedPairIndices.length
+            && excludedPairIndices[excludedPairCursor] < pairIndex
+          ) {
+            excludedPairCursor++;
+          }
+          selected = (
+            excludedPairCursor >= excludedPairIndices.length
+            || excludedPairIndices[excludedPairCursor] !== pairIndex
+          );
+        } else {
+          const scan = scanTn93DefiniteMismatchLowerBound(
+            sourceSeq,
+            target._seqInt,
+            heuristicThreshold,
+          );
+          inspectedSites += scan.inspectedSites;
+          selected = phase === 'foreground'
+            ? !scan.definitelyAboveThreshold
+            : scan.definitelyAboveThreshold;
+        }
+        if (!selected) {
+          continue;
+        }
+
+        const mode = tn93PairMode(strategy, threshold, source, target);
+        pairIndexChunk[chunkIndex] = pairIndex;
+        distanceChunk[chunkIndex] = tn93DistanceOnInts(sourceSeq, target._seqInt, mode);
+        chunkIndex++;
+        t++;
+
+        if (useChunkedOutput && chunkIndex === TN93_FOREGROUND_RESULT_CHUNK_SIZE) {
+          pairIndexChunks.push(pairIndexChunk);
+          distanceChunks.push(distanceChunk);
+          pairIndexChunk = new Uint32Array(TN93_FOREGROUND_RESULT_CHUNK_SIZE);
+          distanceChunk = new Float32Array(TN93_FOREGROUND_RESULT_CHUNK_SIZE);
+          chunkIndex = 0;
         }
       }
     }
+
+    let pairIndices: Uint32Array;
+    if (useChunkedOutput) {
+      output = new Float32Array(t);
+      pairIndices = new Uint32Array(t);
+      let outputOffset = 0;
+      for (let chunk = 0; chunk < distanceChunks.length; chunk++) {
+        output.set(distanceChunks[chunk], outputOffset);
+        pairIndices.set(pairIndexChunks[chunk], outputOffset);
+        outputOffset += distanceChunks[chunk].length;
+      }
+      if (chunkIndex > 0) {
+        output.set(distanceChunk.subarray(0, chunkIndex), outputOffset);
+        pairIndices.set(pairIndexChunk.subarray(0, chunkIndex), outputOffset);
+      }
+    } else {
+      output = distanceChunk.slice(0, t);
+      pairIndices = pairIndexChunk.slice(0, t);
+    }
+    const workerFinishedAt = Date.now();
+    postMessage({
+      links: output.buffer,
+      pairIndices: pairIndices.buffer,
+      phase,
+      selectedPairCount: t,
+      deferredPairCount: phase === 'foreground' ? pairCount - t : t,
+      pairCount,
+      start: workerFinishedAt,
+      data: output.buffer,
+      jobId,
+      computeDurationMs: workerFinishedAt - computeStart,
+      inspectedSites,
+      thresholdFilterDecision,
+    }, [output.buffer, pairIndices.buffer]);
+    return;
   }
 
   const workerFinishedAt = Date.now();
   postBufferResponse('links', output.buffer, workerFinishedAt, jobId, {
     computeDurationMs: workerFinishedAt - computeStart,
+    phase,
+    selectedPairCount: pairCount,
+    deferredPairCount: 0,
+    pairCount,
   });
 }
 
@@ -534,6 +696,7 @@ addEventListener('message', ({ data }) => {
       handleAmbiguityCounts(request.payload, request.jobId);
       break;
     case 'links':
+    case 'linksBackground':
       handleLinks(request.payload, request.jobId);
       break;
     case 'tree':

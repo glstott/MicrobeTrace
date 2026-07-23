@@ -1964,24 +1964,24 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       sequenceLength
     });
 
-    const consensus = await this.commonService.computeConsensus();
+    const consensus = await this.commonService.computeConsensus(subset);
     if (!isCurrentLoad()) {
       return;
     }
     (this.commonService.session.data as any).consensus = consensus;
-    await this.commonService.computeConsensusDistances();
-    if (!isCurrentLoad()) {
-      return;
-    }
-    subset.sort((a, b) => a['_diff'] - b['_diff']);
     if (this.commonService.session.style.widgets['ambiguity-resolution-strategy']) {
       await this.commonService.computeAmbiguityCounts();
       if (!isCurrentLoad()) {
         return;
       }
     }
+    await this.commonService.computeConsensusDistances();
+    if (!isCurrentLoad()) {
+      return;
+    }
+    subset.sort((a, b) => a['_diff'] - b['_diff']);
     this.showMessage('Computing Links based on Genomic Proximity...');
-    const k = await this.commonService.computeLinks(subset);
+    const linkComputation = await this.commonService.computeLinks(subset);
     if (!isCurrentLoad()) {
       return;
     }
@@ -1990,10 +1990,14 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
       nodes: n,
       sequences: subset.length,
       sequenceLength,
-      generatedLinks: k
+      generatedLinks: linkComputation.initialLinkCount,
+      computedPairCount: linkComputation.computedPairCount,
+      deferredPairCount: linkComputation.deferredPairCount
     });
-    this.showMessage(` - Found ${k} New Links from Genomic Proximity`);
-    this.commonService.runHamsters();
+    this.showMessage(` - Found ${linkComputation.initialLinkCount} New Links from Genomic Proximity`);
+    await this.commonService.runHamsters({
+      skipTree: linkComputation.deferredPairCount > 0
+    });
 
 
     this.showMessage("Finishing...");

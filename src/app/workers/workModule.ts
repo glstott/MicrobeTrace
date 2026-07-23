@@ -37,6 +37,10 @@ export class WorkerModule implements OnInit {
     return new InlineWorker('links');
   }
 
+  public getBackgroundLinksWorker(): InlineWorker {
+    return new InlineWorker('linksBackground', false);
+  }
+
   public getTreeWorker(): InlineWorker {
     return new InlineWorker('tree');
   }
