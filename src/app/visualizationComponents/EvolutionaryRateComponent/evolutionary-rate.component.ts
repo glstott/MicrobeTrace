@@ -358,7 +358,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
     if (filetype !== 'svg') {
       const exportHost = this.plotExportHost?.nativeElement || this.plotHost!.nativeElement;
-      this.exportService.requestExport([exportHost], false, false, false);
+      this.exportService.requestExport([exportHost], true, false, true);
       return;
     }
 
@@ -367,7 +367,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     exportedSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     this.appendStatisticsTableToSvg(exportedSvg);
     const serialized = `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(exportedSvg)}`;
-    this.exportService.requestSVGExport([], serialized, false, false, false);
+    this.exportService.requestSVGExport([], serialized, true, false, true);
   }
 
   onRecallSession(): void {

@@ -279,7 +279,7 @@ describe('EvolutionaryRateComponent', () => {
         scale: 1.5,
         quality: 0.8,
       });
-      expect(exportService.requestExport).toHaveBeenCalledWith([exportHost], false, false, false);
+      expect(exportService.requestExport).toHaveBeenCalledWith([exportHost], true, false, true);
 
       component.plotExportFileType = 'svg';
       component.downloadRegressionPlot();
@@ -302,7 +302,7 @@ describe('EvolutionaryRateComponent', () => {
     expect(svgExport[1]).toContain('data-testid="evolutionary-rate-plot"');
     expect(svgExport[1]).toContain('data-testid="evolutionary-rate-export-statistics"');
     expect(svgExport[1]).toContain('Residual Mean Squared');
-    expect(svgExport.slice(2)).toEqual([false, false, false]);
+    expect(svgExport.slice(2)).toEqual([true, false, true]);
 
     component.selectedTableVisibility = 'Hide';
     component.downloadRegressionPlot();
