@@ -15,6 +15,7 @@ import { ComponentContainer } from 'golden-layout';
 import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { GraphData } from './data';
 import { getCustomNodeShapeData, getCustomNodeShapeVectorData, isCustomNodeShape as isCustomNodeIconShape, resolveNodeShapeCytoscapeShape as resolveCustomNodeIconCytoscapeShape, resolveNodeShapeForNode, resolveNodeShapeKey } from '@app/contactTraceCommonServices/node-shapes';
+import { syncSelectedNodeIds } from '@app/contactTraceCommonServices/node-selection';
 import cytoscape, { Core, Style } from 'cytoscape';
 import svg from 'cytoscape-svg';
 import { Subject, Subscription, takeUntil } from 'rxjs';
@@ -958,25 +959,11 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         const syncCySelectionToService = _.debounce(() => {
             const selectedNodes = this.cy.nodes(':selected');
             const selectedIds = new Set(selectedNodes.map(node => node.id()));
-
-            let selectionChanged = false;
-            // Sync with the main nodes array
-            this.commonService.session.data.nodes.forEach(n => {
-                const shouldBeSelected = selectedIds.has(n._id || n.id);
-                if (n.selected !== shouldBeSelected) {
-                    n.selected = shouldBeSelected;
-                    selectionChanged = true;
-                }
-            });
-
-            // Sync with the filtered nodes array
-            this.commonService.session.data.nodeFilteredValues.forEach(n => {
-                const shouldBeSelected = selectedIds.has(n._id || n.id);
-                if (n.selected !== shouldBeSelected) {
-                    n.selected = shouldBeSelected;
-                    selectionChanged = true;
-                }
-            });
+            const selectionChanged = syncSelectedNodeIds(
+                this.commonService.session.data.nodes,
+                this.commonService.session.data.nodeFilteredValues,
+                selectedIds,
+            );
 
             // If the selection state was changed, notify other components.
             if (selectionChanged) {

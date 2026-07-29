@@ -85,6 +85,9 @@
 
     @if (selectedDateField !== 'None' && !isLoading) {
       <div class="evolutionary-rate-counts" data-testid="evolutionary-rate-counts">
+        @if (selectionActive) {
+          Selected subset: {{ selectedNodeCount }} nodes &middot;
+        }
         {{ includedCount }} included &middot; {{ excludedCount }} excluded
       </div>
     }
@@ -473,11 +476,11 @@
       [contentStyle]="{'max-height': '60vh', 'overflow': 'auto'}">
       @if (excludedDataPoints.length === 0) {
         <span class="text-surface-500 dark:text-surface-400 block mb-8">
-          All currently visible nodes are included in the Evolutionary Rate plot.
+          All {{ selectionActive ? 'selected' : 'currently visible' }} nodes are included in the Evolutionary Rate analysis.
         </span>
       } @else {
         <p class="text-surface-500 dark:text-surface-400">
-          The following currently visible nodes were omitted from the Evolutionary Rate plot:
+          The following {{ selectionActive ? 'selected' : 'currently visible' }} nodes were omitted from the Evolutionary Rate analysis:
         </p>
         <table class="table table-sm evolutionary-rate-exclusions-table">
           <thead>

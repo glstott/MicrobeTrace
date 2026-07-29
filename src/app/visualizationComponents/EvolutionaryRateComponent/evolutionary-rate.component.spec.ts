@@ -17,6 +17,8 @@ describe('EvolutionaryRateComponent', () => {
       'background-color': '#ffffff',
       'background-color-contrast': '#000000',
       'selected-color': '#ff8300',
+      'selected-node-stroke-color': '#ff8300',
+      'selected-node-stroke-width': '4px',
       'node-color': '#1f77b4',
       'node-symbol': 'ellipse',
       'node-symbol-variable': 'None',
@@ -39,6 +41,7 @@ describe('EvolutionaryRateComponent', () => {
         data: {
           nodeFields: options.nodeFields || ['_id', 'collectionDate'],
           nodes,
+          nodeFilteredValues: nodes.map(node => ({ ...node })),
         },
         style: {
           widgets,
@@ -171,6 +174,91 @@ describe('EvolutionaryRateComponent', () => {
     const plotWidth = Number(host.querySelector('clipPath rect')?.getAttribute('width'));
     expect(Number(regressionLine.getAttribute('x1'))).toBeCloseTo(0, 10);
     expect(Number(regressionLine.getAttribute('x2'))).toBeCloseTo(plotWidth, 10);
+  });
+
+  it('recalculates statistics from selected nodes while retaining and highlighting all plotted points', async () => {
+    const nodes = [
+      { _id: 'a', collectionDate: '2020-01-01', selected: false },
+      { _id: 'b', collectionDate: '2021-01-01', selected: true },
+      { _id: 'c', collectionDate: '2022-01-01', selected: true },
+    ];
+    const { component, host } = createComponent({
+      nodes,
+      pairDistances: {
+        'a|b': 2,
+        'a|c': 6,
+      },
+      widgets: { 'evolutionary-rate-date-field': 'collectionDate' },
+    });
+    component.loadSettings();
+
+    await (component as any).refreshPlot();
+
+    expect(component.selectionActive).toBeTrue();
+    expect(component.selectedNodeCount).toBe(2);
+    expect(component.analysis.points.map(point => point.id)).toEqual(['b', 'c']);
+    expect(component.analysis.slope).toBeCloseTo(4, 10);
+    expect(component.includedCount).toBe(2);
+    expect(component.excludedCount).toBe(0);
+
+    const renderedPoints = Array.from(
+      host.querySelectorAll('[data-testid="evolutionary-rate-point"]')
+    );
+    expect(renderedPoints.length).toBe(3);
+    expect(
+      renderedPoints
+        .filter(point => point.getAttribute('data-selected') === 'true')
+        .map(point => point.getAttribute('data-node-id'))
+    ).toEqual(['b', 'c']);
+    const selectedMarkerUri = renderedPoints[1].getAttribute('href') || '';
+    expect(decodeURIComponent(selectedMarkerUri)).toContain('stroke="#ff8300"');
+    expect(decodeURIComponent(selectedMarkerUri)).toContain('stroke-width="100"');
+
+    nodes.forEach(node => node.selected = false);
+    await (component as any).refreshPlot();
+
+    expect(component.selectionActive).toBeFalse();
+    expect(component.analysis.points.map(point => point.id)).toEqual(['a', 'b', 'c']);
+    expect(component.analysis.slope).toBeCloseTo(3, 10);
+    expect(
+      Array.from(host.querySelectorAll('[data-selected="true"]')).length
+    ).toBe(0);
+  });
+
+  it('selects plotted nodes with 2D-style single and additive interactions', async () => {
+    const nodes = [
+      { _id: 'a', collectionDate: '2020-01-01', selected: false },
+      { _id: 'b', collectionDate: '2021-01-01', selected: false },
+      { _id: 'c', collectionDate: '2022-01-01', selected: false },
+    ];
+    const { component, commonService, host } = createComponent({
+      nodes,
+      pairDistances: {
+        'a|b': 2,
+        'a|c': 6,
+      },
+      widgets: { 'evolutionary-rate-date-field': 'collectionDate' },
+    });
+    component.loadSettings();
+    await (component as any).refreshPlot();
+
+    const selectedEvents: string[] = [];
+    $(document).on('node-selected.evolutionary-rate-test', () => selectedEvents.push('selected'));
+    try {
+      const markers = Array.from(
+        host.querySelectorAll('[data-testid="evolutionary-rate-point"]')
+      ) as SVGImageElement[];
+      markers[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(nodes.map(node => node.selected)).toEqual([false, true, false]);
+      expect(commonService.session.data.nodeFilteredValues.map(node => node.selected))
+        .toEqual([false, true, false]);
+
+      markers[2].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+      expect(nodes.map(node => node.selected)).toEqual([false, true, true]);
+      expect(selectedEvents.length).toBe(2);
+    } finally {
+      $(document).off('node-selected.evolutionary-rate-test');
+    }
   });
 
   it('does not fall back to unrelated numeric node fields when pairwise distances are unavailable', async () => {

@@ -18,6 +18,10 @@ import {
   getMapNodeShapeDataUri,
   resolveNodeShapeForNode,
 } from '@app/contactTraceCommonServices/node-shapes';
+import {
+  applyNodeClickSelection,
+  syncSelectedNodeIds,
+} from '@app/contactTraceCommonServices/node-selection';
 import { BaseComponentDirective } from '@app/base-component.directive';
 import { DialogSettings } from '@app/helperClasses/dialogSettings';
 import { MicobeTraceNextPluginEvents } from '@app/helperClasses/interfaces';
@@ -113,14 +117,23 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   showExcludedDataPointsDialog = false;
   emptyStateMessage = '';
   regressionMessage = '';
+  selectionActive = false;
+  selectedNodeCount = 0;
   analysis: EvolutionaryRateAnalysis = calculateEvolutionaryRate([], 0);
 
   private readonly destroy$ = new Subject<void>();
+  private readonly nodeSelectionEvent = 'node-selected.evolutionary-rate';
+  private readonly nodeSelectionHandler = () => {
+    if (this.viewActive) {
+      void this.refreshPlot();
+    }
+  };
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private widgets: any;
   private viewInitialized = false;
   private refreshGeneration = 0;
   private distanceSourceError = '';
+  private plotAnalysis: EvolutionaryRateAnalysis = calculateEvolutionaryRate([], 0);
 
   constructor(
     @Inject(BaseComponentDirective.GoldenLayoutContainerInjectionToken) private container: ComponentContainer,
@@ -146,6 +159,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     this.widgets = this.commonService.session.style.widgets;
     this.buildFieldOptions();
     this.loadSettings();
+    $(document).on(this.nodeSelectionEvent, this.nodeSelectionHandler);
 
     this.container.on('resize', () => this.scheduleRender());
     this.container.on('hide', () => {
@@ -194,6 +208,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     if (this.resizeTimer) {
       clearTimeout(this.resizeTimer);
     }
+    $(document).off(this.nodeSelectionEvent, this.nodeSelectionHandler);
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -473,6 +488,17 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       !this.commonService.session.network?.isFullyLoaded
     );
     const visibleNodes = this.isLoading ? [] : this.commonService.getVisibleNodes();
+    const selectedVisibleNodes = visibleNodes.filter((node: any) => Boolean(node?.selected));
+    this.selectionActive = selectedVisibleNodes.length > 0;
+    this.selectedNodeCount = selectedVisibleNodes.length;
+    const analysisNodes = this.selectionActive ? selectedVisibleNodes : visibleNodes;
+    const analysisNodeSet = new Set<any>(analysisNodes);
+    const analysisNodeIds = new Set<string>();
+    visibleNodes.forEach((node: any, visibleIndex: number) => {
+      if (analysisNodeSet.has(node)) {
+        analysisNodeIds.add(String(node?._id ?? node?.id ?? node?.index ?? visibleIndex));
+      }
+    });
     const points: EvolutionaryRatePoint[] = [];
     const excludedDataPoints: EvolutionaryRateExcludedDataPoint[] = [];
     const datedNodes: Array<{ node: any; id: string; date: Date; visibleIndex: number }> = [];
@@ -566,8 +592,14 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       });
     }
 
-    this.excludedDataPoints = excludedDataPoints;
-    this.analysis = calculateEvolutionaryRate(points, visibleNodes.length);
+    const analysisPoints = this.selectionActive
+      ? points.filter(point => analysisNodeSet.has(point.node))
+      : points;
+    this.excludedDataPoints = this.selectionActive
+      ? excludedDataPoints.filter(point => analysisNodeIds.has(point.id))
+      : excludedDataPoints;
+    this.plotAnalysis = calculateEvolutionaryRate(points, visibleNodes.length);
+    this.analysis = calculateEvolutionaryRate(analysisPoints, analysisNodes.length);
     this.includedCount = this.analysis.includedCount;
     this.excludedCount = this.analysis.excludedCount;
     this.updateMessages(visibleNodes.length);
@@ -598,10 +630,14 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       this.emptyStateMessage = 'No nodes are currently visible.';
       return;
     }
-    if (this.analysis.points.length === 0) {
+    if (this.plotAnalysis.points.length === 0) {
       this.emptyStateMessage = this.distanceSourceKind === 'patristic'
         ? 'No visible tree tips contain both a valid collection date and a patristic root-to-tip distance.'
         : 'No visible nodes contain both a valid collection date and the active genetic distance.';
+      return;
+    }
+    if (this.analysis.points.length === 0) {
+      this.emptyStateMessage = 'No selected nodes contain both a valid collection date and the active distance.';
       return;
     }
     if (this.analysis.slope === null) {
@@ -628,7 +664,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     host.selectAll('svg').remove();
     this.hideTooltip();
 
-    if (this.analysis.points.length === 0) {
+    if (this.plotAnalysis.points.length === 0) {
       return;
     }
 
@@ -637,8 +673,15 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     const margin = { top: 32, right: 40, bottom: 72, left: 88 };
     const innerWidth = Math.max(1, width - margin.left - margin.right);
     const innerHeight = Math.max(1, height - margin.top - margin.bottom);
-    const displayAnalysis = scaleEvolutionaryRateForDisplay(this.analysis, this.usesPercentageDistanceDisplay());
-    const points = displayAnalysis.points;
+    const displayPlotAnalysis = scaleEvolutionaryRateForDisplay(
+      this.plotAnalysis,
+      this.usesPercentageDistanceDisplay()
+    );
+    const displayAnalysis = scaleEvolutionaryRateForDisplay(
+      this.analysis,
+      this.usesPercentageDistanceDisplay()
+    );
+    const points = displayPlotAnalysis.points;
     const dateExtent = d3.extent(points, point => point.date.getTime()) as [number, number];
     const distanceExtent = d3.extent(points, point => point.distance) as [number, number];
     const day = 24 * 60 * 60 * 1000;
@@ -724,16 +767,38 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       .attr('class', 'evolutionary-rate-point')
       .attr('data-testid', 'evolutionary-rate-point')
       .attr('data-node-id', point => point.id)
-      .attr('href', point => this.getNodeMarkerDataUri(point.node))
+      .attr('data-selected', point => point.node?.selected ? 'true' : 'false')
+      .attr('aria-label', point => `${point.id}${point.node?.selected ? ', selected' : ''}`)
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .attr('href', point => this.getNodeMarkerDataUri(
+        point.node,
+        markerSizes.get(point.id) || this.selectedNodeRadius,
+      ))
       .attr('width', point => markerSizes.get(point.id) || this.selectedNodeRadius)
       .attr('height', point => markerSizes.get(point.id) || this.selectedNodeRadius)
       .attr('x', point => xScale(point.date) - ((markerSizes.get(point.id) || this.selectedNodeRadius) / 2))
       .attr('y', point => yScale(point.distance) - ((markerSizes.get(point.id) || this.selectedNodeRadius) / 2))
-      .style('cursor', 'default');
+      .style('cursor', 'pointer');
     markerSelection
+      .on('click', (point: EvolutionaryRatePoint) => {
+        const event = (d3 as any).event as MouseEvent | undefined;
+        event?.stopPropagation();
+        this.selectNode(point.node, Boolean(event?.ctrlKey || event?.metaKey));
+      })
+      .on('keydown', (point: EvolutionaryRatePoint) => {
+        const event = (d3 as any).event as KeyboardEvent | undefined;
+        if (event?.key !== 'Enter' && event?.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.selectNode(point.node, Boolean(event.ctrlKey || event.metaKey));
+      })
       .on('mouseenter', (point: EvolutionaryRatePoint) => this.showTooltip(point))
       .on('mousemove', () => this.positionTooltip())
       .on('mouseleave', () => this.hideTooltip());
+    svg.on('click', () => this.clearNodeSelection());
 
     // Append the regression after the markers so it remains visible across dense point clouds.
     // Pointer events stay disabled so the overlaid line does not interfere with node tooltips.
@@ -803,7 +868,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     return sizes;
   }
 
-  private getNodeMarkerDataUri(node: any): string {
+  private getNodeMarkerDataUri(node: any, markerSize: number): string {
     const fillStyle = this.commonService.getNodeFillStyle(node);
     const shapeKey = resolveNodeShapeForNode(
       node,
@@ -812,15 +877,60 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       this.commonService.temp.style.nodeSymbolMap,
     );
     const strokeColor = node?.selected
-      ? this.widgets['selected-color'] || '#ff8300'
+      ? this.widgets['selected-node-stroke-color'] || this.widgets['selected-color'] || '#ff8300'
       : this.widgets['background-color-contrast'] || '#000000';
+    const displayStrokeWidth = node?.selected
+      ? this.toFiniteNumber(
+        String(this.widgets['selected-node-stroke-width'] || '3').replace('px', ''),
+        3,
+      )
+      : this.selectedNodeBorderWidth;
     return getMapNodeShapeDataUri(
       shapeKey,
       fillStyle.color,
       strokeColor,
-      this.selectedNodeBorderWidth,
+      this.toMarkerSvgStrokeWidth(markerSize, displayStrokeWidth),
       fillStyle.alpha,
     );
+  }
+
+  private selectNode(node: any, additive: boolean): void {
+    const id = String(node?._id ?? node?.id ?? '');
+    if (!id) {
+      return;
+    }
+    const data = this.commonService.session.data;
+    const changed = applyNodeClickSelection(
+      data.nodes,
+      data.nodeFilteredValues || [],
+      id,
+      additive,
+    );
+    if (changed) {
+      $(document).trigger('node-selected');
+    }
+  }
+
+  private clearNodeSelection(): void {
+    const data = this.commonService.session.data;
+    const changed = syncSelectedNodeIds(
+      data.nodes,
+      data.nodeFilteredValues || [],
+      new Set<string>(),
+    );
+    if (changed) {
+      $(document).trigger('node-selected');
+    }
+  }
+
+  private toMarkerSvgStrokeWidth(markerSize: number, displayStrokeWidth: number): number {
+    const safeMarkerSize = Math.max(5, markerSize);
+    const safeDisplayWidth = Math.max(0, Math.min(displayStrokeWidth, (safeMarkerSize / 2) - 0.1));
+    const fixedPaddingWidth = safeDisplayWidth * 340 / safeMarkerSize;
+    if (fixedPaddingWidth <= 20) {
+      return fixedPaddingWidth;
+    }
+    return safeDisplayWidth * 300 / (safeMarkerSize - (2 * safeDisplayWidth));
   }
 
   private getLabelPosition(
