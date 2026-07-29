@@ -91,6 +91,26 @@ function getEvolutionaryRateComponent(): Cypress.Chainable<any> {
   return cy.window().its('commonService.visuals.evolutionaryRate');
 }
 
+function getRenderedMarkerStrokeWidth(dataUri: string, markerSize: number): number {
+  const encodedSvg = dataUri.slice(dataUri.indexOf(',') + 1);
+  const svgDocument = new DOMParser().parseFromString(
+    decodeURIComponent(encodedSvg),
+    'image/svg+xml',
+  );
+  const viewBox = String(svgDocument.documentElement.getAttribute('viewBox') || '')
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  const strokeElement = svgDocument.querySelector('[stroke-width]');
+  const svgStrokeWidth = Number(strokeElement?.getAttribute('stroke-width'));
+
+  expect(viewBox, 'marker SVG viewBox').to.have.length(4);
+  expect(viewBox[2], 'marker SVG viewBox width').to.be.greaterThan(0);
+  expect(svgStrokeWidth, 'marker SVG stroke width').to.be.greaterThan(0);
+
+  return svgStrokeWidth * markerSize / viewBox[2];
+}
+
 describe('Evolutionary Rate view state', () => {
   beforeEach(() => {
     visitAppAndAcceptEula({ skipDemoSession: false });
@@ -198,8 +218,13 @@ describe('Evolutionary Rate view state', () => {
       .should('have.attr', 'width', '34');
     cy.get('[data-testid="evolutionary-rate-point"]')
       .first()
-      .invoke('attr', 'href')
-      .should('contain', 'stroke-width%3D%225%22');
+      .should(($point) => {
+        const markerSize = Number($point.attr('width'));
+        const dataUri = String($point.attr('href') || '');
+        const renderedStrokeWidth = getRenderedMarkerStrokeWidth(dataUri, markerSize);
+
+        expect(renderedStrokeWidth, 'rendered marker border width').to.be.closeTo(5, 0.01);
+      });
     cy.get('[data-testid="evolutionary-rate-point"]')
       .first()
       .trigger('mouseenter', { clientX: 300, clientY: 250, force: true });

@@ -33,7 +33,7 @@ const assertSelectedNodeIds = (expectedIds: string[]): void => {
 describe('Journey Flow - Table uploaded selection', () => {
   const profile = getProfile('map-color-by-uploaded');
 
-  it('keeps link and cluster rows non-selectable and restores node row order after deselection', () => {
+  it('keeps link rows non-selectable, applies cluster selection, and restores node row order after deselection', () => {
     launchProfileToTwoD(profile);
     assertAfterLaunchCounts(profile);
     goToTableView();
@@ -65,9 +65,15 @@ describe('Journey Flow - Table uploaded selection', () => {
     selectTableDataset('Cluster');
     assertTableDatasetMatchesSession('Cluster');
     clickFirstVisibleTableRow();
-    assertSelectedNodeIds(['D']);
+    assertSelectedNodeIds(['A', 'B', 'C', 'D']);
+    clickFirstVisibleTableRow();
+    assertSelectedNodeIds([]);
 
     selectTableDataset('Node');
+    assertSelectedNodeIds([]);
+    assertTableVisibleRowCount(1);
+    assertFirstVisibleRowValue('Id', 'D');
+    clickFirstVisibleTableRow();
     assertSelectedNodeIds(['D']);
     cy.window()
       .its('commonService.visuals.tableComp.SelectedTableData.data')
