@@ -400,6 +400,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'default-view': '2D Network', // 'Phylogenetic Tree' 'Alignment View'
             'default-distance-metric': 'snps',
             'evolutionary-rate-date-field': 'None',
+            'evolutionary-rate-root-method': 'as-provided',
             'evolutionary-rate-table-visible': 'Show',
             'evolutionary-rate-node-label-variable': 'None',
             'evolutionary-rate-node-label-size': 16,
@@ -956,6 +957,42 @@ export class CommonService extends AppComponentBase implements OnInit {
         }
 
         const result = await this.workerComputeService.getPatristicRootDistances(newickString);
+        const distances = new Map<string, number>();
+        result.leafNames.forEach((leafName, index) => {
+            const value = result.distances[index];
+            if (Number.isFinite(value)) {
+                distances.set(this.filterXSS(String(leafName)), value);
+            }
+        });
+        return distances;
+    }
+
+    /**
+     * Root-to-tip distances from the tree position that minimizes the OLS
+     * residual sum of squares for the supplied dated tips.
+     */
+    public async getPatristicBestFitRootDistanceMap(
+        datedTips: Array<{ id: string; decimalYear: number }>
+    ): Promise<Map<string, number>> {
+        const newickString = this.session.data?.newickString;
+        if (!this.hasNewickBackedDistanceSource(newickString)) {
+            return new Map<string, number>();
+        }
+
+        const decimalYearsByLeaf = new Map<string, number>();
+        datedTips.forEach(tip => {
+            const id = String(tip?.id ?? '');
+            const decimalYear = Number(tip?.decimalYear);
+            if (id && Number.isFinite(decimalYear)) {
+                decimalYearsByLeaf.set(id, decimalYear);
+            }
+        });
+
+        const result = await this.workerComputeService.getPatristicBestFitRootDistances(
+            newickString,
+            decimalYearsByLeaf,
+            leafName => this.filterXSS(String(leafName))
+        );
         const distances = new Map<string, number>();
         result.leafNames.forEach((leafName, index) => {
             const value = result.distances[index];

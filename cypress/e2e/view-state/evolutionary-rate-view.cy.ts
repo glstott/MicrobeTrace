@@ -151,6 +151,7 @@ describe('Evolutionary Rate view state', () => {
     });
     cy.get('[data-testid="evolutionary-rate-detected-field"]')
       .should('contain.text', 'SNPs distance');
+    cy.get('[data-testid="evolutionary-rate-root-method"]').should('not.exist');
 
     chooseDateField();
     cy.closeSettingsPane('Evolutionary Rate Settings');
@@ -383,7 +384,7 @@ describe('Evolutionary Rate view state', () => {
       const labels = datedNodes.map((node: any) => String(node._id ?? node.id));
       win.commonService.session.style.widgets['default-distance-metric'] = 'tn93';
       win.commonService.session.style.widgets['tn93-distance-display-format'] = 'percentage';
-      win.commonService.session.data.newickString = `(${labels[0]}:0,${labels[1]}:2,${labels[2]}:4);`;
+      win.commonService.session.data.newickString = `(${labels[0]}:1,${labels[1]}:2,${labels[2]}:4);`;
       win.commonService.session.data.newickSource = 'newick';
       win.commonService.visuals.evolutionaryRate.updateVisualization();
     });
@@ -391,12 +392,26 @@ describe('Evolutionary Rate view state', () => {
     cy.get('[data-testid="evolutionary-rate-y-axis-title"]', { timeout: 10000 })
       .should('have.text', 'Patristic Distance');
     cy.get('[data-testid="evolutionary-rate-point"]').should('have.length', 3);
-    cy.get('[data-testid="evolutionary-rate-slope"]').should('have.text', '2');
+    cy.get('[data-testid="evolutionary-rate-slope"]').should('have.text', '1.5');
 
     cy.get('[data-testid="evolutionary-rate-settings-button"]').click({ force: true });
     getVisibleDialog('Evolutionary Rate Settings');
     cy.get('[data-testid="evolutionary-rate-detected-field"]')
       .should('contain.text', 'Patristic root-to-tip distance');
+    cy.get('[data-testid="evolutionary-rate-root-method"]')
+      .should('exist')
+      .within(() => {
+        cy.contains('.p-togglebutton-label', 'Best fit').click({ force: true });
+      });
     cy.closeSettingsPane('Evolutionary Rate Settings');
+
+    cy.get('[data-testid="evolutionary-rate-slope"]', { timeout: 10000 }).should('have.text', '2');
+    cy.get('[data-testid="evolutionary-rate-residual-mean-squared"]')
+      .invoke('text')
+      .then((text) => {
+        expect(Number(text.trim()), 'best-fit residual mean squared').to.be.lessThan(1e-12);
+      });
+    cy.window().its('commonService.session.style.widgets.evolutionary-rate-root-method')
+      .should('equal', 'best-fit');
   });
 });

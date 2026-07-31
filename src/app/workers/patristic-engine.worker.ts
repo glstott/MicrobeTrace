@@ -26,6 +26,7 @@ import type {
   PatristicNearestNeighborBatchResponse,
   PatristicNearestNeighborTimings,
 } from './patristic-engine.types';
+import { findPatristicBestFitRoot } from './patristic-best-fit-root';
 
 // ─── Worker state (persists across messages) ─────────────────────────────────
 
@@ -898,6 +899,32 @@ addEventListener('message', ({ data }: { data: PatristicWorkerRequest }) => {
           jobId,
           leafNames: [...currentTree.leafNames],
           distances,
+        }, [distances.buffer] as any);
+        break;
+      }
+
+      case 'GET_BEST_FIT_ROOT_DISTANCES': {
+        const { jobId, decimalYears } = data;
+
+        if (!currentTree) {
+          respond({ type: 'ERROR', jobId, message: 'No tree initialized. Call INIT_TREE first.' });
+          return;
+        }
+
+        const result = findPatristicBestFitRoot(currentTree, decimalYears);
+        const distances = result.distances;
+        postMessage({
+          type: 'BEST_FIT_ROOT_DISTANCES',
+          jobId,
+          leafNames: [...currentTree.leafNames],
+          distances,
+          optimized: result.optimized,
+          includedTipCount: result.includedTipCount,
+          residualSumSquares: result.residualSumSquares,
+          parentNodeIndex: result.parentNodeIndex,
+          childNodeIndex: result.childNodeIndex,
+          distanceFromParent: result.distanceFromParent,
+          branchLength: result.branchLength,
         }, [distances.buffer] as any);
         break;
       }

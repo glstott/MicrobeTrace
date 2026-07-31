@@ -45,6 +45,7 @@ import {
 
 type LabelOrientation = 'Right' | 'Left' | 'Top' | 'Bottom' | 'Middle';
 type PlotExportFileType = 'png' | 'jpeg' | 'webp' | 'svg';
+type TreeRootMethod = 'as-provided' | 'best-fit';
 
 interface EvolutionaryRateExcludedDataPoint {
   index: number | string;
@@ -90,11 +91,16 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     { label: 'Show', value: 'Show' },
     { label: 'Hide', value: 'Hide' },
   ];
+  readonly treeRootMethodOptions: SelectItem[] = [
+    { label: 'As provided', value: 'as-provided' },
+    { label: 'Best fit', value: 'best-fit' },
+  ];
 
   fieldOptions: SelectItem[] = [];
   tooltipFieldOptions: SelectItem[] = [];
   selectedDateField = 'None';
   selectedTableVisibility: 'Show' | 'Hide' = 'Show';
+  selectedTreeRootMethod: TreeRootMethod = 'as-provided';
   selectedNodeLabelVariable = 'None';
   selectedNodeLabelSize = 16;
   selectedNodeLabelOrientation: LabelOrientation = 'Right';
@@ -236,6 +242,12 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     this.widgets['evolutionary-rate-table-visible'] = this.selectedTableVisibility;
   }
 
+  onTreeRootMethodChange(value: TreeRootMethod): void {
+    this.selectedTreeRootMethod = value === 'best-fit' ? 'best-fit' : 'as-provided';
+    this.widgets['evolutionary-rate-root-method'] = this.selectedTreeRootMethod;
+    this.refreshPlot();
+  }
+
   onNodeLabelVariableChange(value: string): void {
     this.selectedNodeLabelVariable = value || 'None';
     this.widgets['evolutionary-rate-node-label-variable'] = this.selectedNodeLabelVariable;
@@ -293,6 +305,9 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     this.widgets = this.commonService.session.style.widgets;
     this.selectedDateField = this.widgets['evolutionary-rate-date-field'] || 'None';
     this.selectedTableVisibility = this.widgets['evolutionary-rate-table-visible'] === 'Hide' ? 'Hide' : 'Show';
+    this.selectedTreeRootMethod = this.widgets['evolutionary-rate-root-method'] === 'best-fit'
+      ? 'best-fit'
+      : 'as-provided';
     this.selectedNodeLabelVariable = this.widgets['evolutionary-rate-node-label-variable'] || 'None';
     this.selectedNodeLabelSize = this.toFiniteNumber(this.widgets['evolutionary-rate-node-label-size'], 16);
     this.selectedNodeLabelOrientation = this.normalizeOrientation(this.widgets['evolutionary-rate-node-label-orientation']);
@@ -537,13 +552,30 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
     if (!this.isLoading && datedNodes.length > 0) {
       if (this.distanceSourceKind === 'patristic') {
-        this.distanceSourceLabel = 'Patristic root-to-tip distance';
+        const useBestFitRoot = this.selectedTreeRootMethod === 'best-fit';
+        this.distanceSourceLabel = useBestFitRoot
+          ? 'Best-fit patristic root-to-tip distance'
+          : 'Patristic root-to-tip distance';
         this.isLoading = true;
-        this.emptyStateMessage = 'Calculating patristic root-to-tip distances…';
+        this.emptyStateMessage = useBestFitRoot
+          ? 'Locating the best-fit tree root…'
+          : 'Calculating patristic root-to-tip distances…';
         this.renderPlot();
         this.changeDetector.detectChanges();
         try {
-          distances = await this.commonService.getPatristicRootDistanceMap();
+          if (useBestFitRoot) {
+            const regressionDatedNodes = this.selectionActive
+              ? datedNodes.filter(item => analysisNodeSet.has(item.node))
+              : datedNodes;
+            distances = await this.commonService.getPatristicBestFitRootDistanceMap(
+              regressionDatedNodes.map(item => ({
+                id: item.id,
+                decimalYear: calendarDateToDecimalYear(item.date),
+              }))
+            );
+          } else {
+            distances = await this.commonService.getPatristicRootDistanceMap();
+          }
         } catch (error: any) {
           this.distanceSourceError = `Patristic distances could not be calculated: ${error?.message || error}`;
         }
@@ -564,7 +596,9 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       }
     } else {
       this.distanceSourceLabel = this.distanceSourceKind === 'patristic'
-        ? 'Patristic root-to-tip distance'
+        ? this.selectedTreeRootMethod === 'best-fit'
+          ? 'Best-fit patristic root-to-tip distance'
+          : 'Patristic root-to-tip distance'
         : `${this.metricLabel} distance`;
     }
 

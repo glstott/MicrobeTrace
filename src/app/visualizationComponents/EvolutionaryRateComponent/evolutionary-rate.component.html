@@ -135,6 +135,27 @@
                 </div>
               </div>
             </div>
+
+            @if (distanceSourceKind === 'patristic') {
+              <div
+                class="form-group row"
+                title="Best fit searches along every tree branch and chooses the root position that minimizes the sum of squared residuals from the evolutionary-rate regression line.">
+                <div class="col-5">
+                  <label for="evolutionary-rate-root-method">Root Position</label>
+                </div>
+                <div class="col-7">
+                  <p-selectButton
+                    id="evolutionary-rate-root-method"
+                    data-testid="evolutionary-rate-root-method"
+                    [options]="treeRootMethodOptions"
+                    [allowEmpty]="false"
+                    fluid
+                    [(ngModel)]="selectedTreeRootMethod"
+                    (ngModelChange)="onTreeRootMethodChange($event)">
+                  </p-selectButton>
+                </div>
+              </div>
+            }
           </div>
         </tab>
 

@@ -10,6 +10,7 @@ describe('EvolutionaryRateComponent', () => {
     pairDistances?: Record<string, number>;
     phylogenetic?: boolean;
     patristicDistances?: Record<string, number>;
+    bestFitPatristicDistances?: Record<string, number>;
   } = {}) {
     const widgets = {
       'default-distance-metric': 'snps',
@@ -23,6 +24,7 @@ describe('EvolutionaryRateComponent', () => {
       'node-symbol': 'ellipse',
       'node-symbol-variable': 'None',
       'evolutionary-rate-date-field': 'None',
+      'evolutionary-rate-root-method': 'as-provided',
       'evolutionary-rate-table-visible': 'Show',
       'evolutionary-rate-node-label-variable': 'None',
       'evolutionary-rate-node-label-size': 16,
@@ -58,7 +60,12 @@ describe('EvolutionaryRateComponent', () => {
       getVisibleNodes: () => nodes,
       hasValidTimelineDateValue: (value: any) => value !== null && value !== undefined && value !== '',
       hasPhylogeneticDistanceSource: () => Boolean(options.phylogenetic),
-      getPatristicRootDistanceMap: async () => new Map(Object.entries(options.patristicDistances || {})),
+      getPatristicRootDistanceMap: jasmine.createSpy('getPatristicRootDistanceMap').and.callFake(
+        async () => new Map(Object.entries(options.patristicDistances || {}))
+      ),
+      getPatristicBestFitRootDistanceMap: jasmine.createSpy('getPatristicBestFitRootDistanceMap').and.callFake(
+        async () => new Map(Object.entries(options.bestFitPatristicDistances || {}))
+      ),
       getActiveNodePairDistance: (source: string, target: string) => {
         if (source === target) return 0;
         const key = [source, target].sort().join('|');
@@ -115,6 +122,7 @@ describe('EvolutionaryRateComponent', () => {
     component.loadSettings();
 
     expect(component.selectedTableVisibility).toBe('Show');
+    expect(component.selectedTreeRootMethod).toBe('as-provided');
     expect(component.selectedNodeLabelVariable).toBe('None');
     expect(component.selectedNodeRadius).toBe(20);
     expect(component.selectedNodeBorderWidth).toBe(2);
@@ -126,12 +134,14 @@ describe('EvolutionaryRateComponent', () => {
     component.loadSettings();
 
     component.onTableVisibilityChange('Hide');
+    component.onTreeRootMethodChange('best-fit');
     component.onNodeLabelVariableChange('_id');
     component.onNodeRadiusVariableChange('SNPs');
     component.onNodeBorderWidthChange(3.5);
 
     expect(component.tableVisible).toBeFalse();
     expect(widgets['evolutionary-rate-table-visible']).toBe('Hide');
+    expect(widgets['evolutionary-rate-root-method']).toBe('best-fit');
     expect(widgets['evolutionary-rate-node-label-variable']).toBe('_id');
     expect(widgets['evolutionary-rate-node-radius-variable']).toBe('SNPs');
     expect(widgets['evolutionary-rate-node-border-width']).toBe(3.5);
@@ -303,6 +313,34 @@ describe('EvolutionaryRateComponent', () => {
     expect(component.analysis.points.map(point => point.distance)).toEqual([0.1, 0.2, 0.3]);
     expect(host.querySelector('[data-testid="evolutionary-rate-y-axis-title"]')?.textContent).toBe('Patristic Distance');
     expect(component.formatSlope()).toBe('0.1');
+  });
+
+  it('uses the dated regression tips to locate a best-fit root only when requested', async () => {
+    const { component, commonService } = createComponent({
+      phylogenetic: true,
+      nodes: [
+        { _id: 'a', collectionDate: '2020-01-01' },
+        { _id: 'b', collectionDate: '2021-01-01' },
+        { _id: 'c', collectionDate: '2022-01-01' },
+      ],
+      patristicDistances: { a: 1, b: 2, c: 4 },
+      bestFitPatristicDistances: { a: 0.5, b: 2.5, c: 4.5 },
+      widgets: {
+        'evolutionary-rate-date-field': 'collectionDate',
+        'evolutionary-rate-root-method': 'best-fit',
+      },
+    });
+    component.loadSettings();
+
+    await (component as any).refreshPlot();
+
+    expect(component.distanceSourceLabel).toBe('Best-fit patristic root-to-tip distance');
+    expect(component.analysis.points.map(point => point.distance)).toEqual([0.5, 2.5, 4.5]);
+    expect(commonService.getPatristicRootDistanceMap).not.toHaveBeenCalled();
+    expect(commonService.getPatristicBestFitRootDistanceMap).toHaveBeenCalledTimes(1);
+    const datedTips = commonService.getPatristicBestFitRootDistanceMap.calls.mostRecent().args[0];
+    expect(datedTips.map((tip: any) => tip.id)).toEqual(['a', 'b', 'c']);
+    expect(datedTips.map((tip: any) => tip.decimalYear)).toEqual([2020, 2021, 2022]);
   });
 
   it('changes the Y-axis label and canonical distances with the selected metric', async () => {

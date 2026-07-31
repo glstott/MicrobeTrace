@@ -11,6 +11,7 @@ import type {
   PatristicProgressResponse,
   PatristicErrorResponse,
   PatristicRootDistancesResponse,
+  PatristicBestFitRootResponse,
 } from '../workers/patristic-engine.types';
 
 interface ComputePatristicOptions {
@@ -910,6 +911,50 @@ export class WorkerComputeService {
       worker.postMessage({
         type: 'GET_ROOT_DISTANCES',
         jobId,
+      } as PatristicWorkerRequest);
+    });
+  }
+
+  /**
+   * Return root-to-tip distances after locating the point on the active tree
+   * that minimizes the dated-tip regression residual sum of squares.
+   */
+  public async getPatristicBestFitRootDistances(
+    newickString: string,
+    decimalYearsByLeaf: ReadonlyMap<string, number>,
+    normalizeLeafName: (leafName: string) => string = leafName => leafName
+  ): Promise<PatristicBestFitRootResponse> {
+    if (newickString !== this.patristicNewickString || this.patristicLeafNames.length === 0) {
+      await this.initPatristicTree(newickString);
+    }
+
+    const decimalYears = this.patristicLeafNames.map(leafName => {
+      const value = decimalYearsByLeaf.get(normalizeLeafName(leafName));
+      return Number.isFinite(value) ? Number(value) : Number.NaN;
+    });
+
+    return new Promise((resolve, reject) => {
+      const worker = this.computer.getPatristicWorker();
+      const jobId = ++this.patristicJobId;
+
+      const handler = (event: MessageEvent<PatristicWorkerResponse>) => {
+        const msg = event.data;
+        if (msg.jobId !== jobId) return;
+
+        if (msg.type === 'BEST_FIT_ROOT_DISTANCES') {
+          worker.removeEventListener('message', handler);
+          resolve(msg);
+        } else if (msg.type === 'ERROR') {
+          worker.removeEventListener('message', handler);
+          reject(new Error(msg.message));
+        }
+      };
+
+      worker.addEventListener('message', handler);
+      worker.postMessage({
+        type: 'GET_BEST_FIT_ROOT_DISTANCES',
+        jobId,
+        decimalYears,
       } as PatristicWorkerRequest);
     });
   }
