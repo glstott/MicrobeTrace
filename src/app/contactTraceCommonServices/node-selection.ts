@@ -38,6 +38,36 @@ export function syncSelectedNodeIds(
 }
 
 /**
+ * Synchronizes shared node selection into a Cytoscape graph.
+ *
+ * Exact ID lookup is intentional: imported node IDs can contain characters
+ * that have special meaning in Cytoscape selectors.
+ */
+export function syncCytoscapeNodeSelection(
+  cy: any,
+  nodes: any[] = [],
+): string[] {
+  if (!cy) return [];
+
+  const selectedIds = getSelectedNodeIds(nodes);
+  const renderedSelectedIds: string[] = [];
+
+  cy.batch(() => {
+    cy.elements().unselect();
+
+    selectedIds.forEach(id => {
+      const cyNode = cy.getElementById(id);
+      if (!cyNode || cyNode.empty() || !cyNode.isNode()) return;
+
+      cyNode.select();
+      renderedSelectedIds.push(id);
+    });
+  });
+
+  return renderedSelectedIds;
+}
+
+/**
  * Applies the single-select/additive-select behavior used by interactive views.
  */
 export function applyNodeClickSelection(

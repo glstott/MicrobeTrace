@@ -1,8 +1,10 @@
 import {
   applyNodeClickSelection,
   getSelectedNodeIds,
+  syncCytoscapeNodeSelection,
   syncSelectedNodeIds,
 } from './node-selection';
+import cytoscape from 'cytoscape';
 
 describe('node selection', () => {
   it('synchronizes selected IDs to the main and filtered node collections', () => {
@@ -38,5 +40,29 @@ describe('node selection', () => {
     applyNodeClickSelection(nodes, filteredNodes, 'b', true);
     expect(getSelectedNodeIds(nodes)).toEqual(new Set(['c']));
     expect(getSelectedNodeIds(filteredNodes)).toEqual(new Set(['c']));
+  });
+
+  it('restores rendered selection with exact IDs after Cytoscape creation', () => {
+    const cy = cytoscape({
+      headless: true,
+      elements: [
+        { data: { id: 'plain-id' } },
+        { data: { id: 'sample:1/a.b' } },
+      ],
+    });
+    cy.getElementById('plain-id').select();
+
+    const renderedSelectedIds = syncCytoscapeNodeSelection(cy, [
+      { _id: 'plain-id', selected: false },
+      { _id: 'sample:1/a.b', selected: true },
+      { _id: 'not-rendered', selected: true },
+    ]);
+
+    expect(renderedSelectedIds).toEqual(['sample:1/a.b']);
+    expect(cy.getElementById('plain-id').selected()).toBeFalse();
+    expect(cy.getElementById('sample:1/a.b').selected()).toBeTrue();
+    expect(cy.nodes(':selected').map(node => node.id())).toEqual(['sample:1/a.b']);
+
+    cy.destroy();
   });
 });

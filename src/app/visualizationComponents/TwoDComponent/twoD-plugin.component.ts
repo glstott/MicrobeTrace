@@ -15,7 +15,10 @@ import { ComponentContainer } from 'golden-layout';
 import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { GraphData } from './data';
 import { getCustomNodeShapeData, getCustomNodeShapeVectorData, isCustomNodeShape as isCustomNodeIconShape, resolveNodeShapeCytoscapeShape as resolveCustomNodeIconCytoscapeShape, resolveNodeShapeForNode, resolveNodeShapeKey } from '@app/contactTraceCommonServices/node-shapes';
-import { syncSelectedNodeIds } from '@app/contactTraceCommonServices/node-selection';
+import {
+    syncCytoscapeNodeSelection,
+    syncSelectedNodeIds
+} from '@app/contactTraceCommonServices/node-selection';
 import cytoscape, { Core, Style } from 'cytoscape';
 import svg from 'cytoscape-svg';
 import { Subject, Subscription, takeUntil } from 'rxjs';
@@ -1068,6 +1071,21 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         });
     }
 
+    private syncCytoscapeSelectionFromSharedNodes(): string[] {
+        if (!this.cy) return [];
+
+        const renderedSelectedIds = syncCytoscapeNodeSelection(
+            this.cy,
+            this.commonService.getVisibleNodes(),
+        );
+
+        this.selectedNodeId = renderedSelectedIds.length > 0
+            ? renderedSelectedIds[renderedSelectedIds.length - 1]
+            : undefined;
+
+        return renderedSelectedIds;
+    }
+
     /**
      * Used to gather nodes within a group and separate them from other groups
      * @param initial - if true runs iterations of gather force first, then run second simulation that both gathers nodes within a group and separates them from other groups
@@ -1510,26 +1528,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
             $(document).on("node-selected", function () {
                 if (!that.cy) return;
-              
-                const mtSelectedNodes = that.commonService.getVisibleNodes().filter(n => n.selected);
-                const mtSelectedNodeIds = mtSelectedNodes.map(n => n._id || n.id);
-              
-                // Clear cytoscape selection
-                that.cy.elements().unselect();
-              
-                // Apply multi-selection
-                if (mtSelectedNodeIds.length > 0) {
-                  const selector = mtSelectedNodeIds.map(id => `#${id}`).join(', ');
-                  that.cy.nodes(selector).select();
-                  that.selectedNodeId = mtSelectedNodeIds[mtSelectedNodeIds.length - 1]; // keep last-selected for UI logic only
-                } else {
-                  that.selectedNodeId = undefined;
-                }
+
+                const renderedSelectedIds = that.syncCytoscapeSelectionFromSharedNodes();
 
                 that.commonService.updateStatistics();
-              
+
                 if (that.debugMode) {
-                  console.log('node-selected in 2d ids: ', mtSelectedNodeIds);
+                  console.log('node-selected in 2d ids: ', renderedSelectedIds);
                 }
               });
               
@@ -4332,6 +4337,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             
 
          }
+            this.syncCytoscapeSelectionFromSharedNodes();
             console.log('--- TwoD DATA network rerender complete');
     }
 
