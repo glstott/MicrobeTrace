@@ -50,6 +50,7 @@ import { PhylogeneticComponent } from './visualizationComponents/PhylogeneticCom
 import { TimelineComponent } from './visualizationComponents/TimelineComponent/timeline-component.component';
 import { TwoDComponent } from './visualizationComponents/TwoDComponent/twoD-plugin.component';
 import { TableComponent } from './visualizationComponents/TableComponent/table-plugin-component';
+import { NetworkStatisticsComponent } from './visualizationComponents/NetworkStatisticsComponent/network-statistics-plugin.component';
 import { MapComponent } from './visualizationComponents/MapComponent/map-plugin.component';
 import { AlignmentViewComponent } from './visualizationComponents/AlignmentViewComponent/alignment-view-plugin-component';
 import { LeafletModule } from '@bluehalo/ngx-leaflet';
@@ -83,6 +84,7 @@ import { GoogleTagManagerModule } from 'angular-google-tag-manager';
 import { SankeyComponent } from './visualizationComponents/SankeyComponent/sankey.component';
 import { KeyTablesComponent } from './visualizationComponents/KeyTablesComponent/key-tables.component';
 import { EvolutionaryRateComponent } from './visualizationComponents/EvolutionaryRateComponent/evolutionary-rate.component';
+import { StyleKeyTableComponent } from './visualizationComponents/KeyTablesComponent/style-key-table.component';
 import * as PlotlyJS from 'plotly.js-dist-min';
 import { PlotlyModule } from 'angular-plotly.js';
 import { GlobalErrorHandler } from './runtime-security/global-error-handler';
@@ -119,6 +121,7 @@ export class TestedComponent {
         FilesComponent,
         TwoDComponent,
         TableComponent,
+        NetworkStatisticsComponent,
         GoldenLayoutHostComponent,
         MapComponent,
         TestedComponent,
@@ -136,6 +139,7 @@ export class TestedComponent {
         SankeyComponent,
         KeyTablesComponent,
         EvolutionaryRateComponent,
+        StyleKeyTableComponent,
     ],
     exports: [
         SelectButtonModule

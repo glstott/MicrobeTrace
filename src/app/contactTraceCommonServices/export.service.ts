@@ -1,10 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
-import {
-  NODE_SYMBOL_OPTIONS,
-  getMapNodeShapeDataUri,
-  resolveNodeShapeKey,
-} from './node-shapes';
+import { getNodeShapePreviewDataUri } from './node-shapes';
 
 export interface ExportOptions {
   filename: string;
@@ -17,7 +13,7 @@ export interface ExportOptions {
   providedIn: 'root'
 })
 export class ExportService {
-  private readonly nodeShapeCellPrefix = 'nodeShape:';
+  private readonly nodeShapeExportPrefix = 'nodeShape|';
   private textMeasureContext: CanvasRenderingContext2D | null = null;
 
   private exportRequestedSource = new Subject<{
@@ -125,22 +121,34 @@ export class ExportService {
       .trim();
   }
 
-  private getShapeExportLabel(cellValue: string): string {
-    const shapeKey = this.getNodeShapeKeyFromCellValue(cellValue);
-    if (shapeKey) {
-      return NODE_SYMBOL_OPTIONS.find(option => option.key === shapeKey)?.name.trim() || shapeKey;
-    }
-    if (cellValue === 'shapeRhombus') {
-      return '(Rhombus)';
-    }
-    if (cellValue === 'shapeTag') {
-      return '(Tag)';
-    }
-    if (cellValue === 'shapeBarrel') {
-      return '(Barrel)';
+  private getShapeExportData(cellValue: string): { shapeKey: string, label: string } | null {
+    if (cellValue.startsWith(this.nodeShapeExportPrefix)) {
+      const [, shapeKey = '', label = ''] = cellValue.split('|');
+      return {
+        shapeKey: decodeURIComponent(shapeKey),
+        label: decodeURIComponent(label)
+      };
     }
 
-    return cellValue;
+    if (cellValue === 'shapeRhombus') {
+      return { shapeKey: 'rhomboid', label: '(Rhombus)' };
+    }
+    if (cellValue === 'shapeTag') {
+      return { shapeKey: 'tag', label: '(Tag)' };
+    }
+    if (cellValue === 'shapeBarrel') {
+      return { shapeKey: 'barrel', label: '(Barrel)' };
+    }
+
+    return null;
+  }
+
+  private getShapeExportLabel(cellValue: string): string {
+    return this.getShapeExportData(cellValue)?.label ?? cellValue;
+  }
+
+  private isShapeExportCellValue(cellValue: string): boolean {
+    return this.getShapeExportData(cellValue) !== null;
   }
 
   private measureTextWidth(text: string, fontWeight: 'normal' | 'bold' = 'normal'): number {
@@ -158,7 +166,7 @@ export class ExportService {
       return 40;
     }
 
-    if (this.isShapeCellValue(cellValue)) {
+    if (this.isShapeExportCellValue(cellValue)) {
       return this.measureTextWidth(this.getShapeExportLabel(cellValue)) + 40;
     }
 
@@ -172,7 +180,7 @@ export class ExportService {
     const paddingBottom = parseFloat(computedStyle.paddingBottom || '0');
     const estimatedWidth = this.getEstimatedCellWidth(cellValue, isHeaderCell);
     const estimatedHeight = Math.ceil(Math.max(
-      isHeaderCell ? 24 : this.getNodeShapeKeyFromCellValue(cellValue) ? 30 : 22,
+      isHeaderCell ? 24 : this.isShapeExportCellValue(cellValue) ? 30 : 22,
       16 + paddingTop + paddingBottom
     ));
 
@@ -196,41 +204,21 @@ export class ExportService {
     return color.length === 7 && color[0] === '#';
   }
 
-  private isShapeCellValue(cellValue: string): boolean {
-    return this.getNodeShapeKeyFromCellValue(cellValue) !== null
-      || cellValue === 'shapeRhombus'
-      || cellValue === 'shapeTag'
-      || cellValue === 'shapeBarrel';
-  }
-
-  private getNodeShapeKeyFromCellValue(cellValue: string): string | null {
-    if (!cellValue.startsWith(this.nodeShapeCellPrefix)) {
-      return null;
-    }
-
-    const encodedShapeKey = cellValue.slice(this.nodeShapeCellPrefix.length);
-    try {
-      return resolveNodeShapeKey(decodeURIComponent(encodedShapeKey));
-    } catch {
-      return resolveNodeShapeKey(encodedShapeKey);
-    }
-  }
-
-  private extractShapeCellValue(
-    cell: HTMLTableCellElement,
-    renderNodeShapeImages: boolean = false
-  ): string | null {
+  private extractShapeCellValue(cell: HTMLTableCellElement): string | null {
     const shapeSelector = cell.querySelector('p-dropdown, p-treeselect');
     if (!shapeSelector) {
       return null;
     }
 
-    if (renderNodeShapeImages) {
-      const shapeKeyElement = shapeSelector.querySelector('[data-shape-key]');
-      const shapeKey = shapeKeyElement?.getAttribute('data-shape-key');
-      if (shapeKey) {
-        return `${this.nodeShapeCellPrefix}${encodeURIComponent(resolveNodeShapeKey(shapeKey))}`;
-      }
+    const shapePreview = shapeSelector.querySelector<HTMLElement>('[data-shape-key]');
+    if (shapePreview) {
+      const shapeKey = shapePreview.getAttribute('data-shape-key') ?? '';
+      const textSource = shapeSelector.querySelector('.shape-tree-value, .p-dropdown-label, .p-treeselect-label') as HTMLElement | null;
+      const label = (textSource?.textContent ?? shapeSelector.textContent ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      return `${this.nodeShapeExportPrefix}${encodeURIComponent(shapeKey)}|${encodeURIComponent(label)}`;
     }
 
     const shapeAnchor = shapeSelector.querySelector('a');
@@ -252,11 +240,8 @@ export class ExportService {
     return text.length > 0 ? text : null;
   }
 
-  private getCellExportValue(
-    cell: HTMLTableCellElement,
-    renderNodeShapeImages: boolean = false
-  ): string {
-    const shapeCellValue = this.extractShapeCellValue(cell, renderNodeShapeImages);
+  private getCellExportValue(cell: HTMLTableCellElement): string {
+    const shapeCellValue = this.extractShapeCellValue(cell);
     if (shapeCellValue !== null) {
       return shapeCellValue;
     }
@@ -270,15 +255,24 @@ export class ExportService {
     return this.normalizeCellText(cell.innerText);
   }
 
-  private buildShapeSVG(cellValue: string, x: number, baselineY: number): string {
-    const label = this.escapeSVGText(this.getShapeExportLabel(cellValue));
-    const iconTop = baselineY - 16;
-    const shapeKey = this.getNodeShapeKeyFromCellValue(cellValue);
+  private buildShapeSVG(
+    cellValue: string,
+    x: number,
+    baselineY: number,
+    renderNodeShapeImages: boolean
+  ): string {
+    const shapeData = this.getShapeExportData(cellValue);
+    if (!shapeData) {
+      return '';
+    }
 
-    if (shapeKey) {
-      const markerSvg = this.parseNodeShapeDataUri(
-        getMapNodeShapeDataUri(shapeKey, '#000000', '#000000', 0, 1)
-      );
+    const label = this.escapeSVGText(shapeData.label);
+    const iconTop = baselineY - 16;
+    const escapedShapeKey = this.escapeSVGText(shapeData.shapeKey);
+    const previewDataUri = getNodeShapePreviewDataUri(shapeData.shapeKey);
+
+    if (renderNodeShapeImages) {
+      const markerSvg = this.parseNodeShapeDataUri(previewDataUri);
       const viewBox = String(markerSvg?.documentElement.getAttribute('viewBox') || '')
         .trim()
         .split(/\s+/)
@@ -291,33 +285,18 @@ export class ExportService {
         const markerContents = Array.from(markerSvg.documentElement.childNodes)
           .map(child => new XMLSerializer().serializeToString(child))
           .join('');
-        return `<g data-node-shape-key="${this.escapeSVGText(shapeKey)}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
+        return `<g data-node-shape-key="${escapedShapeKey}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
           <g transform="translate(${translateX},${translateY}) scale(${scale})">${markerContents}</g>
           <text x="${x + 30}" y="${baselineY}">${label}</text>
         </g>`;
       }
     }
 
-    if (cellValue === 'shapeRhombus') {
-      const diamondPoints = `${x + 6},${iconTop + 2} ${x + 12},${iconTop + 8} ${x + 6},${iconTop + 14} ${x},${iconTop + 8}`;
-      return `<g font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
-        <polygon points="${diamondPoints}" fill="none" stroke="black" stroke-width="1.5"></polygon>
-        <text x="${x + 18}" y="${baselineY}">${label}</text>
-      </g>`;
-    }
+    const previewUri = this.escapeSVGText(previewDataUri);
 
-    if (cellValue === 'shapeTag') {
-      const tagPoints = `${x},${iconTop + 4} ${x + 8},${iconTop + 4} ${x + 12},${iconTop + 8} ${x + 8},${iconTop + 12} ${x},${iconTop + 12}`;
-      return `<g font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
-        <polygon points="${tagPoints}" fill="none" stroke="black" stroke-width="1.5"></polygon>
-        <circle cx="${x + 3}" cy="${iconTop + 8}" r="1.2" fill="black"></circle>
-        <text x="${x + 18}" y="${baselineY}">${label}</text>
-      </g>`;
-    }
-
-    return `<g font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
-      <rect x="${x}" y="${iconTop + 2}" fill="black" width="12" height="12" rx="4" ry="4"></rect>
-      <text x="${x + 18}" y="${baselineY}">${label}</text>
+    return `<g data-node-shape-key="${escapedShapeKey}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
+      <image href="${previewUri}" x="${x}" y="${iconTop}" width="16" height="16" preserveAspectRatio="xMidYMid meet"></image>
+      <text x="${x + 22}" y="${baselineY}">${label}</text>
     </g>`;
   }
 
@@ -363,7 +342,7 @@ export class ExportService {
           continue;
         }
 
-        const cellValue = this.getCellExportValue(cells[j], renderNodeShapeImages);
+        const cellValue = this.getCellExportValue(cells[j]);
         rowData.push(cellValue);
 
         const dimensions = this.getCellDimensions(cells[j], cellValue, hasHeaderRow && i === 0);
@@ -397,8 +376,13 @@ export class ExportService {
         if (this.isColorCellValue(cell)) {
           const data = cell.split(':');
           out += `<rect x="${widthOffsets[colIndex]}" y="${heightOffsets[rowIndex] - 12}" width="20" height="20" fill="${data[0]}" fill-opacity="${data[1]}"></rect>`;
-        } else if (this.isShapeCellValue(cell)) {
-          out += this.buildShapeSVG(cell, widthOffsets[colIndex], heightOffsets[rowIndex]);
+        } else if (this.isShapeExportCellValue(cell)) {
+          out += this.buildShapeSVG(
+            cell,
+            widthOffsets[colIndex],
+            heightOffsets[rowIndex],
+            renderNodeShapeImages
+          );
         } else if (hasHeaderRow && rowIndex === 0) {
           out += `<text x="${widthOffsets[colIndex]}" y="${heightOffsets[rowIndex]}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black" font-weight="bold">${this.escapeSVGText(cell)}</text>`;
         } else {
