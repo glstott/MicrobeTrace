@@ -1037,6 +1037,10 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         return tablesToExport;
     }
 
+    public getNodeKeyTablesForExport(): HTMLTableElement[] {
+        return this.getGlobalTablesForExport(true, false, true);
+    }
+
     private getPolygonColorTableElementForExport(): HTMLTableElement | undefined {
         return this.commonService.visuals.twoD?.getPolygonColorTableElementForExport?.()
             ?? (document.querySelector('#polygon-color-table') as HTMLTableElement | undefined);

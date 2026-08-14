@@ -1,4 +1,5 @@
 import { ElementRef } from '@angular/core';
+import { ExportService } from '@app/contactTraceCommonServices/export.service';
 import { of } from 'rxjs';
 import { EvolutionaryRateComponent } from './evolutionary-rate.component';
 
@@ -93,6 +94,7 @@ describe('EvolutionaryRateComponent', () => {
       setExportOptions: jasmine.createSpy('setExportOptions'),
       requestExport: jasmine.createSpy('requestExport'),
       requestSVGExport: jasmine.createSpy('requestSVGExport'),
+      exportTableAsSVG: jasmine.createSpy('exportTableAsSVG'),
     } as any;
     const host = document.createElement('div');
     const exportHost = document.createElement('div');
@@ -126,7 +128,27 @@ describe('EvolutionaryRateComponent', () => {
     expect(component.selectedNodeLabelVariable).toBe('None');
     expect(component.selectedNodeRadius).toBe(20);
     expect(component.selectedNodeBorderWidth).toBe(2);
+    expect(component.outlierReportFileType).toBe('pdf');
     expect(visuals.evolutionaryRate).toBe(component);
+  });
+
+  it('renders configured node-shape images as vectors in report key tables', () => {
+    const table = document.createElement('table');
+    table.innerHTML = `
+      <tr><th>Node type</th><th>Shape</th></tr>
+      <tr>
+        <td>Vector</td>
+        <td><p-treeselect><div class="shape-tree-value" data-shape-key="fly">Fly</div></p-treeselect></td>
+      </tr>
+    `;
+
+    const output = new ExportService().exportTableAsSVG(table, true, true);
+
+    expect(output.svg).toContain('data-node-shape-key="fly"');
+    expect(output.svg).toContain('<path');
+    expect(output.svg).toContain('>Fly</text>');
+    expect(output.svg).not.toContain('<image');
+    expect(output.svg).not.toContain('width="12" height="12" rx="4"');
   });
 
   it('persists table and node appearance settings under the evolutionary-rate prefix', () => {
@@ -184,6 +206,57 @@ describe('EvolutionaryRateComponent', () => {
     const plotWidth = Number(host.querySelector('clipPath rect')?.getAttribute('width'));
     expect(Number(regressionLine.getAttribute('x1'))).toBeCloseTo(0, 10);
     expect(Number(regressionLine.getAttribute('x2'))).toBeCloseTo(plotWidth, 10);
+  });
+
+  it('highlights potential outliers and explains the residual threshold on hover and in report SVGs', async () => {
+    const distances = [0, 1, 2, 3, 4, 50, 6, 7, 8, 9];
+    const nodes = distances.map((distance, index) => ({
+      _id: `sample-${index}`,
+      collectionDate: `${2020 + index}-01-01`,
+      distance,
+    }));
+    const pairDistances = Object.fromEntries(
+      distances.slice(1).map((distance, index) => [`sample-0|sample-${index + 1}`, distance])
+    );
+    const { component, host } = createComponent({
+      nodes,
+      pairDistances,
+      widgets: { 'evolutionary-rate-date-field': 'collectionDate' },
+    });
+    const tooltip = document.createElement('div');
+    component.plotTooltip = new ElementRef(tooltip);
+    component.loadSettings();
+
+    await (component as any).refreshPlot();
+
+    expect(component.analysis.outliers.map(item => item.point.id)).toEqual(['sample-5']);
+    expect(host.querySelectorAll('[data-testid="evolutionary-rate-outlier-highlight"]')).toHaveSize(1);
+    expect(host.querySelector('[data-testid="evolutionary-rate-outlier-highlight"]')?.getAttribute('data-node-id'))
+      .toBe('sample-5');
+    expect(host.querySelector('[data-testid="evolutionary-rate-outlier-legend"]')?.textContent)
+      .toContain('Potential outlier (≥ 2 × RMSE)');
+
+    const outlierPoint = host.querySelector('[data-node-id="sample-5"][data-outlier="true"]') as SVGImageElement;
+    expect(outlierPoint).not.toBeNull();
+    expect(outlierPoint.getAttribute('aria-label')).toContain('potential outlier');
+    outlierPoint.dispatchEvent(new MouseEvent('mouseenter', {
+      bubbles: true,
+      clientX: 300,
+      clientY: 250,
+    }));
+    expect(tooltip.hidden).toBeFalse();
+    expect(tooltip.querySelector('[data-testid="evolutionary-rate-tooltip-outlier"]')?.textContent)
+      .toContain('absolute residual');
+    expect(tooltip.textContent).toContain('meeting the ≥ 2 × RMSE threshold');
+    expect(tooltip.textContent).toContain('Observed:');
+    expect(tooltip.textContent).toContain('fitted:');
+
+    const reportSvg = (component as any).serializeRegressionPlotSvg() as string;
+    expect(reportSvg).toContain('data-testid="evolutionary-rate-outlier-highlight"');
+    expect(reportSvg).toContain('data-testid="evolutionary-rate-outlier-legend"');
+    expect(reportSvg).toContain('evolutionary-rate-outlier-point');
+    expect(reportSvg).toContain('data-outlier="true"');
+    expect(reportSvg).not.toContain('<image');
   });
 
   it('recalculates statistics from selected nodes while retaining and highlighting all plotted points', async () => {
@@ -368,7 +441,7 @@ describe('EvolutionaryRateComponent', () => {
   });
 
   it('exports the statistics CSV and routes configurable raster and SVG plots through the shared export service', async () => {
-    const { component, exportService, exportHost, host } = createComponent({
+    const { component, exportService, exportHost, host, visuals } = createComponent({
       nodes: [
         { _id: 'a', collectionDate: '2020-01-01' },
         { _id: 'b', collectionDate: '2021-01-01' },
@@ -379,6 +452,24 @@ describe('EvolutionaryRateComponent', () => {
     component.loadSettings();
     await (component as any).refreshPlot();
 
+    const nodeColorTable = document.createElement('table');
+    const nodeShapeTable = document.createElement('table');
+    nodeShapeTable.innerHTML = '<tr><td><p-treeselect><span data-shape-key="fly">Fly</span></p-treeselect></td></tr>';
+    visuals.microbeTrace = {
+      getNodeKeyTablesForExport: () => [nodeColorTable, nodeShapeTable],
+    };
+    exportService.exportTableAsSVG.and.callFake((table: HTMLTableElement) => table === nodeColorTable
+      ? {
+        svg: '<g><text data-testid="report-node-color-key">Node color key</text></g>',
+        width: 220,
+        height: 70,
+      }
+      : {
+        svg: '<g><text data-testid="report-node-shape-key">Node shape key</text></g>',
+        width: 220,
+        height: 70,
+      });
+
     const captured: Array<{ content: Blob | string; filename: string }> = [];
     (window as any).__mtTestSaveAs = (content: Blob | string, filename: string) => {
       captured.push({ content, filename });
@@ -388,6 +479,10 @@ describe('EvolutionaryRateComponent', () => {
       component.plotExportFilename = 'rate-plot.svg';
       component.openExport();
       component.downloadStatisticsTable();
+
+      component.outlierReportFilename = 'rate-outliers.pdf';
+      component.outlierReportFileType = 'markdown';
+      await component.downloadOutlierReport();
 
       component.plotExportFileType = 'png';
       component.plotExportScale = 1.5;
@@ -409,12 +504,39 @@ describe('EvolutionaryRateComponent', () => {
 
       component.plotExportFileType = 'svg';
       component.downloadRegressionPlot();
+
+      const pdfDownload = spyOn<any>(component, 'downloadOutlierReportPdf').and.resolveTo();
+      component.outlierReportFilename = 'rate-outliers.md';
+      component.outlierReportFileType = 'pdf';
+      await component.downloadOutlierReport();
+      expect(pdfDownload).toHaveBeenCalled();
+      const pdfDownloadArgs = pdfDownload.calls.mostRecent().args as any[];
+      expect(pdfDownloadArgs[0].title).toBe('Evolutionary Rate Outlier Report');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="evolutionary-rate-regression-line"');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('evolutionary-rate-report-vector-point');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="evolutionary-rate-report-keys"');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="report-node-color-key"');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="report-node-shape-key"');
+      expect(pdfDownloadArgs[0].regressionPlotSvg).not.toContain('<image');
+      expect(exportService.exportTableAsSVG.calls.allArgs()).toContain([nodeShapeTable, true, true]);
+      const reportSvgDocument = new DOMParser().parseFromString(
+        pdfDownloadArgs[0].regressionPlotSvg,
+        'image/svg+xml'
+      );
+      const reportViewBox = String(reportSvgDocument.documentElement.getAttribute('viewBox'))
+        .split(/\s+/)
+        .map(Number);
+      expect(reportViewBox[2]).toBe(Number(renderedSvg.getAttribute('width')));
+      expect(reportViewBox[3]).toBe(Number(renderedSvg.getAttribute('height')) + 94);
+      expect(pdfDownloadArgs[1]).toBe('rate-outliers.pdf');
     } finally {
       delete (window as any).__mtTestSaveAs;
     }
 
     expect(component.showExportDialog).toBeTrue();
-    expect(captured.map(item => item.filename)).toEqual(['rate-table.csv']);
+    expect(component.canExportOutlierReport).toBeTrue();
+    expect(component.outlierCandidateCount).toBe(0);
+    expect(captured.map(item => item.filename)).toEqual(['rate-table.csv', 'rate-outliers.md']);
     expect(captured[0].content instanceof Blob).toBeTrue();
     const statisticsBytes = new Uint8Array(await (captured[0].content as Blob).arrayBuffer());
     expect(Array.from(statisticsBytes.slice(0, 3))).toEqual([0xEF, 0xBB, 0xBF]);
@@ -423,6 +545,17 @@ describe('EvolutionaryRateComponent', () => {
     expect(statisticsRows).toContain('Date range,2020-01-01 – 2021-01-01 (1.00 years)');
     expect(statisticsRows).toContain('Slope (rate),2');
     expect(statisticsRows).toContain('Residual Mean Squared,0');
+    const outlierReport = await (captured[1].content as Blob).text();
+    expect(outlierReport).toContain('# Evolutionary Rate Outlier Report');
+    expect(outlierReport).toContain('## Regression plot');
+    expect(outlierReport).toContain('data-testid="evolutionary-rate-regression-line"');
+    expect(outlierReport).toContain('evolutionary-rate-report-vector-point');
+    expect(outlierReport).toContain('data-testid="evolutionary-rate-report-keys"');
+    expect(outlierReport).toContain('Node color key');
+    expect(outlierReport).toContain('Node shape key');
+    expect(outlierReport).not.toContain('<image');
+    expect(outlierReport).toContain('At least 3 analyzable points are required');
+    expect(outlierReport).toContain('https://beast.community/tempest_tutorial');
     expect(exportService.requestSVGExport).toHaveBeenCalled();
     const svgExport = exportService.requestSVGExport.calls.mostRecent().args;
     expect(svgExport[1]).toContain('data-testid="evolutionary-rate-plot"');

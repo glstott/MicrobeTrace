@@ -262,9 +262,24 @@ describe('Evolutionary Rate view state', () => {
         expect([...$headers].map(header => header.textContent?.trim())).to.deep.equal([
           'Regression Plot Image',
           'Statistics Table',
+          'Outlier Report',
         ]);
       });
     cy.get('label[for="evolutionary-rate-plot-filename"]').should('have.text', 'Filename');
+
+    cy.get('@evolutionaryRateExportDialog')
+      .contains('[role="tab"]', 'Outlier Report')
+      .click({ force: true });
+    cy.get('label[for="evolutionary-rate-outlier-report-filename"]').should('have.text', 'Filename');
+    cy.get('[data-testid="evolutionary-rate-outlier-report-filetype"]')
+      .should('contain.text', 'PDF (.pdf)')
+      .click({ force: true });
+    cy.contains('li[role="option"]', 'Markdown (.md)').click({ force: true });
+    cy.get('[data-testid="evolutionary-rate-outlier-report-summary"]')
+      .should('contain.text', 'potential outliers')
+      .and('contain.text', '2 times the residual RMSE');
+    cy.get('[data-testid="evolutionary-rate-download-outlier-report"]').click({ force: true });
+
     cy.get('@evolutionaryRateExportDialog')
       .contains('[role="tab"]', 'Statistics Table')
       .click({ force: true });
@@ -297,8 +312,13 @@ describe('Evolutionary Rate view state', () => {
       const downloads = win.__mtCapturedDownloads || [];
       const table = downloads.find((download: any) => download.fileName === 'evolutionary-rate-statistics.csv');
       const plot = downloads.find((download: any) => download.fileName === 'evolutionary-rate-regression.svg');
+      const report = downloads.find((download: any) => download.fileName === 'evolutionary-rate-outlier-report.md');
       expect(table?.dataUrl).to.match(/^data:text\/csv/);
       expect(plot?.dataUrl).to.match(/^data:image\/svg\+xml/);
+      expect(report?.dataUrl).to.match(/^data:text\/markdown/);
+      const reportMarkdown = atob(String(report?.dataUrl || '').split(',')[1] || '');
+      expect(reportMarkdown).to.contain('## Regression plot');
+      expect(reportMarkdown).to.contain('data-testid="evolutionary-rate-regression-line"');
     });
   });
 

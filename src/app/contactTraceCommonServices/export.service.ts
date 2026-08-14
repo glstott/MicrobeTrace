@@ -1,5 +1,10 @@
 import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
+import {
+  NODE_SYMBOL_OPTIONS,
+  getMapNodeShapeDataUri,
+  resolveNodeShapeKey,
+} from './node-shapes';
 
 export interface ExportOptions {
   filename: string;
@@ -12,6 +17,7 @@ export interface ExportOptions {
   providedIn: 'root'
 })
 export class ExportService {
+  private readonly nodeShapeCellPrefix = 'nodeShape:';
   private textMeasureContext: CanvasRenderingContext2D | null = null;
 
   private exportRequestedSource = new Subject<{
@@ -120,6 +126,10 @@ export class ExportService {
   }
 
   private getShapeExportLabel(cellValue: string): string {
+    const shapeKey = this.getNodeShapeKeyFromCellValue(cellValue);
+    if (shapeKey) {
+      return NODE_SYMBOL_OPTIONS.find(option => option.key === shapeKey)?.name.trim() || shapeKey;
+    }
     if (cellValue === 'shapeRhombus') {
       return '(Rhombus)';
     }
@@ -148,7 +158,7 @@ export class ExportService {
       return 40;
     }
 
-    if (cellValue === 'shapeRhombus' || cellValue === 'shapeTag' || cellValue === 'shapeBarrel') {
+    if (this.isShapeCellValue(cellValue)) {
       return this.measureTextWidth(this.getShapeExportLabel(cellValue)) + 40;
     }
 
@@ -161,7 +171,10 @@ export class ExportService {
     const paddingTop = parseFloat(computedStyle.paddingTop || '0');
     const paddingBottom = parseFloat(computedStyle.paddingBottom || '0');
     const estimatedWidth = this.getEstimatedCellWidth(cellValue, isHeaderCell);
-    const estimatedHeight = Math.ceil(Math.max(isHeaderCell ? 24 : 22, 16 + paddingTop + paddingBottom));
+    const estimatedHeight = Math.ceil(Math.max(
+      isHeaderCell ? 24 : this.getNodeShapeKeyFromCellValue(cellValue) ? 30 : 22,
+      16 + paddingTop + paddingBottom
+    ));
 
     return {
       width: Math.ceil(Math.max(rect.width, cell.offsetWidth, cell.scrollWidth, estimatedWidth)),
@@ -183,10 +196,41 @@ export class ExportService {
     return color.length === 7 && color[0] === '#';
   }
 
-  private extractShapeCellValue(cell: HTMLTableCellElement): string | null {
+  private isShapeCellValue(cellValue: string): boolean {
+    return this.getNodeShapeKeyFromCellValue(cellValue) !== null
+      || cellValue === 'shapeRhombus'
+      || cellValue === 'shapeTag'
+      || cellValue === 'shapeBarrel';
+  }
+
+  private getNodeShapeKeyFromCellValue(cellValue: string): string | null {
+    if (!cellValue.startsWith(this.nodeShapeCellPrefix)) {
+      return null;
+    }
+
+    const encodedShapeKey = cellValue.slice(this.nodeShapeCellPrefix.length);
+    try {
+      return resolveNodeShapeKey(decodeURIComponent(encodedShapeKey));
+    } catch {
+      return resolveNodeShapeKey(encodedShapeKey);
+    }
+  }
+
+  private extractShapeCellValue(
+    cell: HTMLTableCellElement,
+    renderNodeShapeImages: boolean = false
+  ): string | null {
     const shapeSelector = cell.querySelector('p-dropdown, p-treeselect');
     if (!shapeSelector) {
       return null;
+    }
+
+    if (renderNodeShapeImages) {
+      const shapeKeyElement = shapeSelector.querySelector('[data-shape-key]');
+      const shapeKey = shapeKeyElement?.getAttribute('data-shape-key');
+      if (shapeKey) {
+        return `${this.nodeShapeCellPrefix}${encodeURIComponent(resolveNodeShapeKey(shapeKey))}`;
+      }
     }
 
     const shapeAnchor = shapeSelector.querySelector('a');
@@ -208,8 +252,11 @@ export class ExportService {
     return text.length > 0 ? text : null;
   }
 
-  private getCellExportValue(cell: HTMLTableCellElement): string {
-    const shapeCellValue = this.extractShapeCellValue(cell);
+  private getCellExportValue(
+    cell: HTMLTableCellElement,
+    renderNodeShapeImages: boolean = false
+  ): string {
+    const shapeCellValue = this.extractShapeCellValue(cell, renderNodeShapeImages);
     if (shapeCellValue !== null) {
       return shapeCellValue;
     }
@@ -226,6 +273,30 @@ export class ExportService {
   private buildShapeSVG(cellValue: string, x: number, baselineY: number): string {
     const label = this.escapeSVGText(this.getShapeExportLabel(cellValue));
     const iconTop = baselineY - 16;
+    const shapeKey = this.getNodeShapeKeyFromCellValue(cellValue);
+
+    if (shapeKey) {
+      const markerSvg = this.parseNodeShapeDataUri(
+        getMapNodeShapeDataUri(shapeKey, '#000000', '#000000', 0, 1)
+      );
+      const viewBox = String(markerSvg?.documentElement.getAttribute('viewBox') || '')
+        .trim()
+        .split(/\s+/)
+        .map(Number);
+      if (markerSvg && viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
+        const iconSize = 22;
+        const scale = Math.min(iconSize / viewBox[2], iconSize / viewBox[3]);
+        const translateX = x + ((iconSize - (viewBox[2] * scale)) / 2) - (viewBox[0] * scale);
+        const translateY = iconTop + ((iconSize - (viewBox[3] * scale)) / 2) - (viewBox[1] * scale);
+        const markerContents = Array.from(markerSvg.documentElement.childNodes)
+          .map(child => new XMLSerializer().serializeToString(child))
+          .join('');
+        return `<g data-node-shape-key="${this.escapeSVGText(shapeKey)}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black">
+          <g transform="translate(${translateX},${translateY}) scale(${scale})">${markerContents}</g>
+          <text x="${x + 30}" y="${baselineY}">${label}</text>
+        </g>`;
+      }
+    }
 
     if (cellValue === 'shapeRhombus') {
       const diamondPoints = `${x + 6},${iconTop + 2} ${x + 12},${iconTop + 8} ${x + 6},${iconTop + 14} ${x},${iconTop + 8}`;
@@ -250,12 +321,31 @@ export class ExportService {
     </g>`;
   }
 
+  private parseNodeShapeDataUri(dataUri: string): XMLDocument | null {
+    const commaIndex = dataUri.indexOf(',');
+    if (commaIndex < 0) {
+      return null;
+    }
+
+    try {
+      const payload = dataUri.slice(commaIndex + 1);
+      const parsed = new DOMParser().parseFromString(decodeURIComponent(payload), 'image/svg+xml');
+      return parsed.getElementsByTagName('parsererror').length === 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Converts an HTMLTableElement into an SVG representation.
    * @param tableElement The HTMLTableElement (for example, a Node Color Table).
    * @returns An object containing the SVG string (<g>...</g>), width, and height.
    */
-  exportTableAsSVG(tableElement: HTMLTableElement, hasHeaderRow: boolean = false): { svg: string, width: number, height: number } {
+  exportTableAsSVG(
+    tableElement: HTMLTableElement,
+    hasHeaderRow: boolean = false,
+    renderNodeShapeImages: boolean = false
+  ): { svg: string, width: number, height: number } {
     const rows = tableElement.rows;
     const tableData: string[][] = [];
     const columnWidths: number[] = [];
@@ -273,7 +363,7 @@ export class ExportService {
           continue;
         }
 
-        const cellValue = this.getCellExportValue(cells[j]);
+        const cellValue = this.getCellExportValue(cells[j], renderNodeShapeImages);
         rowData.push(cellValue);
 
         const dimensions = this.getCellDimensions(cells[j], cellValue, hasHeaderRow && i === 0);
@@ -307,7 +397,7 @@ export class ExportService {
         if (this.isColorCellValue(cell)) {
           const data = cell.split(':');
           out += `<rect x="${widthOffsets[colIndex]}" y="${heightOffsets[rowIndex] - 12}" width="20" height="20" fill="${data[0]}" fill-opacity="${data[1]}"></rect>`;
-        } else if (cell === 'shapeRhombus' || cell === 'shapeTag' || cell === 'shapeBarrel') {
+        } else if (this.isShapeCellValue(cell)) {
           out += this.buildShapeSVG(cell, widthOffsets[colIndex], heightOffsets[rowIndex]);
         } else if (hasHeaderRow && rowIndex === 0) {
           out += `<text x="${widthOffsets[colIndex]}" y="${heightOffsets[rowIndex]}" font-family="Roboto, 'Helvetica Neue', sans-serif" font-size="16" fill="black" font-weight="bold">${this.escapeSVGText(cell)}</text>`;

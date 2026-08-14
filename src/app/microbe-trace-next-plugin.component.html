@@ -232,7 +232,7 @@
                   >
                     <ng-template pTemplate="value" let-node let-placeholder="placeholder">
                       @if (node?.data) {
-                        <div class="shape-tree-value">
+                        <div class="shape-tree-value" [attr.data-shape-key]="node.data.key">
                           <a [ngClass]="{'rhombus': node.data.key === 'rhomboid', 'tag': node.data.key === 'tag', 'barrel': node.data.key === 'barrel'}" [ngStyle]="{'font-weight': node.data.key === 'vee' ? 'bold' : 'normal'}" style="color: black;">{{ node.data.value }}</a>
                           {{ node.data.name }}
                         </div>

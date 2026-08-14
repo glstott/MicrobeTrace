@@ -164,6 +164,18 @@
   pointer-events: none;
 }
 
+.evolutionary-rate-tooltip-outlier {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--surface-border, #c7c9cc);
+}
+
+.evolutionary-rate-tooltip-outlier strong {
+  color: #b3261e;
+}
+
 .evolutionary-rate-settings-content {
   padding: 18px 4px 4px;
 }
@@ -179,8 +191,25 @@
 }
 
 #evolutionary-rate-plot-filename,
-#evolutionary-rate-statistics-filename {
+#evolutionary-rate-statistics-filename,
+#evolutionary-rate-outlier-report-filename {
   height: 42px;
+}
+
+.evolutionary-rate-outlier-report-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--surface-border, #d8dadd);
+  border-radius: 4px;
+  background: var(--surface-ground, #f4f5f6);
+  color: var(--text-color, #303030);
+  line-height: 1.4;
+}
+
+.evolutionary-rate-outlier-report-note span {
+  color: var(--text-color-secondary, #6c757d);
 }
 
 .evolutionary-rate-export-advanced {

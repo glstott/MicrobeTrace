@@ -8,6 +8,18 @@ export interface EvolutionaryRatePoint {
   distance: number;
 }
 
+export interface EvolutionaryRateResidual {
+  point: EvolutionaryRatePoint;
+  fittedDistance: number;
+  residual: number;
+  absoluteResidual: number;
+  residualScore: number | null;
+  isOutlier: boolean;
+}
+
+export const EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER = 2;
+export const EVOLUTIONARY_RATE_OUTLIER_MINIMUM_POINTS = 3;
+
 export interface EvolutionaryRateAnalysis {
   points: EvolutionaryRatePoint[];
   includedCount: number;
@@ -20,6 +32,10 @@ export interface EvolutionaryRateAnalysis {
   correlation: number | null;
   rSquared: number | null;
   residualMeanSquared: number | null;
+  residualRootMeanSquared: number | null;
+  outlierThreshold: number | null;
+  residuals: EvolutionaryRateResidual[];
+  outliers: EvolutionaryRateResidual[];
   tmrcaDate: Date | null;
 }
 
@@ -92,6 +108,17 @@ export function scaleEvolutionaryRateForDisplay(
     return analysis;
   }
 
+  const residuals = analysis.residuals.map(item => ({
+    ...item,
+    point: {
+      ...item.point,
+      distance: item.point.distance * 100,
+    },
+    fittedDistance: item.fittedDistance * 100,
+    residual: item.residual * 100,
+    absoluteResidual: item.absoluteResidual * 100,
+  }));
+
   return {
     ...analysis,
     points: analysis.points.map(point => ({
@@ -103,6 +130,14 @@ export function scaleEvolutionaryRateForDisplay(
     residualMeanSquared: analysis.residualMeanSquared === null
       ? null
       : analysis.residualMeanSquared * 10000,
+    residualRootMeanSquared: analysis.residualRootMeanSquared === null
+      ? null
+      : analysis.residualRootMeanSquared * 100,
+    outlierThreshold: analysis.outlierThreshold === null
+      ? null
+      : analysis.outlierThreshold * 100,
+    residuals,
+    outliers: residuals.filter(item => item.isOutlier),
   };
 }
 
@@ -155,6 +190,10 @@ export function calculateEvolutionaryRate(
     correlation: null,
     rSquared: null,
     residualMeanSquared: null,
+    residualRootMeanSquared: null,
+    outlierThreshold: null,
+    residuals: [],
+    outliers: [],
     tmrcaDate: null,
   } satisfies EvolutionaryRateAnalysis;
 
@@ -189,11 +228,51 @@ export function calculateEvolutionaryRate(
     ? null
     : Math.max(-1, Math.min(1, rawCorrelation));
   const rSquared = correlation === null ? null : correlation * correlation;
-  const residualMeanSquared = safePoints.reduce((sum, point) => {
+  const residualValues = safePoints.map(point => {
     const fittedDistance = intercept + (slope * point.decimalYear);
-    const residual = point.distance - fittedDistance;
-    return sum + (residual * residual);
-  }, 0) / includedCount;
+    return {
+      point,
+      fittedDistance,
+      residual: point.distance - fittedDistance,
+    };
+  });
+  const residualMeanSquared = residualValues.reduce(
+    (sum, item) => sum + (item.residual * item.residual),
+    0
+  ) / includedCount;
+  const residualRootMeanSquared = Math.sqrt(residualMeanSquared);
+  const residualTolerance = Math.max(
+    1,
+    ...residualValues.flatMap(item => [
+      Math.abs(item.point.distance),
+      Math.abs(item.fittedDistance),
+    ])
+  ) * 1e-12;
+  const canClassifyOutliers = includedCount >= EVOLUTIONARY_RATE_OUTLIER_MINIMUM_POINTS
+    && Number.isFinite(residualRootMeanSquared)
+    && residualRootMeanSquared > residualTolerance;
+  const outlierThreshold = canClassifyOutliers
+    ? residualRootMeanSquared * EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER
+    : null;
+  const residuals: EvolutionaryRateResidual[] = residualValues.map(item => {
+    const absoluteResidual = Math.abs(item.residual);
+    const residualScore = canClassifyOutliers
+      ? absoluteResidual / residualRootMeanSquared
+      : null;
+    return {
+      ...item,
+      absoluteResidual,
+      residualScore,
+      isOutlier: residualScore !== null
+        && residualScore >= EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER,
+    };
+  });
+  const outliers = residuals
+    .filter(item => item.isOutlier)
+    .sort((left, right) => (
+      right.absoluteResidual - left.absoluteResidual
+      || left.point.id.localeCompare(right.point.id)
+    ));
   const tmrcaDecimalYear = Math.abs(slope) > 1e-12 ? -intercept / slope : Number.NaN;
 
   return {
@@ -203,6 +282,10 @@ export function calculateEvolutionaryRate(
     correlation: correlation !== null && Number.isFinite(correlation) ? correlation : null,
     rSquared: rSquared !== null && Number.isFinite(rSquared) ? rSquared : null,
     residualMeanSquared: Number.isFinite(residualMeanSquared) ? residualMeanSquared : null,
+    residualRootMeanSquared: Number.isFinite(residualRootMeanSquared) ? residualRootMeanSquared : null,
+    outlierThreshold,
+    residuals,
+    outliers,
     tmrcaDate: decimalYearToCalendarDate(tmrcaDecimalYear),
   };
 }

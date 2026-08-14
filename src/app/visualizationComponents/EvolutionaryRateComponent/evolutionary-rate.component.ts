@@ -33,8 +33,10 @@ import { Subject, takeUntil } from 'rxjs';
 import * as d3 from 'd3';
 import { saveAs } from 'file-saver';
 import {
+  EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER,
   EvolutionaryRateAnalysis,
   EvolutionaryRatePoint,
+  EvolutionaryRateResidual,
   calculateEvolutionaryRate,
   calendarDateToDecimalYear,
   coerceFiniteDistance,
@@ -42,9 +44,16 @@ import {
   parseCalendarDate,
   scaleEvolutionaryRateForDisplay,
 } from './evolutionary-rate-analysis';
+import {
+  EvolutionaryRateOutlierReport,
+  buildEvolutionaryRateOutlierReport,
+  buildEvolutionaryRateOutlierReportMarkdown,
+  buildEvolutionaryRateOutlierReportPdfDefinition,
+} from './evolutionary-rate-outlier-report';
 
 type LabelOrientation = 'Right' | 'Left' | 'Top' | 'Bottom' | 'Middle';
 type PlotExportFileType = 'png' | 'jpeg' | 'webp' | 'svg';
+type OutlierReportFileType = 'markdown' | 'pdf';
 type TreeRootMethod = 'as-provided' | 'best-fit';
 
 interface EvolutionaryRateExcludedDataPoint {
@@ -70,6 +79,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   showExportDialog = false;
   statisticsExportFilename = 'evolutionary-rate-statistics.csv';
   plotExportFilename = 'evolutionary-rate-regression';
+  outlierReportFilename = 'evolutionary-rate-outlier-report';
   readonly plotExportFileTypeOptions: SelectItem[] = [
     { label: 'png', value: 'png' },
     { label: 'jpeg', value: 'jpeg' },
@@ -77,6 +87,11 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     { label: 'svg', value: 'svg' },
   ];
   plotExportFileType: PlotExportFileType = 'png';
+  readonly outlierReportFileTypeOptions: SelectItem[] = [
+    { label: 'PDF (.pdf)', value: 'pdf' },
+    { label: 'Markdown (.md)', value: 'markdown' },
+  ];
+  outlierReportFileType: OutlierReportFileType = 'pdf';
   plotExportScale = 1;
   plotExportQuality = 0.92;
   calculatedPlotExportResolution = '0 x 0';
@@ -140,6 +155,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   private refreshGeneration = 0;
   private distanceSourceError = '';
   private plotAnalysis: EvolutionaryRateAnalysis = calculateEvolutionaryRate([], 0);
+  private readonly outlierHighlightColor = '#d32f2f';
 
   constructor(
     @Inject(BaseComponentDirective.GoldenLayoutContainerInjectionToken) private container: ComponentContainer,
@@ -373,6 +389,21 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     this.saveGeneratedFile(blob, this.ensureFilenameExtension(this.statisticsExportFilename, '.csv'));
   }
 
+  async downloadOutlierReport(): Promise<void> {
+    if (!this.canExportOutlierReport) return;
+
+    const report = this.buildOutlierReport();
+    const baseFilename = this.getOutlierReportBaseFilename();
+    if (this.outlierReportFileType === 'pdf') {
+      await this.downloadOutlierReportPdf(report, `${baseFilename}.pdf`);
+      return;
+    }
+
+    const markdown = buildEvolutionaryRateOutlierReportMarkdown(report);
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    this.saveGeneratedFile(blob, `${baseFilename}.md`);
+  }
+
   downloadRegressionPlot(): void {
     const svg = this.plotHost?.nativeElement.querySelector('svg');
     if (!svg) return;
@@ -437,6 +468,16 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
   get tableVisible(): boolean {
     return this.selectedTableVisibility === 'Show';
+  }
+
+  get canExportOutlierReport(): boolean {
+    return this.analysis.slope !== null
+      && this.analysis.intercept !== null
+      && Boolean(this.plotHost?.nativeElement.querySelector('svg'));
+  }
+
+  get outlierCandidateCount(): number {
+    return this.analysis.outliers.length;
   }
 
   formatDateRange(): string {
@@ -794,15 +835,97 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
     const plotLayer = chart.append('g').attr('clip-path', `url(#${clipId})`);
     const markerSizes = this.buildMarkerSizes(points);
+    const residualsByPointId = new Map<string, EvolutionaryRateResidual>(
+      displayAnalysis.residuals.map(residual => [residual.point.id, residual])
+    );
+    const outlierPointIds = new Set(displayAnalysis.outliers.map(residual => residual.point.id));
+    const outlierPoints = points.filter(point => outlierPointIds.has(point.id));
+
+    if (outlierPoints.length > 0) {
+      const legendWidth = 235;
+      const legend = svg.append('g')
+        .attr('data-testid', 'evolutionary-rate-outlier-legend')
+        .attr('role', 'img')
+        .attr('aria-label', `Potential outlier: absolute residual at least ${EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER} times RMSE`)
+        .attr('transform', `translate(${Math.max(margin.left, width - margin.right - legendWidth)},16)`)
+        .style('pointer-events', 'none');
+      legend.append('rect')
+        .attr('x', 1)
+        .attr('y', -7)
+        .attr('width', 14)
+        .attr('height', 14)
+        .attr('rx', 4)
+        .attr('fill', 'none')
+        .attr('stroke', this.outlierHighlightColor)
+        .attr('stroke-width', 2.5)
+        .attr('stroke-dasharray', '5 3');
+      legend.append('text')
+        .attr('x', 22)
+        .attr('y', 0)
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', contrastColor)
+        .attr('font-family', 'Roboto, Helvetica Neue, sans-serif')
+        .attr('font-size', 12)
+        .attr('font-weight', 600)
+        .text(`Potential outlier (≥ ${EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER} × RMSE)`);
+
+      const highlights = plotLayer.selectAll('g.evolutionary-rate-outlier-highlight')
+        .data(outlierPoints)
+        .enter()
+        .append('g')
+        .attr('class', 'evolutionary-rate-outlier-highlight')
+        .attr('data-testid', 'evolutionary-rate-outlier-highlight')
+        .attr('data-node-id', point => point.id)
+        .attr('aria-hidden', 'true')
+        .attr('transform', point => `translate(${xScale(point.date)},${yScale(point.distance)})`)
+        .style('pointer-events', 'none');
+
+      highlights.each((point: EvolutionaryRatePoint, index: number, nodes: any[]) => {
+        const markerSize = markerSizes.get(point.id) || this.selectedNodeRadius;
+        const x = -(markerSize / 2) - 4;
+        const y = -(markerSize / 2) - 4;
+        const size = markerSize + 8;
+        const highlight = d3.select(nodes[index]);
+        highlight.append('rect')
+          .attr('x', x)
+          .attr('y', y)
+          .attr('width', size)
+          .attr('height', size)
+          .attr('rx', 6)
+          .attr('fill', 'none')
+          .attr('stroke', backgroundColor)
+          .attr('stroke-width', 7);
+        highlight.append('rect')
+          .attr('x', x)
+          .attr('y', y)
+          .attr('width', size)
+          .attr('height', size)
+          .attr('rx', 6)
+          .attr('fill', 'none')
+          .attr('stroke', this.outlierHighlightColor)
+          .attr('stroke-width', 3)
+          .attr('stroke-dasharray', '6 3');
+      });
+    }
+
     const markerSelection = plotLayer.selectAll('image.evolutionary-rate-point')
       .data(points)
       .enter()
       .append('image')
-      .attr('class', 'evolutionary-rate-point')
+      .attr('class', point => outlierPointIds.has(point.id)
+        ? 'evolutionary-rate-point evolutionary-rate-outlier-point'
+        : 'evolutionary-rate-point')
       .attr('data-testid', 'evolutionary-rate-point')
       .attr('data-node-id', point => point.id)
       .attr('data-selected', point => point.node?.selected ? 'true' : 'false')
-      .attr('aria-label', point => `${point.id}${point.node?.selected ? ', selected' : ''}`)
+      .attr('data-outlier', point => outlierPointIds.has(point.id) ? 'true' : 'false')
+      .attr('aria-label', point => [
+        point.id,
+        point.node?.selected ? 'selected' : '',
+        outlierPointIds.has(point.id)
+          ? `potential outlier, absolute residual at least ${EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER} times RMSE`
+          : '',
+      ].filter(Boolean).join(', '))
       .attr('role', 'button')
       .attr('tabindex', 0)
       .attr('href', point => this.getNodeMarkerDataUri(
@@ -829,7 +952,10 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
         event.stopPropagation();
         this.selectNode(point.node, Boolean(event.ctrlKey || event.metaKey));
       })
-      .on('mouseenter', (point: EvolutionaryRatePoint) => this.showTooltip(point))
+      .on('mouseenter', (point: EvolutionaryRatePoint) => this.showTooltip(
+        point,
+        residualsByPointId.get(point.id)
+      ))
       .on('mousemove', () => this.positionTooltip())
       .on('mouseleave', () => this.hideTooltip());
     svg.on('click', () => this.clearNodeSelection());
@@ -991,7 +1117,10 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     }
   }
 
-  private showTooltip(point: EvolutionaryRatePoint): void {
+  private showTooltip(
+    point: EvolutionaryRatePoint,
+    residual?: EvolutionaryRateResidual
+  ): void {
     const tooltip = this.plotTooltip?.nativeElement;
     if (!tooltip) {
       return;
@@ -1005,6 +1134,19 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       row.append(label, document.createTextNode(this.formatNodeValue(point.node[field])));
       tooltip.appendChild(row);
     });
+    if (residual?.isOutlier) {
+      const details = document.createElement('div');
+      details.className = 'evolutionary-rate-tooltip-outlier';
+      details.setAttribute('data-testid', 'evolutionary-rate-tooltip-outlier');
+      const heading = document.createElement('strong');
+      heading.textContent = 'Potential outlier';
+      const explanation = document.createElement('div');
+      explanation.textContent = `Flagged because its absolute residual (${this.formatAxisDistance(residual.absoluteResidual)}) is ${this.formatNumber(residual.residualScore as number)} × RMSE, meeting the ≥ ${EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER} × RMSE threshold.`;
+      const values = document.createElement('div');
+      values.textContent = `Observed: ${this.formatAxisDistance(residual.point.distance)}; fitted: ${this.formatAxisDistance(residual.fittedDistance)}; residual: ${this.formatAxisDistance(residual.residual)}.`;
+      details.append(heading, explanation, values);
+      tooltip.appendChild(details);
+    }
     tooltip.hidden = false;
     this.positionTooltip();
   }
@@ -1196,6 +1338,215 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
         .attr('font-size', 13)
         .text(row.value);
     });
+  }
+
+  private buildOutlierReport(): EvolutionaryRateOutlierReport {
+    const totalAnalysisNodes = this.analysis.includedCount + this.analysis.excludedCount;
+    return buildEvolutionaryRateOutlierReport({
+      analysis: this.analysis,
+      scopeLabel: this.selectionActive
+        ? `${totalAnalysisNodes} selected visible node${totalAnalysisNodes === 1 ? '' : 's'}`
+        : `${totalAnalysisNodes} visible node${totalAnalysisNodes === 1 ? '' : 's'}`,
+      dateField: this.selectedDateField,
+      distanceSourceLabel: this.distanceSourceLabel,
+      distanceSourceKind: this.distanceSourceKind,
+      treeRootMethod: this.selectedTreeRootMethod,
+      usePercentageDistanceDisplay: this.usesPercentageDistanceDisplay(),
+      regressionPlotSvg: this.serializeRegressionPlotSvg(),
+      excludedDataPoints: this.excludedDataPoints.map(point => ({
+        id: point.id,
+        dateValue: point.dateValue,
+        reason: point.reason,
+      })),
+    });
+  }
+
+  private serializeRegressionPlotSvg(): string {
+    const sourceSvg = this.plotHost?.nativeElement.querySelector('svg');
+    if (!sourceSvg) return '';
+
+    const reportSvg = sourceSvg.cloneNode(true) as SVGSVGElement;
+    reportSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    reportSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    reportSvg.setAttribute('role', 'img');
+    reportSvg.querySelectorAll('[tabindex]').forEach(element => element.removeAttribute('tabindex'));
+    reportSvg.querySelectorAll('[role="button"]').forEach(element => element.removeAttribute('role'));
+    this.replaceEmbeddedSvgMarkersWithVectors(reportSvg);
+    this.appendNodeKeyTablesToReportSvg(reportSvg);
+
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = [
+      'text { font-family: Roboto, Helvetica Neue, Arial, sans-serif; }',
+      '.axis-title { font-size: 16px; font-weight: 500; }',
+      '.evolutionary-rate-point { cursor: default; }',
+    ].join(' ');
+    reportSvg.insertBefore(style, reportSvg.firstChild);
+
+    return new XMLSerializer().serializeToString(reportSvg);
+  }
+
+  private replaceEmbeddedSvgMarkersWithVectors(reportSvg: SVGSVGElement): void {
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    reportSvg.querySelectorAll('image.evolutionary-rate-point').forEach(image => {
+      const href = image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      if (!href.startsWith('data:image/svg+xml')) return;
+
+      const markerSvg = this.parseSvgDataUri(href);
+      const viewBox = String(markerSvg?.documentElement.getAttribute('viewBox') || '')
+        .trim()
+        .split(/\s+/)
+        .map(Number);
+      const x = Number(image.getAttribute('x'));
+      const y = Number(image.getAttribute('y'));
+      const width = Number(image.getAttribute('width'));
+      const height = Number(image.getAttribute('height'));
+      if (
+        !markerSvg
+        || viewBox.length !== 4
+        || !viewBox.every(Number.isFinite)
+        || ![x, y, width, height].every(Number.isFinite)
+        || viewBox[2] <= 0
+        || viewBox[3] <= 0
+        || width <= 0
+        || height <= 0
+      ) {
+        return;
+      }
+
+      const scale = Math.min(width / viewBox[2], height / viewBox[3]);
+      const translateX = x + ((width - (viewBox[2] * scale)) / 2) - (viewBox[0] * scale);
+      const translateY = y + ((height - (viewBox[3] * scale)) / 2) - (viewBox[1] * scale);
+      const group = document.createElementNS(svgNamespace, 'g');
+      group.setAttribute(
+        'class',
+        `${image.getAttribute('class') || 'evolutionary-rate-point'} evolutionary-rate-report-vector-point`
+      );
+      group.setAttribute('transform', `translate(${translateX},${translateY}) scale(${scale})`);
+      ['data-testid', 'data-node-id', 'data-selected', 'data-outlier', 'aria-label'].forEach(attribute => {
+        const value = image.getAttribute(attribute);
+        if (value !== null) group.setAttribute(attribute, value);
+      });
+      Array.from(markerSvg.documentElement.childNodes).forEach(child => {
+        group.appendChild(document.importNode(child, true));
+      });
+      image.parentNode?.replaceChild(group, image);
+    });
+  }
+
+  private appendNodeKeyTablesToReportSvg(reportSvg: SVGSVGElement): void {
+    const keyTables = this.visuals.microbeTrace?.getNodeKeyTablesForExport?.() || [];
+    const exportedKeys = keyTables
+      .map(table => this.exportService.exportTableAsSVG(
+        table,
+        true,
+        Boolean(table.querySelector('[data-shape-key]'))
+      ))
+      .filter(key => key.svg && key.width > 0 && key.height > 0)
+      .map(key => {
+        const parsed = new DOMParser().parseFromString(
+          `<svg xmlns="http://www.w3.org/2000/svg">${key.svg}</svg>`,
+          'image/svg+xml'
+        );
+        return parsed.getElementsByTagName('parsererror').length === 0
+          ? { ...key, element: parsed.documentElement.firstElementChild }
+          : null;
+      })
+      .filter((key): key is { svg: string; width: number; height: number; element: Element } => Boolean(key?.element));
+
+    if (exportedKeys.length === 0) return;
+
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const viewBoxValues = String(reportSvg.getAttribute('viewBox') || '')
+      .trim()
+      .split(/\s+/)
+      .map(Number);
+    const hasValidViewBox = viewBoxValues.length === 4 && viewBoxValues.every(Number.isFinite);
+    const viewBoxX = hasValidViewBox ? viewBoxValues[0] : 0;
+    const viewBoxY = hasValidViewBox ? viewBoxValues[1] : 0;
+    const originalWidth = hasValidViewBox
+      ? viewBoxValues[2]
+      : Number(reportSvg.getAttribute('width')) || 800;
+    const originalHeight = hasValidViewBox
+      ? viewBoxValues[3]
+      : Number(reportSvg.getAttribute('height')) || 500;
+    const padding = 12;
+    const gap = 12;
+    const maximumRowWidth = Math.max(1, originalWidth - (padding * 2));
+    const container = document.createElementNS(svgNamespace, 'g');
+    container.setAttribute('data-testid', 'evolutionary-rate-report-keys');
+    container.setAttribute('role', 'group');
+    container.setAttribute('aria-label', 'Node color and shape keys');
+
+    let currentX = padding;
+    let currentY = originalHeight + padding;
+    let rowHeight = 0;
+    let maximumRight = originalWidth;
+
+    exportedKeys.forEach(key => {
+      if (currentX > padding && currentX + key.width > maximumRowWidth + padding) {
+        currentX = padding;
+        currentY += rowHeight + gap;
+        rowHeight = 0;
+      }
+
+      const wrapper = document.createElementNS(svgNamespace, 'g');
+      wrapper.setAttribute('class', 'evolutionary-rate-report-key');
+      wrapper.setAttribute('transform', `translate(${viewBoxX + currentX},${viewBoxY + currentY})`);
+      wrapper.appendChild(document.importNode(key.element, true));
+      container.appendChild(wrapper);
+      maximumRight = Math.max(maximumRight, currentX + key.width + padding);
+      rowHeight = Math.max(rowHeight, key.height);
+      currentX += key.width + gap;
+    });
+
+    const combinedWidth = Math.max(originalWidth, maximumRight);
+    const combinedHeight = currentY + rowHeight + padding;
+    reportSvg.appendChild(container);
+    reportSvg.setAttribute('viewBox', `${viewBoxX} ${viewBoxY} ${combinedWidth} ${combinedHeight}`);
+    reportSvg.setAttribute('width', String(combinedWidth));
+    reportSvg.setAttribute('height', String(combinedHeight));
+  }
+
+  private parseSvgDataUri(dataUri: string): XMLDocument | null {
+    const commaIndex = dataUri.indexOf(',');
+    if (commaIndex < 0) return null;
+
+    try {
+      const metadata = dataUri.slice(0, commaIndex);
+      const payload = dataUri.slice(commaIndex + 1);
+      let svgText: string;
+      if (/;base64/i.test(metadata)) {
+        const binary = atob(payload);
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        svgText = new TextDecoder('utf-8').decode(bytes);
+      } else {
+        svgText = decodeURIComponent(payload);
+      }
+      const parsed = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+      return parsed.getElementsByTagName('parsererror').length === 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async downloadOutlierReportPdf(
+    report: EvolutionaryRateOutlierReport,
+    filename: string
+  ): Promise<void> {
+    try {
+      const { default: pdfMake } = await import('pdfmake/build/pdfmake.js');
+      const { default: pdfFonts } = await import('pdfmake/build/vfs_fonts.js');
+      pdfMake.vfs = pdfFonts;
+      pdfMake.createPdf(buildEvolutionaryRateOutlierReportPdfDefinition(report)).download(filename);
+    } catch (error) {
+      console.error('Failed to generate the evolutionary-rate outlier report PDF', error);
+    }
+  }
+
+  private getOutlierReportBaseFilename(): string {
+    const trimmed = String(this.outlierReportFilename || '').trim();
+    const withoutExtension = trimmed.replace(/\.(?:md|markdown|pdf)$/i, '');
+    return withoutExtension || 'evolutionary-rate-outlier-report';
   }
 
   private getPlotExportDimensions(): { width: number; height: number } {

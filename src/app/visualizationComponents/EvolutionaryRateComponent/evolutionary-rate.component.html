@@ -484,6 +484,73 @@
             </div>
           </div>
         </tab>
+
+        <tab heading="Outlier Report" customClass="m-tabs__item">
+          <div class="modal-dialog" role="document">
+            <div class="modal-content">
+              <div class="modal-body evolutionary-rate-export-body">
+                <div class="form-group row">
+                  <div class="col-8">
+                    <label for="evolutionary-rate-outlier-report-filename">Filename</label>
+                    <input
+                      id="evolutionary-rate-outlier-report-filename"
+                      data-testid="evolutionary-rate-outlier-report-filename"
+                      type="text"
+                      class="form-control form-control-sm"
+                      placeholder="Filename"
+                      [(ngModel)]="outlierReportFilename">
+                  </div>
+                  <div class="col-4">
+                    <label for="evolutionary-rate-outlier-report-filetype">File Type</label>
+                    <p-select
+                      id="evolutionary-rate-outlier-report-filetype"
+                      data-testid="evolutionary-rate-outlier-report-filetype"
+                      [options]="outlierReportFileTypeOptions"
+                      appendTo="body"
+                      class="width-percent-100"
+                      [(ngModel)]="outlierReportFileType">
+                    </p-select>
+                  </div>
+                </div>
+
+                <div
+                  class="evolutionary-rate-outlier-report-note"
+                  data-testid="evolutionary-rate-outlier-report-summary"
+                  aria-live="polite">
+                  @if (canExportOutlierReport) {
+                    @if (analysis.points.length < 3) {
+                      <strong>At least 3 analyzable points are required to classify potential outliers.</strong>
+                    } @else if (analysis.outlierThreshold === null) {
+                      <strong>No potential outliers were classified because residual variation is zero or negligible.</strong>
+                    } @else {
+                      <strong>
+                        {{ outlierCandidateCount }} potential outlier{{ outlierCandidateCount === 1 ? '' : 's' }}
+                      </strong>
+                    }
+                    <span>
+                      Potential outliers have an absolute regression residual at least 2 times the residual RMSE.
+                      The report treats these as diagnostic flags and includes suggested follow-up checks.
+                    </span>
+                  } @else {
+                    <strong>A valid regression is required.</strong>
+                    <span>Choose a valid collection-date field and include at least two distinct dates.</span>
+                  }
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-error" (click)="showExportDialog = false">Cancel</button>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  data-testid="evolutionary-rate-download-outlier-report"
+                  [disabled]="!canExportOutlierReport"
+                  (click)="downloadOutlierReport()">
+                  Export
+                </button>
+              </div>
+            </div>
+          </div>
+        </tab>
       </tabset>
     </p-dialog>
 

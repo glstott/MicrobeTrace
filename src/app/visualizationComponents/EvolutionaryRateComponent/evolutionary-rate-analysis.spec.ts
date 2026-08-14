@@ -71,6 +71,10 @@ describe('evolutionary rate analysis', () => {
     expect(result.correlation).toBeCloseTo(1, 10);
     expect(result.rSquared).toBeCloseTo(1, 10);
     expect(result.residualMeanSquared).toBeCloseTo(0, 10);
+    expect(result.residualRootMeanSquared).toBeCloseTo(0, 10);
+    expect(result.residuals).toHaveSize(3);
+    expect(result.outlierThreshold).toBeNull();
+    expect(result.outliers).toEqual([]);
     expect(result.dateSpanYears).toBeCloseTo(2, 10);
   });
 
@@ -82,6 +86,22 @@ describe('evolutionary rate analysis', () => {
     ], 3);
 
     expect(result.residualMeanSquared).toBeCloseTo(1 / 18, 10);
+    expect(result.residualRootMeanSquared).toBeCloseTo(Math.sqrt(1 / 18), 10);
+    expect(result.residuals.map(item => item.point.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('flags and ranks potential outliers at two residual RMSEs', () => {
+    const points = Array.from({ length: 10 }, (_, index) => point(
+      `sample-${index}`,
+      `${2020 + index}-01-01`,
+      index === 5 ? 50 : index
+    ));
+    const result = calculateEvolutionaryRate(points, points.length);
+
+    expect(result.outlierThreshold).toBeCloseTo((result.residualRootMeanSquared as number) * 2, 10);
+    expect(result.outliers.map(item => item.point.id)).toEqual(['sample-5']);
+    expect(result.outliers[0].residualScore).toBeGreaterThanOrEqual(2);
+    expect(result.outliers[0].residual).toBeGreaterThan(0);
   });
 
   it('filters malformed analysis points and reports them as excluded', () => {
@@ -110,6 +130,10 @@ describe('evolutionary rate analysis', () => {
     expect(duplicateDates.correlation).toBeNull();
     expect(duplicateDates.rSquared).toBeNull();
     expect(duplicateDates.residualMeanSquared).toBeNull();
+    expect(duplicateDates.residualRootMeanSquared).toBeNull();
+    expect(duplicateDates.outlierThreshold).toBeNull();
+    expect(duplicateDates.residuals).toEqual([]);
+    expect(duplicateDates.outliers).toEqual([]);
     expect(duplicateDates.tmrcaDate).toBeNull();
 
     const constantDistance = calculateEvolutionaryRate([
@@ -121,6 +145,11 @@ describe('evolutionary rate analysis', () => {
     expect(constantDistance.correlation).toBeNull();
     expect(constantDistance.rSquared).toBeNull();
     expect(constantDistance.residualMeanSquared).toBeCloseTo(0, 10);
+    expect(constantDistance.residualRootMeanSquared).toBeCloseTo(0, 10);
+    expect(constantDistance.outlierThreshold).toBeNull();
+    expect(constantDistance.residuals).toHaveSize(2);
+    expect(constantDistance.residuals.every(item => item.residualScore === null)).toBeTrue();
+    expect(constantDistance.outliers).toEqual([]);
     expect(constantDistance.tmrcaDate).toBeNull();
   });
 
@@ -139,5 +168,9 @@ describe('evolutionary rate analysis', () => {
     expect(displayed.correlation).toBe(raw.correlation);
     expect(displayed.rSquared).toBe(raw.rSquared);
     expect(displayed.residualMeanSquared).toBeCloseTo((raw.residualMeanSquared as number) * 10000, 10);
+    expect(displayed.residualRootMeanSquared).toBeCloseTo((raw.residualRootMeanSquared as number) * 100, 10);
+    expect(displayed.residuals[0].fittedDistance).toBeCloseTo(raw.residuals[0].fittedDistance * 100, 10);
+    expect(displayed.residuals[0].residual).toBeCloseTo(raw.residuals[0].residual * 100, 10);
+    expect(displayed.residuals[0].residualScore).toBe(raw.residuals[0].residualScore);
   });
 });
