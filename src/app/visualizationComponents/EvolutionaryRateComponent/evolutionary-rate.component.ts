@@ -745,9 +745,6 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
     const width = Math.max(360, hostElement.clientWidth || this.container.width || 800);
     const height = Math.max(300, hostElement.clientHeight || (this.container.height - 44) || 500);
-    const margin = { top: 32, right: 40, bottom: 72, left: 88 };
-    const innerWidth = Math.max(1, width - margin.left - margin.right);
-    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
     const displayPlotAnalysis = scaleEvolutionaryRateForDisplay(
       this.plotAnalysis,
       this.usesPercentageDistanceDisplay()
@@ -756,6 +753,14 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       this.analysis,
       this.usesPercentageDistanceDisplay()
     );
+    const showSelectionRegressionLegend = this.selectionActive
+      && displayAnalysis.slope !== null
+      && displayAnalysis.intercept !== null;
+    const legendRowCount = Number(showSelectionRegressionLegend)
+      + Number(displayAnalysis.outliers.length > 0);
+    const margin = { top: legendRowCount > 1 ? 56 : 32, right: 40, bottom: 72, left: 88 };
+    const innerWidth = Math.max(1, width - margin.left - margin.right);
+    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
     const points = displayPlotAnalysis.points;
     const dateExtent = d3.extent(points, point => point.date.getTime()) as [number, number];
     const distanceExtent = d3.extent(points, point => point.distance) as [number, number];
@@ -840,6 +845,39 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     );
     const outlierPointIds = new Set(displayAnalysis.outliers.map(residual => residual.point.id));
     const outlierPoints = points.filter(point => outlierPointIds.has(point.id));
+    let nextLegendRow = 0;
+
+    if (showSelectionRegressionLegend) {
+      const regressionNodeCount = displayAnalysis.includedCount;
+      const legendText = `Regression based on ${regressionNodeCount} highlighted node${regressionNodeCount === 1 ? '' : 's'}`;
+      const legendWidth = 272;
+      const legend = svg.append('g')
+        .attr('data-testid', 'evolutionary-rate-selection-legend')
+        .attr('role', 'img')
+        .attr('aria-label', legendText)
+        .attr(
+          'transform',
+          `translate(${Math.max(margin.left, width - margin.right - legendWidth)},${16 + (nextLegendRow * 24)})`
+        )
+        .style('pointer-events', 'none');
+      legend.append('circle')
+        .attr('cx', 8)
+        .attr('cy', 0)
+        .attr('r', 6)
+        .attr('fill', backgroundColor)
+        .attr('stroke', this.getSelectedNodeStrokeColor())
+        .attr('stroke-width', 3);
+      legend.append('text')
+        .attr('x', 22)
+        .attr('y', 0)
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', contrastColor)
+        .attr('font-family', 'Roboto, Helvetica Neue, sans-serif')
+        .attr('font-size', 12)
+        .attr('font-weight', 600)
+        .text(legendText);
+      nextLegendRow++;
+    }
 
     if (outlierPoints.length > 0) {
       const legendWidth = 235;
@@ -847,7 +885,10 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
         .attr('data-testid', 'evolutionary-rate-outlier-legend')
         .attr('role', 'img')
         .attr('aria-label', `Potential outlier: absolute residual at least ${EVOLUTIONARY_RATE_OUTLIER_RMSE_MULTIPLIER} times RMSE`)
-        .attr('transform', `translate(${Math.max(margin.left, width - margin.right - legendWidth)},16)`)
+        .attr(
+          'transform',
+          `translate(${Math.max(margin.left, width - margin.right - legendWidth)},${16 + (nextLegendRow * 24)})`
+        )
         .style('pointer-events', 'none');
       legend.append('rect')
         .attr('x', 1)
@@ -1028,6 +1069,12 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     return sizes;
   }
 
+  private getSelectedNodeStrokeColor(): string {
+    return this.widgets['selected-node-stroke-color']
+      || this.widgets['selected-color']
+      || '#ff8300';
+  }
+
   private getNodeMarkerDataUri(node: any, markerSize: number): string {
     const fillStyle = this.commonService.getNodeFillStyle(node);
     const shapeKey = resolveNodeShapeForNode(
@@ -1037,7 +1084,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       this.commonService.temp.style.nodeSymbolMap,
     );
     const strokeColor = node?.selected
-      ? this.widgets['selected-node-stroke-color'] || this.widgets['selected-color'] || '#ff8300'
+      ? this.getSelectedNodeStrokeColor()
       : this.widgets['background-color-contrast'] || '#000000';
     const displayStrokeWidth = node?.selected
       ? this.toFiniteNumber(

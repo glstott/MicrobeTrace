@@ -265,7 +265,7 @@ describe('EvolutionaryRateComponent', () => {
       { _id: 'b', collectionDate: '2021-01-01', selected: true },
       { _id: 'c', collectionDate: '2022-01-01', selected: true },
     ];
-    const { component, host } = createComponent({
+    const { component, exportService, host } = createComponent({
       nodes,
       pairDistances: {
         'a|b': 2,
@@ -296,6 +296,22 @@ describe('EvolutionaryRateComponent', () => {
     const selectedMarkerUri = renderedPoints[1].getAttribute('href') || '';
     expect(decodeURIComponent(selectedMarkerUri)).toContain('stroke="#ff8300"');
     expect(decodeURIComponent(selectedMarkerUri)).toContain('stroke-width="100"');
+    const selectionLegend = host.querySelector(
+      '[data-testid="evolutionary-rate-selection-legend"]'
+    );
+    expect(selectionLegend?.textContent).toContain('Regression based on 2 highlighted nodes');
+    expect(selectionLegend?.getAttribute('aria-label')).toBe('Regression based on 2 highlighted nodes');
+    expect(selectionLegend?.querySelector('circle')?.getAttribute('stroke')).toBe('#ff8300');
+
+    const reportSvg = (component as any).serializeRegressionPlotSvg() as string;
+    expect(reportSvg).toContain('data-testid="evolutionary-rate-selection-legend"');
+    expect(reportSvg).toContain('Regression based on 2 highlighted nodes');
+
+    component.plotExportFileType = 'svg';
+    component.downloadRegressionPlot();
+    const standalonePlotSvg = exportService.requestSVGExport.calls.mostRecent().args[1] as string;
+    expect(standalonePlotSvg).toContain('data-testid="evolutionary-rate-selection-legend"');
+    expect(standalonePlotSvg).toContain('Regression based on 2 highlighted nodes');
 
     nodes.forEach(node => node.selected = false);
     await (component as any).refreshPlot();
@@ -306,6 +322,10 @@ describe('EvolutionaryRateComponent', () => {
     expect(
       Array.from(host.querySelectorAll('[data-selected="true"]')).length
     ).toBe(0);
+    expect(host.querySelector('[data-testid="evolutionary-rate-selection-legend"]')).toBeNull();
+    expect((component as any).serializeRegressionPlotSvg()).not.toContain(
+      'data-testid="evolutionary-rate-selection-legend"'
+    );
   });
 
   it('selects plotted nodes with 2D-style single and additive interactions', async () => {

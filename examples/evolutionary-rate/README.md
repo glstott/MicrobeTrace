@@ -21,6 +21,33 @@ Launch MicrobeTrace, open **Evolutionary Rate**, and select `sample_date` as the
 
 Each successive sequence contains one additional SNP relative to `ERF_2018`. Switching the global metric to TN93 should change the Y-axis and recompute the plotted values from TN93 distances.
 
+## TN93 outlier report
+
+Load `tn93-outlier-example.csv` as a Node List, using `_id` as the ID field and `seq` as the sequence field. Select **TN93** as the global genetic metric, open **Evolutionary Rate**, and select `sample_date` as the Sample Collection Date.
+
+The 12 synthetic 800-base sequences form a nested molecular-clock series from 2014 through 2025. `TN93_2020_DATE_MISMATCH` deliberately uses the mutation pattern expected for the 2024 sample, simulating a sample-date or sequence-label mismatch. All TN93 distances from the 2014 reference are at or below 0.014143, within the default 0.015 TN93 threshold.
+
+Expected results with TN93 shown as decimals:
+
+- Y-axis: `Genetic Distance (TN93)`
+- 12 included samples and 0 excluded samples
+- 1 potential outlier: `TN93_2020_DATE_MISMATCH`
+- Slope: approximately 0.0013 TN93 units/year
+- Correlation coefficient: 0.9532
+- R-squared: 0.9087
+- TMRCA: 2013-10-16
+- Outlier absolute residual: approximately 0.0047, or 3.3126 times RMSE
+
+With TN93 percentage display enabled, the slope should be approximately 0.1304%/year and the outlier absolute residual approximately 0.4727%. Open the Evolutionary Rate download menu and use the **Outlier Report** tab to verify that both the default PDF and Markdown report contain the regression plot, the highlighted outlier, and the single-row potential-outliers table.
+
+For an additional report-key check, color nodes by `location` and assign shapes by `lineage` before downloading the report.
+
+Regenerate and validate this fixture with:
+
+```bash
+node scripts/generate-evolutionary-rate-examples.js
+```
+
 ## Uploaded phylogenetic tree
 
 Start a new session and load these two files together:
