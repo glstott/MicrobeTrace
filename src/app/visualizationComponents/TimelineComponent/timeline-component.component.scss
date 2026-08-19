@@ -6,6 +6,7 @@
 
   #epiCurve {
     padding-top: 50px;
+    position: relative;
   }
   #epiCurve .axis--grid .domain {
     fill: #ddd;
@@ -49,4 +50,86 @@
     height: 30px;
     width: 30px !important;
     display: block !important;
+}
+
+.epi-mixed-tooltip {
+  position: absolute;
+  display: none;
+  min-width: 180px;
+  max-width: 240px;
+  white-space: pre-line;
+  background: #ffffff;
+  border: 1px solid #9ba4ae;
+  box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
+  color: #1f2a35;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.epi-mixed-series-list,
+.epi-mixed-annotation-settings,
+.epi-mixed-publication-fields {
+  padding: 2px 4px 8px;
+}
+
+.epi-mixed-series-editor,
+.epi-mixed-annotation-editor {
+  border: 1px solid #d5dae0;
+  border-radius: 4px;
+  background: #fafbfc;
+  padding: 12px 12px 4px;
+  margin: 0 0 12px;
+}
+
+.epi-mixed-series-heading {
+  color: #24364b;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.epi-mixed-series-editor .form-group,
+.epi-mixed-annotation-editor .form-group,
+.epi-mixed-publication-fields .form-group {
+  margin-bottom: 10px;
+}
+
+.epi-mixed-color-cell {
+  padding-left: 5px;
+}
+
+.epi-mixed-color-input {
+  height: 31px;
+  padding: 4px 6px;
+}
+
+.epi-mixed-validation {
+  color: #a11a2b;
+  font-size: 12px;
+  font-weight: 500;
+  margin: -2px 0 10px;
+}
+
+.epi-mixed-settings-help {
+  color: #5f6772;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.epi-mixed-empty-settings {
+  color: #5f6772;
+  padding: 18px 2px;
+}
+
+.epi-mixed-annotation-editor {
+  margin-top: 12px;
+}
+
+.epi-mixed-annotation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 10px;
 }

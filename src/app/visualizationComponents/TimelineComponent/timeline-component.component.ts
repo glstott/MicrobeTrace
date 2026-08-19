@@ -14,6 +14,27 @@ import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { ExportService } from '@app/contactTraceCommonServices/export.service';
 import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
+import {
+  EpiMixedAnnotationConfig,
+  EpiMixedBinDatum,
+  EpiMixedBinInterval,
+  EpiMixedConfig,
+  EpiMixedSeriesConfig,
+  aggregateMixedSeries,
+  getGroupedBarGeometry,
+  getMixedDateExtent,
+  getNumericMixedFields,
+  getZeroInclusiveDomain,
+  normalizeMixedConfig,
+  parseMixedDate,
+  toFiniteMixedValue
+} from './timeline-mixed-series';
+
+interface EpiMixedRenderedSeries {
+  config: EpiMixedSeriesConfig;
+  label: string;
+  bins: EpiMixedBinDatum[];
+}
 
 @Component({
     selector: 'app-timeline-component',
@@ -28,6 +49,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   private isDestroyed = false;
   @ViewChild('epiCurve') epiCurveElement: ElementRef;
   @ViewChild('epiCurveSVG') epiCurveSVGElement: ElementRef;
+  @ViewChild('mixedTooltip') mixedTooltipElement: ElementRef;
   viewActive: boolean = true;
 
   widgets: object;
@@ -35,6 +57,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
 
   FieldList: SelectItem[] = [];
   FieldListStack: SelectItem[] = [];
+  NumericFieldList: SelectItem[] = [];
   SelectedDateFieldVariable;
   SelectedDateFieldVariable2;
   SelectedDateFieldVariable3;
@@ -43,8 +66,23 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   labelSize = 12;
   legendLabelSize = 15;
 
-  graphTypes = ['Single Date Field', 'Multi: Side by Side', 'Multi: Overlay']
+  readonly mixedGraphType = 'Mixed: Bars + Lines';
+  graphTypes = ['Single Date Field', 'Multi: Side by Side', 'Multi: Overlay', this.mixedGraphType]
   selectedGraphType = 'Single Date Field';
+  mixedConfig: EpiMixedConfig;
+  mixedSeriesErrors: string[] = ['', '', ''];
+  mixedAnnotationErrors: { [id: string]: string } = {};
+  mixedDomainStartInput = '';
+  mixedDomainEndInput = '';
+  readonly mixedMarkOptions: SelectItem[] = [
+    { label: 'Bars', value: 'bar' },
+    { label: 'Solid line', value: 'solid-line' },
+    { label: 'Dashed line', value: 'dashed-line' }
+  ];
+  readonly mixedValueModeOptions: SelectItem[] = [
+    { label: 'Count records', value: 'count' },
+    { label: 'Sum a field', value: 'sum' }
+  ];
   legendPositionOptions = ['Hide', 'Left', 'Right', 'Bottom']
   stackOrderOptions = ['Largest at Bottom', 'Smallest at Bottom', 'Custom']
   customStackOrderItems = [];
@@ -77,6 +115,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   private vnodes = []; // Replace with your actual data
   private timeDomainStart;
   private timeDomainEnd;
+  private mixedAnnotationSequence = 0;
 
   private markEpiCurveRendered(): void {
     if (!this.viewActive) return;
@@ -127,6 +166,17 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
                 });
         }
     });
+
+    const records = this.commonService.session.data.nodes || [];
+    this.NumericFieldList = [
+      { label: 'None', value: 'None' },
+      ...getNumericMixedFields(records, nodeFields)
+        .filter(field => field != 'seq' && field != 'sequence')
+        .map(field => ({
+          label: this.commonService.capitalize(field.replace(/_/g, ' ')),
+          value: field
+        }))
+    ];
   }
 
   ngOnInit() {
@@ -216,6 +266,13 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     if (this.widgets['epiCurve-legendPosition'] == undefined) {
       this.widgets['epiCurve-legendPosition'] = 'Left';
     }
+
+    this.widgets['epiCurve-mixedConfig'] = normalizeMixedConfig(
+      this.widgets['epiCurve-mixedConfig'],
+      this.widgets['epiCurve-date-fields'],
+      this.widgets['epiCurve-colors']
+    );
+    this.mixedConfig = this.widgets['epiCurve-mixedConfig'];
  }
 
  ngAfterViewInit() {
@@ -230,6 +287,11 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
  * Clears previous histogram/epi curve and creates a new one; calls refreshMulti if needed
  */
 public refresh(): void {
+  if (this.isMixedGraphType()) {
+    this.refreshMixed();
+    return;
+  }
+
   if (this.selectedGraphType=='Multi: Overlay' || this.selectedGraphType=='Multi: Side by Side') {
     this.refreshMulti();
     return;
@@ -469,6 +531,694 @@ private refreshMulti(): void {
   this.updateAxes();
   this.generateLegend(epiCurve, colors, fields)
 } 
+
+isMixedGraphType(): boolean {
+  return this.selectedGraphType === this.mixedGraphType;
+}
+
+private refreshMixed(): void {
+  d3.select(this.epiCurveSVGElement.nativeElement).selectAll('*').remove();
+  this.hideMixedTooltip();
+  this.updateMixedSizes();
+
+  this.svg = d3.select(this.epiCurveSVGElement.nativeElement)
+    .attr('width', Math.max(0, this.width + this.margin.left + this.margin.right))
+    .attr('height', Math.max(0, this.height + this.margin.top + this.margin.bottom));
+
+  this.svg.append('rect')
+    .attr('class', 'epi-mixed-background')
+    .attr('width', '100%')
+    .attr('height', '100%')
+    .attr('fill', '#ffffff');
+
+  this.renderMixedFigureText();
+
+  if (this.width < 160 || this.height < 100) {
+    this.renderMixedEmptyState('Increase the Epi Curve panel size to display this chart.');
+    return;
+  }
+
+  const records = this.commonService.session.data.nodes || [];
+  this.mixedSeriesErrors = this.mixedConfig.series.map(series => this.validateMixedSeries(series, records));
+  const validSeries = this.mixedConfig.series.filter((series, index) => (
+    series.dateField !== 'None' && !this.mixedSeriesErrors[index]
+  ));
+
+  if (validSeries.length === 0) {
+    this.mixedDomainStartInput = '';
+    this.mixedDomainEndInput = '';
+    this.mixedAnnotationErrors = {};
+    this.renderMixedEmptyState('Choose at least one valid date series in Settings.');
+    return;
+  }
+
+  const extent = getMixedDateExtent(records, validSeries);
+  if (!extent) {
+    this.renderMixedEmptyState('No valid dates were found for the configured series.');
+    return;
+  }
+
+  const intervals = this.createMixedIntervals(extent);
+  if (intervals.length === 0) {
+    this.renderMixedEmptyState('The selected date range could not be binned.');
+    return;
+  }
+
+  this.timeDomainStart = intervals[0].x0;
+  this.timeDomainEnd = intervals[intervals.length - 1].x1;
+  this.mixedDomainStartInput = moment(this.timeDomainStart).format('YYYY-MM-DD');
+  this.mixedDomainEndInput = moment(this.timeDomainEnd).format('YYYY-MM-DD');
+  this.x = d3.scaleTime()
+    .domain([this.timeDomainStart, this.timeDomainEnd])
+    .range([0, this.width]);
+
+  const renderedSeries: EpiMixedRenderedSeries[] = validSeries.map(config => ({
+    config,
+    label: this.getMixedSeriesLabel(config),
+    bins: aggregateMixedSeries(records, config, intervals).bins
+  }));
+
+  const lineSeries = renderedSeries.filter(series => series.config.mark !== 'bar');
+  const barSeries = renderedSeries.filter(series => series.config.mark === 'bar');
+  const leftValues = lineSeries.flatMap(series => series.bins.map(bin => bin.cumulativeValue));
+  const rightValues = barSeries.flatMap(series => series.bins.map(bin => bin.value));
+  const leftScale = lineSeries.length > 0
+    ? d3.scaleLinear().domain(getZeroInclusiveDomain(leftValues)).nice().range([this.height, 0])
+    : null;
+  const rightScale = barSeries.length > 0
+    ? d3.scaleLinear().domain(getZeroInclusiveDomain(rightValues)).nice().range([this.height, 0])
+    : null;
+  this.y = leftScale || rightScale;
+
+  const plot: any = this.svg.append('g')
+    .classed('epiCurve-epi-curve epi-mixed-plot', true)
+    .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
+
+  this.renderMixedAxes(plot, leftScale, rightScale, lineSeries.length > 0, barSeries.length > 0);
+  this.renderMixedBars(plot, barSeries, rightScale);
+  this.renderMixedLines(plot, lineSeries, leftScale);
+  this.renderMixedLegend(plot, renderedSeries);
+  this.renderMixedTooltipTargets(plot, intervals, renderedSeries);
+  this.renderMixedAnnotations(plot);
+}
+
+private validateMixedSeries(series: EpiMixedSeriesConfig, records: any[]): string {
+  if (!series || series.dateField === 'None') {
+    return '';
+  }
+
+  const nodeFields = this.commonService.session.data.nodeFields || [];
+  if (!nodeFields.includes(series.dateField)) {
+    return 'The selected date field is not available in this dataset.';
+  }
+
+  const hasValidDate = records.some(record => parseMixedDate(record?.[series.dateField]) !== null);
+  if (!hasValidDate) {
+    return 'No valid dates were found in this field.';
+  }
+
+  if (series.valueMode === 'sum') {
+    if (!series.valueField || series.valueField === 'None') {
+      return 'Choose a numeric field to sum.';
+    }
+    if (!nodeFields.includes(series.valueField)) {
+      return 'The selected value field is not available in this dataset.';
+    }
+
+    const hasValidPair = records.some(record => (
+      parseMixedDate(record?.[series.dateField]) !== null
+      && toFiniteMixedValue(record?.[series.valueField]) !== null
+    ));
+    if (!hasValidPair) {
+      return 'No records contain both a valid date and numeric value.';
+    }
+  }
+
+  return '';
+}
+
+private createMixedIntervals(extent: [Date, Date]): EpiMixedBinInterval[] {
+  const minimum = extent[0];
+  const maximum = extent[1];
+  let start: Date;
+  let end: Date;
+  let starts: Date[];
+
+  if (this.widgets['epiCurve-binSize'] === 'Day') {
+    start = d3.timeDay.floor(minimum);
+    end = d3.timeDay.ceil(maximum);
+    if (end.getTime() <= maximum.getTime()) end = d3.timeDay.offset(end, 1);
+    starts = d3.timeDay.range(start, end);
+  } else if (this.widgets['epiCurve-binSize'] === 'Week') {
+    start = d3.timeMonday.floor(minimum);
+    end = d3.timeMonday.ceil(maximum);
+    if (end.getTime() <= maximum.getTime()) end = d3.timeMonday.offset(end, 1);
+    starts = d3.timeMonday.range(start, end);
+  } else if (this.widgets['epiCurve-binSize'] === 'Quarter') {
+    start = new Date(minimum.getFullYear(), Math.floor(minimum.getMonth() / 3) * 3, 1);
+    end = new Date(maximum.getFullYear(), Math.floor(maximum.getMonth() / 3) * 3 + 3, 1);
+    starts = d3.timeMonth.range(start, end, 3);
+  } else if (this.widgets['epiCurve-binSize'] === 'Year') {
+    start = d3.timeYear.floor(minimum);
+    end = d3.timeYear.ceil(maximum);
+    if (end.getTime() <= maximum.getTime()) end = d3.timeYear.offset(end, 1);
+    starts = d3.timeYear.range(start, end);
+  } else {
+    start = d3.timeMonth.floor(minimum);
+    end = d3.timeMonth.ceil(maximum);
+    if (end.getTime() <= maximum.getTime()) end = d3.timeMonth.offset(end, 1);
+    starts = d3.timeMonth.range(start, end);
+  }
+
+  if (starts.length === 0) {
+    starts = [start];
+  }
+
+  return starts.map((x0, index) => ({
+    x0,
+    x1: starts[index + 1] || end
+  }));
+}
+
+private updateMixedSizes(): void {
+  const wrapper = $(this.epiCurveElement.nativeElement).parent();
+  const figureText = this.mixedConfig.figureText;
+  const titleHeight = figureText.title.trim() ? 34 : 0;
+  const subtitleHeight = figureText.subtitle.trim() ? 24 : 0;
+  const footnoteHeight = figureText.footnote.trim() ? 30 : 0;
+  const bottomLegendHeight = this.widgets['epiCurve-legendPosition'] === 'Bottom' ? 42 : 0;
+
+  this.margin.top = 16 + titleHeight + subtitleHeight;
+  this.margin.left = Math.max(70, Math.round(this.labelSize * 4.8));
+  this.margin.right = Math.max(70, Math.round(this.labelSize * 4.8));
+  this.margin.bottom = 58 + footnoteHeight + bottomLegendHeight;
+  $('#epiCurve').height(wrapper.height() - 50);
+  this.width = wrapper.width() - this.margin.left - this.margin.right;
+  this.height = wrapper.height() - this.margin.top - this.margin.bottom - 50;
+  this.middle = this.height / 2;
+}
+
+private renderMixedFigureText(): void {
+  const figureText = this.mixedConfig.figureText;
+  let y = 22;
+
+  if (figureText.title.trim()) {
+    const title = this.svg.append('text')
+      .attr('class', 'epi-mixed-title')
+      .attr('x', 18)
+      .attr('y', y)
+      .attr('font-size', 18)
+      .attr('font-weight', 700);
+    const lines = this.appendWrappedSvgText(title, figureText.title, Math.max(120, this.width + this.margin.left + this.margin.right - 36), 21);
+    y += Math.max(1, lines) * 21 + 4;
+  }
+
+  if (figureText.subtitle.trim()) {
+    const subtitle = this.svg.append('text')
+      .attr('class', 'epi-mixed-subtitle')
+      .attr('x', 18)
+      .attr('y', y)
+      .attr('font-size', 13)
+      .attr('font-weight', 500);
+    this.appendWrappedSvgText(subtitle, figureText.subtitle, Math.max(120, this.width + this.margin.left + this.margin.right - 36), 17);
+  }
+
+  if (figureText.footnote.trim()) {
+    const footnote = this.svg.append('text')
+      .attr('class', 'epi-mixed-footnote')
+      .attr('x', 18)
+      .attr('y', this.margin.top + this.height + this.margin.bottom - 10)
+      .attr('font-size', 12)
+      .attr('font-weight', 500);
+    this.appendWrappedSvgText(footnote, figureText.footnote, Math.max(120, this.width + this.margin.left + this.margin.right - 36), 15);
+  }
+}
+
+private renderMixedEmptyState(message: string): void {
+  this.svg.append('text')
+    .attr('class', 'epi-mixed-empty-state')
+    .attr('x', Math.max(0, (this.width + this.margin.left + this.margin.right) / 2))
+    .attr('y', Math.max(44, this.margin.top + Math.max(0, this.height) / 2))
+    .attr('text-anchor', 'middle')
+    .attr('font-size', 14)
+    .attr('fill', '#5f6772')
+    .text(message);
+}
+
+private renderMixedAxes(
+  plot: any,
+  leftScale: any,
+  rightScale: any,
+  showLeftAxis: boolean,
+  showRightAxis: boolean
+): void {
+  plot.append('line')
+    .attr('class', 'epi-mixed-plot-top')
+    .attr('x1', 0)
+    .attr('x2', this.width)
+    .attr('y1', 0)
+    .attr('y2', 0)
+    .attr('stroke', '#212529')
+    .attr('stroke-width', 1);
+
+  plot.append('g')
+    .attr('class', 'axis axis--x epi-mixed-axis-x')
+    .attr('transform', `translate(0, ${this.height})`)
+    .call(this.configureMixedXAxis())
+    .attr('font-size', this.labelSize);
+
+  if (showLeftAxis) {
+    plot.append('g')
+      .attr('class', 'axis axis--y epi-mixed-axis-left')
+      .call(d3.axisLeft(leftScale).ticks(8).tickFormat((value: number) => this.formatMixedNumber(value)))
+      .attr('font-size', this.labelSize);
+  }
+
+  if (showRightAxis) {
+    plot.append('g')
+      .attr('class', 'axis axis--y epi-mixed-axis-right')
+      .attr('transform', `translate(${this.width}, 0)`)
+      .call(d3.axisRight(rightScale).ticks(8).tickFormat((value: number) => this.formatMixedNumber(value)))
+      .attr('font-size', this.labelSize);
+  }
+
+  const xLabel = this.mixedConfig.figureText.xAxisLabel.trim()
+    || `Date (${this.widgets['epiCurve-binSize'] === 'Day' ? 'Daily' : `${this.widgets['epiCurve-binSize']}ly`} bins)`;
+  this.svg.append('text')
+    .attr('class', 'x label epi-mixed-axis-label')
+    .attr('text-anchor', 'middle')
+    .attr('font-size', this.labelSize)
+    .attr('x', this.margin.left + this.width / 2)
+    .attr('y', this.margin.top + this.height + 44)
+    .text(xLabel);
+
+  if (showLeftAxis) {
+    this.svg.append('text')
+      .attr('class', 'y label epi-mixed-axis-label epi-mixed-axis-label-left')
+      .attr('text-anchor', 'middle')
+      .attr('font-size', this.labelSize)
+      .attr('transform', `translate(18, ${this.margin.top + this.height / 2}) rotate(-90)`)
+      .text(this.mixedConfig.figureText.leftAxisLabel.trim() || 'Cumulative total');
+  }
+
+  if (showRightAxis) {
+    this.svg.append('text')
+      .attr('class', 'y label epi-mixed-axis-label epi-mixed-axis-label-right')
+      .attr('text-anchor', 'middle')
+      .attr('font-size', this.labelSize)
+      .attr('transform', `translate(${this.margin.left + this.width + this.margin.right - 16}, ${this.margin.top + this.height / 2}) rotate(90)`)
+      .text(this.mixedConfig.figureText.rightAxisLabel.trim() || 'Value per bin');
+  }
+}
+
+private configureMixedXAxis(): any {
+  const numberOfDays = d3.timeDay.count(this.timeDomainStart, this.timeDomainEnd);
+  const minimumSpacing = Math.max(64, this.labelSize * 4.8);
+  const maximumTickCount = Math.max(2, Math.floor(this.width / minimumSpacing));
+  const binSize = this.widgets['epiCurve-binSize'];
+
+  if (binSize === 'Year') {
+    const numberOfYears = Math.max(1, d3.timeYear.count(this.timeDomainStart, this.timeDomainEnd));
+    const step = Math.max(this.tickInterval, Math.ceil(numberOfYears / maximumTickCount));
+    const ticks = d3.timeYear.range(d3.timeYear.floor(this.timeDomainStart), this.timeDomainEnd, step);
+    return d3.axisBottom(this.x).tickValues(ticks).tickFormat(d3.timeFormat('%Y'));
+  }
+
+  if (binSize === 'Quarter' || binSize === 'Month') {
+    const numberOfMonths = Math.max(1, d3.timeMonth.count(this.timeDomainStart, this.timeDomainEnd));
+    const minimumStep = binSize === 'Quarter' ? 3 * Math.max(1, this.tickInterval) : Math.max(1, this.tickInterval);
+    const rawStep = Math.max(minimumStep, Math.ceil(numberOfMonths / maximumTickCount));
+    const step = binSize === 'Quarter' ? Math.ceil(rawStep / 3) * 3 : rawStep;
+    const ticks = d3.timeMonth.range(d3.timeMonth.floor(this.timeDomainStart), this.timeDomainEnd, step);
+    return d3.axisBottom(this.x).tickValues(ticks).tickFormat(d3.timeFormat('%b %Y'));
+  }
+
+  if (numberOfDays <= 120) {
+    const minimumStep = binSize === 'Day' ? Math.max(1, this.tickInterval * 7) : Math.max(1, this.tickInterval * 14);
+    const requestedStep = Math.max(minimumStep, Math.ceil(numberOfDays / maximumTickCount));
+    const daySteps = [1, 2, 3, 7, 14, 21, 28, 35, 42, 56, 84];
+    const step = daySteps.find(candidate => candidate >= requestedStep) || requestedStep;
+    const ticks = d3.timeDay.range(d3.timeDay.floor(this.timeDomainStart), this.timeDomainEnd, step);
+    return d3.axisBottom(this.x).tickValues(ticks).tickFormat(d3.timeFormat('%b %d'));
+  }
+
+  if (numberOfDays <= 730) {
+    const numberOfMonths = Math.max(1, d3.timeMonth.count(this.timeDomainStart, this.timeDomainEnd));
+    const step = Math.max(this.tickInterval, Math.ceil(numberOfMonths / maximumTickCount));
+    const ticks = d3.timeMonth.range(d3.timeMonth.floor(this.timeDomainStart), this.timeDomainEnd, step);
+    return d3.axisBottom(this.x).tickValues(ticks).tickFormat(d3.timeFormat('%b %Y'));
+  }
+
+  const numberOfYears = Math.max(1, d3.timeYear.count(this.timeDomainStart, this.timeDomainEnd));
+  const step = Math.max(this.tickInterval, Math.ceil(numberOfYears / maximumTickCount));
+  const ticks = d3.timeYear.range(d3.timeYear.floor(this.timeDomainStart), this.timeDomainEnd, step);
+  return d3.axisBottom(this.x).tickValues(ticks).tickFormat(d3.timeFormat('%Y'));
+}
+
+private renderMixedBars(plot: any, barSeries: EpiMixedRenderedSeries[], scale: any): void {
+  if (!scale || barSeries.length === 0) {
+    return;
+  }
+
+  const zeroY = scale(0);
+  barSeries.forEach((series, seriesIndex) => {
+    plot.selectAll(`rect.epi-mixed-bar-${seriesIndex}`)
+      .data(series.bins)
+      .enter()
+      .append('rect')
+      .attr('class', `epi-mixed-bar epi-mixed-bar-${seriesIndex}`)
+      .attr('data-series-id', series.config.id)
+      .attr('x', bin => getGroupedBarGeometry(
+        this.x(bin.x0),
+        this.x(bin.x1),
+        seriesIndex,
+        barSeries.length
+      ).x)
+      .attr('width', bin => getGroupedBarGeometry(
+        this.x(bin.x0),
+        this.x(bin.x1),
+        seriesIndex,
+        barSeries.length
+      ).width)
+      .attr('y', bin => Math.min(scale(bin.value), zeroY))
+      .attr('height', bin => Math.abs(scale(bin.value) - zeroY))
+      .attr('fill', series.config.color)
+      .attr('stroke', '#1f2a35')
+      .attr('stroke-width', 1);
+  });
+}
+
+private renderMixedLines(plot: any, lineSeries: EpiMixedRenderedSeries[], scale: any): void {
+  if (!scale || lineSeries.length === 0) {
+    return;
+  }
+
+  lineSeries.forEach(series => {
+    const points = [
+      { date: this.timeDomainStart, value: 0 },
+      ...series.bins.map(bin => ({ date: bin.x1, value: bin.cumulativeValue }))
+    ];
+    const line = d3.line<any>()
+      .x(point => this.x(point.date))
+      .y(point => scale(point.value))
+      .curve(d3.curveLinear);
+
+    plot.append('path')
+      .datum(points)
+      .attr('class', `epi-mixed-line ${series.config.mark === 'dashed-line' ? 'epi-mixed-line-dashed' : 'epi-mixed-line-solid'}`)
+      .attr('data-series-id', series.config.id)
+      .attr('d', line)
+      .attr('fill', 'none')
+      .attr('stroke', series.config.color)
+      .attr('stroke-width', 3.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-linecap', 'round')
+      .attr('stroke-dasharray', series.config.mark === 'dashed-line' ? '10,7' : null);
+  });
+}
+
+private renderMixedLegend(plot: any, series: EpiMixedRenderedSeries[]): void {
+  if (this.widgets['epiCurve-legendPosition'] === 'Hide') {
+    return;
+  }
+
+  const fontSize = Math.max(10, Number(this.legendLabelSize || 15));
+  const rowHeight = Math.max(22, fontSize + 9);
+  const estimatedWidth = Math.min(300, Math.max(170, ...series.map(item => item.label.length * fontSize * 0.55 + 55)));
+  const isBottom = this.widgets['epiCurve-legendPosition'] === 'Bottom';
+  const x = this.widgets['epiCurve-legendPosition'] === 'Right'
+    ? Math.max(8, this.width - estimatedWidth)
+    : 12;
+  const baseY = isBottom ? this.height + 76 : 14;
+
+  series.forEach((item, index) => {
+    const legendItem = plot.append('g')
+      .attr('class', 'epi-mixed-legend-item')
+      .attr('data-series-id', item.config.id)
+      .attr('transform', isBottom
+        ? `translate(${12 + index * Math.max(180, this.width / Math.max(1, series.length))}, ${baseY})`
+        : `translate(${x}, ${baseY + index * rowHeight})`);
+
+    if (item.config.mark === 'bar') {
+      legendItem.append('rect')
+        .attr('x', 0)
+        .attr('y', -9)
+        .attr('width', 18)
+        .attr('height', 14)
+        .attr('fill', item.config.color)
+        .attr('stroke', '#1f2a35');
+    } else {
+      legendItem.append('line')
+        .attr('x1', 0)
+        .attr('x2', 26)
+        .attr('y1', -2)
+        .attr('y2', -2)
+        .attr('stroke', item.config.color)
+        .attr('stroke-width', 3.5)
+        .attr('stroke-dasharray', item.config.mark === 'dashed-line' ? '10,7' : null);
+    }
+
+    legendItem.append('text')
+      .attr('x', 34)
+      .attr('y', 0)
+      .attr('font-size', fontSize)
+      .attr('alignment-baseline', 'middle')
+      .text(item.label);
+  });
+}
+
+private renderMixedTooltipTargets(
+  plot: any,
+  intervals: EpiMixedBinInterval[],
+  series: EpiMixedRenderedSeries[]
+): void {
+  plot.selectAll('rect.epi-mixed-tooltip-target')
+    .data(intervals)
+    .enter()
+    .append('rect')
+    .attr('class', 'epi-mixed-tooltip-target')
+    .attr('x', interval => this.x(interval.x0))
+    .attr('width', interval => Math.max(1, this.x(interval.x1) - this.x(interval.x0)))
+    .attr('y', 0)
+    .attr('height', this.height)
+    .attr('fill', 'transparent')
+    .attr('pointer-events', 'all')
+    .on('mousemove', (_interval, index) => this.showMixedTooltip(index, series))
+    .on('mouseleave', () => this.hideMixedTooltip());
+}
+
+private renderMixedAnnotations(plot: any): void {
+  this.mixedAnnotationErrors = {};
+  const defs = this.svg.append('defs');
+  defs.append('marker')
+    .attr('id', 'epi-mixed-arrowhead')
+    .attr('viewBox', '0 0 10 10')
+    .attr('refX', 8)
+    .attr('refY', 5)
+    .attr('markerWidth', 7)
+    .attr('markerHeight', 7)
+    .attr('orient', 'auto-start-reverse')
+    .append('path')
+    .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+    .attr('fill', '#111111');
+
+  this.mixedConfig.annotations.forEach(annotation => {
+    const date = parseMixedDate(annotation.date);
+    if (!date) {
+      this.mixedAnnotationErrors[annotation.id] = 'Enter a valid date.';
+      return;
+    }
+    if (!annotation.text.trim()) {
+      this.mixedAnnotationErrors[annotation.id] = 'Enter callout text.';
+      return;
+    }
+    if (date < this.timeDomainStart || date > this.timeDomainEnd) {
+      this.mixedAnnotationErrors[annotation.id] = 'This date is outside the plotted range.';
+      return;
+    }
+
+    const anchorX = this.x(date);
+    let labelX = annotation.labelXRatio * this.width;
+    let labelY = annotation.labelYRatio * this.height;
+    const line = plot.append('line')
+      .attr('class', 'epi-mixed-callout-arrow')
+      .attr('data-annotation-id', annotation.id)
+      .attr('x1', labelX)
+      .attr('y1', labelY + 6)
+      .attr('x2', anchorX)
+      .attr('y2', this.height - 3)
+      .attr('stroke', '#111111')
+      .attr('stroke-width', 1.5)
+      .attr('marker-end', 'url(#epi-mixed-arrowhead)');
+
+    const labelGroup = plot.append('g')
+      .attr('class', 'epi-mixed-callout')
+      .attr('data-annotation-id', annotation.id)
+      .attr('transform', `translate(${labelX}, ${labelY})`)
+      .attr('tabindex', 0)
+      .attr('role', 'button')
+      .attr('aria-label', `Move annotation for ${moment(date).format('MMM D, YYYY')}`);
+
+    const labelText = labelGroup.append('text')
+      .attr('class', 'epi-mixed-callout-text')
+      .attr('font-size', Math.max(11, this.labelSize))
+      .attr('font-weight', 600)
+      .attr('x', 0)
+      .attr('y', 0);
+    this.appendWrappedSvgText(
+      labelText,
+      `${moment(date).format('MMM D, YYYY')}: ${annotation.text}`,
+      Math.min(220, Math.max(120, this.width * 0.28)),
+      Math.max(14, this.labelSize + 3)
+    );
+
+    const textNode = labelText.node() as SVGTextElement;
+    const textBounds = textNode.getBBox();
+    labelGroup.insert('rect', 'text')
+      .attr('class', 'epi-mixed-callout-background')
+      .attr('x', textBounds.x - 6)
+      .attr('y', textBounds.y - 4)
+      .attr('width', textBounds.width + 12)
+      .attr('height', textBounds.height + 8)
+      .attr('rx', 2)
+      .attr('fill', '#ffffff')
+      .attr('fill-opacity', 0.9);
+
+    const updatePosition = (nextX: number, nextY: number) => {
+      labelX = Math.min(this.width, Math.max(0, nextX));
+      labelY = Math.min(this.height - 18, Math.max(18, nextY));
+      annotation.labelXRatio = this.width > 0 ? labelX / this.width : 0;
+      annotation.labelYRatio = this.height > 0 ? labelY / this.height : 0;
+      labelGroup.attr('transform', `translate(${labelX}, ${labelY})`);
+      line.attr('x1', labelX).attr('y1', labelY + 6);
+    };
+
+    const dragBehavior = (d3 as any).drag()
+      .on('start', () => this.hideMixedTooltip())
+      .on('drag', () => {
+        const dragEvent = (d3 as any).event;
+        updatePosition(dragEvent.x, dragEvent.y);
+      });
+    labelGroup.call(dragBehavior);
+
+    labelGroup.on('keydown', () => {
+      const keyboardEvent = (d3 as any).event as KeyboardEvent;
+      const direction = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1]
+      }[keyboardEvent.key];
+      if (!direction) {
+        return;
+      }
+
+      keyboardEvent.preventDefault();
+      const step = keyboardEvent.shiftKey ? 10 : 2;
+      updatePosition(labelX + direction[0] * step, labelY + direction[1] * step);
+    });
+  });
+}
+
+private appendWrappedSvgText(selection: any, value: string, maxWidth: number, lineHeight: number): number {
+  const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return 0;
+  }
+
+  const x = Number(selection.attr('x') || 0);
+  const y = Number(selection.attr('y') || 0);
+  let line: string[] = [];
+  let lineNumber = 0;
+  let tspan = selection.append('tspan').attr('x', x).attr('y', y);
+
+  words.forEach(word => {
+    line.push(word);
+    tspan.text(line.join(' '));
+    const node = tspan.node() as SVGTextContentElement;
+    if (line.length > 1 && node.getComputedTextLength() > maxWidth) {
+      line.pop();
+      tspan.text(line.join(' '));
+      line = [word];
+      lineNumber += 1;
+      tspan = selection.append('tspan')
+        .attr('x', x)
+        .attr('y', y)
+        .attr('dy', lineNumber * lineHeight)
+        .text(word);
+    }
+  });
+
+  return lineNumber + 1;
+}
+
+private showMixedTooltip(binIndex: number, series: EpiMixedRenderedSeries[]): void {
+  if (!this.mixedTooltipElement?.nativeElement || series.length === 0) {
+    return;
+  }
+
+  const firstBin = series[0].bins[binIndex];
+  if (!firstBin) {
+    return;
+  }
+
+  const lines = [this.getMixedBinDateRange(firstBin)];
+  series.forEach(item => {
+    const bin = item.bins[binIndex];
+    const value = item.config.mark === 'bar' ? bin.value : bin.cumulativeValue;
+    lines.push(`${item.label}: ${this.formatMixedNumber(value)}`);
+  });
+
+  const tooltip = this.mixedTooltipElement.nativeElement as HTMLElement;
+  const event = (d3 as any).event as MouseEvent;
+  const hostRect = this.epiCurveElement.nativeElement.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(8, event.clientX - hostRect.left + 14),
+    Math.max(8, hostRect.width - 250)
+  );
+  const top = Math.min(
+    Math.max(8, event.clientY - hostRect.top + 14),
+    Math.max(8, hostRect.height - 110)
+  );
+  tooltip.textContent = lines.join('\n');
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+  tooltip.style.display = 'block';
+}
+
+private hideMixedTooltip(): void {
+  if (this.mixedTooltipElement?.nativeElement) {
+    this.mixedTooltipElement.nativeElement.style.display = 'none';
+  }
+}
+
+private getMixedBinDateRange(bin: EpiMixedBinDatum): string {
+  const start = moment(bin.x0);
+  if (this.widgets['epiCurve-binSize'] === 'Day') {
+    return start.format('MMM D, YYYY');
+  }
+
+  const end = moment(bin.x1).subtract(1, 'day');
+  return `${start.format('MMM D, YYYY')} – ${end.format('MMM D, YYYY')}`;
+}
+
+private getMixedSeriesLabel(series: EpiMixedSeriesConfig): string {
+  if (series.label.trim()) {
+    return series.label.trim();
+  }
+
+  return this.commonService.capitalize(series.dateField.replace(/_/g, ' '));
+}
+
+private formatMixedNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
+  }
+
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2
+  });
+}
 
 /**
  * Return an array of unique options for nodes[this.widgets['epiCurve-stackColorBy']] and then also used that information to update localColorMap function
@@ -1154,7 +1904,10 @@ onBinSizeChange() {
 updateSettingsRows() {
   this.ShowEpiSettingsPane = true;
   setTimeout(() => {
-    if (this.selectedGraphType == 'Multi: Overlay' || this.selectedGraphType == 'Multi: Side by Side') {
+    if (this.isMixedGraphType()) {
+      $('#useNodeColorRow').slideUp();
+      $('.additionalDateField').slideUp();
+    } else if (this.selectedGraphType == 'Multi: Overlay' || this.selectedGraphType == 'Multi: Side by Side') {
       $('#useNodeColorRow').slideUp();
       $('.additionalDateField').slideDown();
       //$('#epi-color-select').slideUp();
@@ -1174,6 +1927,64 @@ onGraphTypeChange(refresh=true) {
 
   this.widgets['epiCurve-graphType'] = this.selectedGraphType;
   if (refresh) this.refresh();
+}
+
+getEpiSettingsDialogStyle(): { [key: string]: string } {
+  return this.isMixedGraphType()
+    ? { width: '760px', height: '700px' }
+    : { width: '500px', height: '490px' };
+}
+
+onMixedSeriesValueModeChange(series: EpiMixedSeriesConfig): void {
+  if (series.valueMode === 'count') {
+    series.valueField = 'None';
+  }
+  this.onMixedConfigChanged();
+}
+
+onMixedConfigChanged(): void {
+  this.widgets['epiCurve-mixedConfig'] = this.mixedConfig;
+  this.refresh();
+}
+
+addMixedAnnotation(): void {
+  this.mixedAnnotationSequence += 1;
+  const index = this.mixedConfig.annotations.length;
+  const annotation: EpiMixedAnnotationConfig = {
+    id: `mixed-annotation-${Date.now()}-${this.mixedAnnotationSequence}`,
+    date: this.mixedDomainStartInput || moment().format('YYYY-MM-DD'),
+    text: '',
+    labelXRatio: Math.min(0.86, 0.18 + index * 0.24),
+    labelYRatio: Math.min(0.8, 0.32 + (index % 2) * 0.24)
+  };
+  this.mixedConfig.annotations.push(annotation);
+  this.onMixedConfigChanged();
+}
+
+removeMixedAnnotation(annotationId: string): void {
+  this.mixedConfig.annotations = this.mixedConfig.annotations.filter(annotation => annotation.id !== annotationId);
+  this.onMixedConfigChanged();
+}
+
+resetMixedAnnotationPosition(annotation: EpiMixedAnnotationConfig): void {
+  const index = Math.max(0, this.mixedConfig.annotations.findIndex(item => item.id === annotation.id));
+  const date = parseMixedDate(annotation.date);
+  if (date && this.x) {
+    const anchorRatio = this.x(date) / Math.max(1, this.width);
+    annotation.labelXRatio = Math.min(0.86, Math.max(0.14, anchorRatio + (anchorRatio < 0.65 ? 0.16 : -0.16)));
+  } else {
+    annotation.labelXRatio = Math.min(0.86, 0.18 + index * 0.24);
+  }
+  annotation.labelYRatio = Math.min(0.8, 0.32 + (index % 2) * 0.24);
+  this.onMixedConfigChanged();
+}
+
+getMixedSeriesError(index: number): string {
+  return this.mixedSeriesErrors[index] || '';
+}
+
+getMixedAnnotationError(annotationId: string): string {
+  return this.mixedAnnotationErrors[annotationId] || '';
 }
 
 onUseNodeColorChange() {

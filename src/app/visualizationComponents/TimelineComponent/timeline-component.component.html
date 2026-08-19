@@ -1,5 +1,6 @@
 <div #epiCurve id="epiCurve">
   <svg #epiCurveSVG id="epiCurveSVG"></svg>
+  <div #mixedTooltip id="epi-mixed-tooltip" class="epi-mixed-tooltip" aria-live="polite"></div>
 </div>
 
 <div id="tool-btn-container-epi" class="tool-btn-container m-portlet">
@@ -13,7 +14,7 @@
 
 @if (viewActive) {
   <p-dialog id="epiCurve-settings-pane" [(visible)]="ShowEpiSettingsPane" header="Epi Curve Settings"
-    [style]="{width: '500px', height:'490px'}" appendTo="body">
+    [style]="getEpiSettingsDialogStyle()" appendTo="body">
     <tabset class="tab-container tabbable-line">
       <tab heading="{{'Graph' | localize}}" [active]="true" customClass="m-tabs__item">
         <div class="tab-pane fade show active" id="table-node-settings" role="tabpanel" aria-labelledby="nodes-tab">
@@ -27,43 +28,93 @@
                   <p-select [options]="graphTypes" appendTo="body" class="width-percent-100" [(ngModel)]="selectedGraphType" (ngModelChange)="onGraphTypeChange()"></p-select>
                 </div>
               </div>
-              <div class="form-group row" title="Select a date field from your data. One is required to generate graph.">
-                <div class="col-4">
-                  <label>Date Field</label>
+              @if (!isMixedGraphType()) {
+                <div class="form-group row" title="Select a date field from your data. One is required to generate graph.">
+                  <div class="col-4">
+                    <label>Date Field</label>
+                  </div>
+                  <div class="col-6" style="padding-right: 5px">
+                    <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable" (ngModelChange)="onDateFieldChange(0)"></p-select>
+                  </div>
+                  @if (selectedGraphType!='Single Date Field' || widgets['epiCurve-stackColorBy'] == 'None') {
+                    <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
+                      <input type="color" id="epi-color-select" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][0]" (change)="onNodeColorChanged()">
+                    </div>
+                  }
                 </div>
-                <div class="col-6" style="padding-right: 5px">
-                  <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable" (ngModelChange)="onDateFieldChange(0)"></p-select>
-                </div>
-                @if (selectedGraphType!='Single Date Field' || widgets['epiCurve-stackColorBy'] == 'None') {
-                  <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
-                    <input type="color" id="epi-color-select" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][0]" (change)="onNodeColorChanged()">
+                @if (selectedGraphType!='Single Date Field') {
+                  <div class="form-group row additionalDateField" title="Select an additional date field.">
+                    <div class="col-4">
+                      <label>Date Field 2</label>
+                    </div>
+                    <div class="col-6" style="padding-right: 5px">
+                      <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable2" (ngModelChange)="onDateFieldChange(1)"></p-select>
+                    </div>
+                    <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
+                      <input type="color" id="epi-color-select-2" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][1]" (change)="onNodeColorChanged()">
+                    </div>
                   </div>
                 }
-              </div>
-              @if (selectedGraphType!='Single Date Field') {
-                <div class="form-group row additionalDateField" title="Select an additional date field.">
-                  <div class="col-4">
-                    <label>Date Field 2</label>
+                @if (selectedGraphType!='Single Date Field') {
+                  <div class="form-group row additionalDateField" title="Select an additional date field.">
+                    <div class="col-4">
+                      <label>Date Field 3</label>
+                    </div>
+                    <div class="col-6" style="padding-right: 5px">
+                      <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable3" (ngModelChange)="onDateFieldChange(2)"></p-select>
+                    </div>
+                    <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
+                      <input type="color" id="epi-color-select-3" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][2]" (change)="onNodeColorChanged()">
+                    </div>
                   </div>
-                  <div class="col-6" style="padding-right: 5px">
-                    <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable2" (ngModelChange)="onDateFieldChange(1)"></p-select>
-                  </div>
-                  <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
-                    <input type="color" id="epi-color-select-2" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][1]" (change)="onNodeColorChanged()">
-                  </div>
-                </div>
+                }
               }
-              @if (selectedGraphType!='Single Date Field') {
-                <div class="form-group row additionalDateField" title="Select an additional date field.">
-                  <div class="col-4">
-                    <label>Date Field 3</label>
-                  </div>
-                  <div class="col-6" style="padding-right: 5px">
-                    <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable3" (ngModelChange)="onDateFieldChange(2)"></p-select>
-                  </div>
-                  <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
-                    <input type="color" id="epi-color-select-3" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][2]" (change)="onNodeColorChanged()">
-                  </div>
+
+              @if (isMixedGraphType()) {
+                <div class="epi-mixed-series-list" data-testid="epi-mixed-series-list">
+                  @for (series of mixedConfig.series; track series.id; let i = $index) {
+                    <section class="epi-mixed-series-editor" [attr.data-series-index]="i">
+                      <div class="epi-mixed-series-heading">Series {{ i + 1 }}</div>
+                      <div class="form-group row">
+                        <div class="col-4"><label>Date Field</label></div>
+                        <div class="col-8">
+                          <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="series.dateField" (ngModelChange)="onMixedConfigChanged()"></p-select>
+                        </div>
+                      </div>
+                      <div class="form-group row">
+                        <div class="col-4"><label>Mark</label></div>
+                        <div class="col-8">
+                          <p-select [options]="mixedMarkOptions" appendTo="body" class="width-percent-100" [(ngModel)]="series.mark" (ngModelChange)="onMixedConfigChanged()"></p-select>
+                        </div>
+                      </div>
+                      <div class="form-group row">
+                        <div class="col-4"><label>Value</label></div>
+                        <div class="col-8">
+                          <p-select [options]="mixedValueModeOptions" appendTo="body" class="width-percent-100" [(ngModel)]="series.valueMode" (ngModelChange)="onMixedSeriesValueModeChange(series)"></p-select>
+                        </div>
+                      </div>
+                      @if (series.valueMode === 'sum') {
+                        <div class="form-group row">
+                          <div class="col-4"><label>Sum Field</label></div>
+                          <div class="col-8">
+                            <p-select [options]="NumericFieldList" appendTo="body" class="width-percent-100" [(ngModel)]="series.valueField" (ngModelChange)="onMixedConfigChanged()"></p-select>
+                          </div>
+                        </div>
+                      }
+                      <div class="form-group row">
+                        <div class="col-4"><label>Legend Label</label></div>
+                        <div class="col-6">
+                          <input type="text" class="form-control form-control-sm" [(ngModel)]="series.label" (ngModelChange)="onMixedConfigChanged()" placeholder="Use field name">
+                        </div>
+                        <div class="col-2 epi-mixed-color-cell" title="Series color">
+                          <input type="color" class="form-control epi-mixed-color-input" [(ngModel)]="series.color" (change)="onMixedConfigChanged()">
+                        </div>
+                      </div>
+                      @if (getMixedSeriesError(i)) {
+                        <div class="epi-mixed-validation" role="alert">{{ getMixedSeriesError(i) }}</div>
+                      }
+                    </section>
+                  }
                 </div>
               }
               <div class="form-group row" title="Select the size to bin the data by.">
@@ -75,19 +126,49 @@
                 </div>
               </div>
 
-            <div class="form-group row" title="Show data noncumulatively or cumulatively.">
-                <div class="col-4">Epi Curve</div>
-                <div class="col-8">
-                  <p-selectButton [allowEmpty]="false" fluid [(ngModel)]="widgets['epiCurve-cumulative']" (ngModelChange)="setCumulative()"
-                    [options]="[{'label': 'Noncumulative', 'value': false}, {'label': 'Cumulative', 'value': true}]"></p-selectButton>
+              @if (!isMixedGraphType()) {
+                <div class="form-group row" title="Show data noncumulatively or cumulatively.">
+                  <div class="col-4">Epi Curve</div>
+                  <div class="col-8">
+                    <p-selectButton [allowEmpty]="false" fluid [(ngModel)]="widgets['epiCurve-cumulative']" (ngModelChange)="setCumulative()"
+                      [options]="[{'label': 'Noncumulative', 'value': false}, {'label': 'Cumulative', 'value': true}]"></p-selectButton>
+                  </div>
                 </div>
-              </div>
+              }
 
           </div>
           </div>
         </div>
       </tab>
       <tab heading="{{'Legend & Labels' | localize}}" customClass="m-tabs__item">
+        @if (isMixedGraphType()) {
+          <div class="epi-mixed-publication-fields" data-testid="epi-mixed-publication-fields">
+            <div class="form-group row">
+              <div class="col-4"><label>Figure Title</label></div>
+              <div class="col-8"><textarea rows="2" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.title" (ngModelChange)="onMixedConfigChanged()"></textarea></div>
+            </div>
+            <div class="form-group row">
+              <div class="col-4"><label>Subtitle</label></div>
+              <div class="col-8"><textarea rows="2" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.subtitle" (ngModelChange)="onMixedConfigChanged()"></textarea></div>
+            </div>
+            <div class="form-group row">
+              <div class="col-4"><label>X-axis Label</label></div>
+              <div class="col-8"><input type="text" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.xAxisLabel" (ngModelChange)="onMixedConfigChanged()" placeholder="Automatic"></div>
+            </div>
+            <div class="form-group row">
+              <div class="col-4"><label>Line Axis Label</label></div>
+              <div class="col-8"><input type="text" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.leftAxisLabel" (ngModelChange)="onMixedConfigChanged()" placeholder="Cumulative total"></div>
+            </div>
+            <div class="form-group row">
+              <div class="col-4"><label>Bar Axis Label</label></div>
+              <div class="col-8"><input type="text" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.rightAxisLabel" (ngModelChange)="onMixedConfigChanged()" placeholder="Value per bin"></div>
+            </div>
+            <div class="form-group row">
+              <div class="col-4"><label>Footnote</label></div>
+              <div class="col-8"><textarea rows="2" class="form-control form-control-sm" [(ngModel)]="mixedConfig.figureText.footnote" (ngModelChange)="onMixedConfigChanged()"></textarea></div>
+            </div>
+          </div>
+        }
         <div class="form-group row" title="What interval to display ticks on x axis" id="epi-tick-size">
           <div class="col-4">
             <label for="cluster-minimum-size">X-axis Interval</label>
@@ -112,6 +193,39 @@
           <div class="form-group row node-label-row" title="Select a font size for legend labels.">
             <div class="col-4 padding-right-5"><label>Legend Size</label></div>
             <div class="col-8"><input type="range" class="custom-range" min="10" step="2" max="28" [(ngModel)]="legendLabelSize" (ngModelChange)="onLegendLabelSizeChange()"></div>
+          </div>
+        }
+      </tab>
+      <tab heading="{{'Annotations' | localize}}" customClass="m-tabs__item" [disabled]="!isMixedGraphType()">
+        @if (isMixedGraphType()) {
+          <div class="epi-mixed-annotation-settings" data-testid="epi-mixed-annotation-settings">
+            <p class="epi-mixed-settings-help">Add a dated callout, then drag its label on the chart. The arrow remains anchored to the selected date.</p>
+            <button type="button" class="btn btn-primary btn-sm" (click)="addMixedAnnotation()">Add Callout</button>
+            @if (mixedConfig.annotations.length === 0) {
+              <div class="epi-mixed-empty-settings">No callouts yet.</div>
+            }
+            @for (annotation of mixedConfig.annotations; track annotation.id; let i = $index) {
+              <section class="epi-mixed-annotation-editor" [attr.data-annotation-index]="i">
+                <div class="epi-mixed-series-heading">Callout {{ i + 1 }}</div>
+                <div class="form-group row">
+                  <div class="col-4"><label>Date</label></div>
+                  <div class="col-8">
+                    <input type="date" class="form-control form-control-sm" [min]="mixedDomainStartInput" [max]="mixedDomainEndInput" [(ngModel)]="annotation.date" (ngModelChange)="onMixedConfigChanged()">
+                  </div>
+                </div>
+                <div class="form-group row">
+                  <div class="col-4"><label>Text</label></div>
+                  <div class="col-8"><textarea rows="3" class="form-control form-control-sm" [(ngModel)]="annotation.text" (ngModelChange)="onMixedConfigChanged()"></textarea></div>
+                </div>
+                <div class="epi-mixed-annotation-actions">
+                  <button type="button" class="btn btn-light btn-sm" (click)="resetMixedAnnotationPosition(annotation)">Reset Position</button>
+                  <button type="button" class="btn btn-error btn-sm" (click)="removeMixedAnnotation(annotation.id)">Delete</button>
+                </div>
+                @if (getMixedAnnotationError(annotation.id)) {
+                  <div class="epi-mixed-validation" role="alert">{{ getMixedAnnotationError(annotation.id) }}</div>
+                }
+              </section>
+            }
           </div>
         }
       </tab>
