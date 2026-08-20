@@ -57,6 +57,19 @@ export interface EpiMixedBarGeometry {
   width: number;
 }
 
+export interface EpiMixedHoverPoint {
+  seriesId: string;
+  binIndex: number;
+  x: number;
+  y: number;
+}
+
+export interface EpiMixedHoverGroup {
+  x: number;
+  y: number;
+  points: EpiMixedHoverPoint[];
+}
+
 const DEFAULT_MARKS: EpiMixedSeriesMark[] = ['bar', 'solid-line', 'dashed-line'];
 const DEFAULT_COLORS = ['#8EB8DC', '#005EB8', '#4D77A5'];
 
@@ -307,4 +320,82 @@ export function getGroupedBarGeometry(
     x: binStart + Math.max(0, seriesIndex) * bandWidth + gap / 2,
     width: Math.max(0, bandWidth - gap)
   };
+}
+
+export function getClosestMixedHoverPoint(
+  pointerX: number,
+  pointerY: number,
+  points: EpiMixedHoverPoint[],
+  maxDistance = Number.POSITIVE_INFINITY
+): EpiMixedHoverPoint | null {
+  const closestPoints = getClosestMixedHoverPoints(pointerX, pointerY, points, maxDistance);
+  return closestPoints.length > 0 ? closestPoints[closestPoints.length - 1] : null;
+}
+
+export function groupMixedHoverPoints(
+  points: EpiMixedHoverPoint[],
+  overlapTolerance = 0.5
+): EpiMixedHoverGroup[] {
+  const safeTolerance = Number.isFinite(overlapTolerance)
+    ? Math.max(0, overlapTolerance)
+    : 0.5;
+  const groups: EpiMixedHoverGroup[] = [];
+
+  points.forEach(point => {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return;
+    }
+
+    const matchingGroup = groups.find(group => (
+      Math.abs(group.x - point.x) <= safeTolerance
+      && Math.abs(group.y - point.y) <= safeTolerance
+    ));
+
+    if (!matchingGroup) {
+      groups.push({ x: point.x, y: point.y, points: [point] });
+      return;
+    }
+
+    const existingPointCount = matchingGroup.points.length;
+    matchingGroup.points.push(point);
+    matchingGroup.x = (matchingGroup.x * existingPointCount + point.x) / matchingGroup.points.length;
+    matchingGroup.y = (matchingGroup.y * existingPointCount + point.y) / matchingGroup.points.length;
+  });
+
+  return groups;
+}
+
+export function getClosestMixedHoverPoints(
+  pointerX: number,
+  pointerY: number,
+  points: EpiMixedHoverPoint[],
+  maxDistance = Number.POSITIVE_INFINITY
+): EpiMixedHoverPoint[] {
+  if (
+    !Number.isFinite(pointerX)
+    || !Number.isFinite(pointerY)
+    || Number.isNaN(maxDistance)
+    || maxDistance < 0
+  ) {
+    return [];
+  }
+
+  let closestGroup: EpiMixedHoverGroup | null = null;
+  const maxDistanceSquared = maxDistance === Number.POSITIVE_INFINITY
+    ? Number.POSITIVE_INFINITY
+    : maxDistance * maxDistance;
+  let closestDistanceSquared = maxDistanceSquared;
+
+  groupMixedHoverPoints(points).forEach(group => {
+    const xDistance = group.x - pointerX;
+    const yDistance = group.y - pointerY;
+    const distanceSquared = xDistance * xDistance + yDistance * yDistance;
+    // Later groups are rendered on top, so they win an exact-distance tie.
+    if (distanceSquared <= closestDistanceSquared) {
+      closestGroup = group;
+      closestDistanceSquared = distanceSquared;
+    }
+  });
+
+  return closestGroup ? closestGroup.points : [];
 }

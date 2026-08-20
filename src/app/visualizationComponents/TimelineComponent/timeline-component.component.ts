@@ -19,12 +19,15 @@ import {
   EpiMixedBinDatum,
   EpiMixedBinInterval,
   EpiMixedConfig,
+  EpiMixedHoverGroup,
+  EpiMixedHoverPoint,
   EpiMixedSeriesConfig,
   aggregateMixedSeries,
   getGroupedBarGeometry,
   getMixedDateExtent,
   getNumericMixedFields,
   getZeroInclusiveDomain,
+  groupMixedHoverPoints,
   normalizeMixedConfig,
   parseMixedDate,
   toFiniteMixedValue
@@ -67,6 +70,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   legendLabelSize = 15;
 
   readonly mixedGraphType = 'Mixed: Bars + Lines';
+  private readonly mixedHoverRadius = 32;
   graphTypes = ['Single Date Field', 'Multi: Side by Side', 'Multi: Overlay', this.mixedGraphType]
   selectedGraphType = 'Single Date Field';
   mixedConfig: EpiMixedConfig;
@@ -618,7 +622,7 @@ private refreshMixed(): void {
   this.renderMixedBars(plot, barSeries, rightScale);
   this.renderMixedLines(plot, lineSeries, leftScale);
   this.renderMixedLegend(plot, renderedSeries);
-  this.renderMixedTooltipTargets(plot, intervals, renderedSeries);
+  this.renderMixedTooltipTargets(plot, renderedSeries, leftScale, rightScale);
   this.renderMixedAnnotations(plot);
 }
 
@@ -989,22 +993,114 @@ private renderMixedLegend(plot: any, series: EpiMixedRenderedSeries[]): void {
 
 private renderMixedTooltipTargets(
   plot: any,
-  intervals: EpiMixedBinInterval[],
-  series: EpiMixedRenderedSeries[]
+  series: EpiMixedRenderedSeries[],
+  leftScale: any,
+  rightScale: any
 ): void {
-  plot.selectAll('rect.epi-mixed-tooltip-target')
-    .data(intervals)
-    .enter()
-    .append('rect')
+  const hoverPoints = this.getMixedHoverPoints(series, leftScale, rightScale);
+  const hoverGroups = groupMixedHoverPoints(hoverPoints);
+  const hoverTree = (d3 as any).quadtree()
+    .x((group: EpiMixedHoverGroup) => group.x)
+    .y((group: EpiMixedHoverGroup) => group.y)
+    .addAll(hoverGroups);
+  const seriesById = new Map(series.map(item => [item.config.id, item]));
+  const hoverMarker = plot.append('circle')
+    .attr('class', 'epi-mixed-hover-marker')
+    .attr('r', 5)
+    .attr('fill', '#ffffff')
+    .attr('stroke-width', 3)
+    .attr('aria-hidden', 'true')
+    .attr('pointer-events', 'none')
+    .style('display', 'none');
+
+  plot.append('rect')
     .attr('class', 'epi-mixed-tooltip-target')
-    .attr('x', interval => this.x(interval.x0))
-    .attr('width', interval => Math.max(1, this.x(interval.x1) - this.x(interval.x0)))
+    .attr('x', 0)
+    .attr('width', this.width)
     .attr('y', 0)
     .attr('height', this.height)
     .attr('fill', 'transparent')
     .attr('pointer-events', 'all')
-    .on('mousemove', (_interval, index) => this.showMixedTooltip(index, series))
-    .on('mouseleave', () => this.hideMixedTooltip());
+    .on('mousemove', () => {
+      const [pointerX, pointerY] = d3.mouse(plot.node());
+      const closestGroup = hoverTree.find(
+        pointerX,
+        pointerY,
+        this.mixedHoverRadius
+      ) as EpiMixedHoverGroup | undefined;
+      if (!closestGroup) {
+        this.hideMixedTooltip();
+        hoverMarker.style('display', 'none');
+        return;
+      }
+
+      const closestSeriesPoints = closestGroup.points.flatMap(point => {
+        const matchedSeries = seriesById.get(point.seriesId);
+        return matchedSeries ? [{ point, series: matchedSeries }] : [];
+      });
+      if (closestSeriesPoints.length === 0) {
+        return;
+      }
+
+      const isOverlap = closestSeriesPoints.length > 1;
+      const topPoint = closestSeriesPoints[closestSeriesPoints.length - 1];
+
+      hoverMarker
+        .attr('cx', closestGroup.x)
+        .attr('cy', closestGroup.y)
+        .attr('r', isOverlap ? 7 : 5)
+        .attr('stroke', isOverlap ? '#1f2a35' : topPoint.series.config.color)
+        .attr('data-series-count', closestSeriesPoints.length)
+        .style('display', null);
+      this.showMixedTooltip(closestSeriesPoints);
+    })
+    .on('mouseleave', () => {
+      hoverMarker.style('display', 'none');
+      this.hideMixedTooltip();
+    });
+}
+
+private getMixedHoverPoints(
+  series: EpiMixedRenderedSeries[],
+  leftScale: any,
+  rightScale: any
+): EpiMixedHoverPoint[] {
+  const barSeries = series.filter(item => item.config.mark === 'bar');
+
+  return series.flatMap(item => {
+    if (item.config.mark === 'bar') {
+      if (!rightScale) {
+        return [];
+      }
+
+      const seriesIndex = barSeries.findIndex(bar => bar.config.id === item.config.id);
+      return item.bins.map((bin, binIndex) => {
+        const geometry = getGroupedBarGeometry(
+          this.x(bin.x0),
+          this.x(bin.x1),
+          seriesIndex,
+          barSeries.length
+        );
+        return {
+          seriesId: item.config.id,
+          binIndex,
+          x: geometry.x + geometry.width / 2,
+          y: rightScale(bin.value)
+        };
+      });
+    }
+
+    if (!leftScale) {
+      return [];
+    }
+
+    return item.bins.map((bin, binIndex) => ({
+      seriesId: item.config.id,
+      binIndex,
+      x: this.x(bin.x1),
+      y: leftScale(bin.cumulativeValue)
+    }));
+  });
 }
 
 private renderMixedAnnotations(plot: any): void {
@@ -1152,23 +1248,32 @@ private appendWrappedSvgText(selection: any, value: string, maxWidth: number, li
   return lineNumber + 1;
 }
 
-private showMixedTooltip(binIndex: number, series: EpiMixedRenderedSeries[]): void {
-  if (!this.mixedTooltipElement?.nativeElement || series.length === 0) {
+private showMixedTooltip(
+  hoveredPoints: Array<{ point: EpiMixedHoverPoint; series: EpiMixedRenderedSeries }>
+): void {
+  if (!this.mixedTooltipElement?.nativeElement) {
     return;
   }
 
-  const firstBin = series[0].bins[binIndex];
-  if (!firstBin) {
-    return;
-  }
+  const entries = hoveredPoints.flatMap(({ point, series }) => {
+    const bin = series.bins[point.binIndex];
+    if (!bin) {
+      return [];
+    }
 
-  const lines = [this.getMixedBinDateRange(firstBin)];
-  series.forEach(item => {
-    const bin = item.bins[binIndex];
-    const value = item.config.mark === 'bar' ? bin.value : bin.cumulativeValue;
-    lines.push(`${item.label}: ${this.formatMixedNumber(value)}`);
+    const value = series.config.mark === 'bar' ? bin.value : bin.cumulativeValue;
+    const valueType = series.config.mark === 'bar' ? 'interval' : 'cumulative';
+    return [{
+      dateRange: this.getMixedBinDateRange(bin),
+      valueLine: `${series.label}: ${this.formatMixedNumber(value)} (${valueType})`,
+      color: series.config.color
+    }];
   });
+  if (entries.length === 0) {
+    return;
+  }
 
+  const dateRanges = Array.from(new Set(entries.map(entry => entry.dateRange)));
   const tooltip = this.mixedTooltipElement.nativeElement as HTMLElement;
   const event = (d3 as any).event as MouseEvent;
   const hostRect = this.epiCurveElement.nativeElement.getBoundingClientRect();
@@ -1180,7 +1285,35 @@ private showMixedTooltip(binIndex: number, series: EpiMixedRenderedSeries[]): vo
     Math.max(8, event.clientY - hostRect.top + 14),
     Math.max(8, hostRect.height - 110)
   );
-  tooltip.textContent = lines.join('\n');
+  while (tooltip.firstChild) {
+    tooltip.removeChild(tooltip.firstChild);
+  }
+
+  if (dateRanges.length === 1) {
+    const dateLabel = document.createElement('div');
+    dateLabel.className = 'epi-mixed-tooltip-date';
+    dateLabel.textContent = dateRanges[0];
+    tooltip.appendChild(dateLabel);
+  }
+
+  entries.forEach(entry => {
+    const row = document.createElement('div');
+    row.className = 'epi-mixed-tooltip-row';
+
+    const swatch = document.createElement('span');
+    swatch.className = 'epi-mixed-tooltip-swatch';
+    swatch.style.backgroundColor = entry.color;
+    swatch.setAttribute('aria-hidden', 'true');
+
+    const valueLabel = document.createElement('span');
+    valueLabel.textContent = dateRanges.length === 1
+      ? entry.valueLine
+      : `${entry.dateRange}: ${entry.valueLine}`;
+
+    row.appendChild(swatch);
+    row.appendChild(valueLabel);
+    tooltip.appendChild(row);
+  });
   tooltip.style.left = `${left}px`;
   tooltip.style.top = `${top}px`;
   tooltip.style.display = 'block';

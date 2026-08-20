@@ -2,10 +2,13 @@ import {
   EpiMixedBinInterval,
   aggregateMixedSeries,
   createDefaultMixedConfig,
+  getClosestMixedHoverPoint,
+  getClosestMixedHoverPoints,
   getGroupedBarGeometry,
   getMixedDateExtent,
   getNumericMixedFields,
   getZeroInclusiveDomain,
+  groupMixedHoverPoints,
   normalizeMixedConfig
 } from './timeline-mixed-series';
 
@@ -114,5 +117,72 @@ describe('timeline mixed-series helpers', () => {
     expect(first.width).toBe(17);
     expect(second.x).toBe(31.5);
     expect(third.x + third.width).toBeLessThanOrEqual(70);
+  });
+
+  it('selects the series point with the smallest two-dimensional pointer distance', () => {
+    const points = [
+      { seriesId: 'bar', binIndex: 0, x: 45, y: 90 },
+      { seriesId: 'solid-line', binIndex: 0, x: 52, y: 22 },
+      { seriesId: 'dashed-line', binIndex: 0, x: 65, y: 35 }
+    ];
+
+    expect(getClosestMixedHoverPoint(50, 20, points)?.seriesId).toBe('solid-line');
+    expect(getClosestMixedHoverPoint(46, 86, points)?.seriesId).toBe('bar');
+  });
+
+  it('uses rendered stacking order when points are exactly tied', () => {
+    const closest = getClosestMixedHoverPoint(20, 20, [
+      { seriesId: 'bar', binIndex: 0, x: 20, y: 20 },
+      { seriesId: 'line', binIndex: 0, x: 20, y: 20 }
+    ]);
+
+    expect(closest?.seriesId).toBe('line');
+  });
+
+  it('returns every overlapping point at the closest rendered coordinate', () => {
+    const closest = getClosestMixedHoverPoints(20, 20, [
+      { seriesId: 'bar', binIndex: 0, x: 20, y: 20 },
+      { seriesId: 'solid-line', binIndex: 0, x: 20, y: 20 },
+      { seriesId: 'dashed-line', binIndex: 0, x: 40, y: 40 }
+    ]);
+
+    expect(closest.map(point => point.seriesId)).toEqual(['bar', 'solid-line']);
+  });
+
+  it('pre-groups visually overlapping points while preserving their render order', () => {
+    const groups = groupMixedHoverPoints([
+      { seriesId: 'bar', binIndex: 0, x: 20, y: 20 },
+      { seriesId: 'solid-line', binIndex: 0, x: 20.25, y: 19.75 },
+      { seriesId: 'dashed-line', binIndex: 0, x: 40, y: 40 }
+    ]);
+
+    expect(groups).toHaveSize(2);
+    expect(groups[0].points.map(point => point.seriesId)).toEqual(['bar', 'solid-line']);
+    expect(groups[0].x).toBeCloseTo(20.125);
+    expect(groups[0].y).toBeCloseTo(19.875);
+  });
+
+  it('does not combine equally distant points when their rendered coordinates do not overlap', () => {
+    const closest = getClosestMixedHoverPoints(20, 20, [
+      { seriesId: 'left', binIndex: 0, x: 15, y: 20 },
+      { seriesId: 'right', binIndex: 0, x: 25, y: 20 }
+    ]);
+
+    expect(closest.map(point => point.seriesId)).toEqual(['right']);
+  });
+
+  it('ignores invalid hover coordinates and returns no point when none can be compared', () => {
+    expect(getClosestMixedHoverPoint(Number.NaN, 10, [])).toBeNull();
+    expect(getClosestMixedHoverPoint(10, 10, [
+      { seriesId: 'invalid', binIndex: 0, x: Number.NaN, y: 5 }
+    ])).toBeNull();
+    expect(getClosestMixedHoverPoints(Number.NaN, 10, [])).toEqual([]);
+  });
+
+  it('does not select a hover group beyond the interaction radius', () => {
+    const points = [{ seriesId: 'line', binIndex: 0, x: 50, y: 50 }];
+
+    expect(getClosestMixedHoverPoints(10, 10, points, 32)).toEqual([]);
+    expect(getClosestMixedHoverPoints(30, 30, points, 32)).toEqual(points);
   });
 });

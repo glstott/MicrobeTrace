@@ -57,7 +57,6 @@
   display: none;
   min-width: 180px;
   max-width: 240px;
-  white-space: pre-line;
   background: #ffffff;
   border: 1px solid #9ba4ae;
   box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.2);
@@ -67,6 +66,25 @@
   line-height: 1.45;
   z-index: 1000;
   pointer-events: none;
+}
+
+.epi-mixed-tooltip-date {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.epi-mixed-tooltip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.epi-mixed-tooltip-swatch {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(31, 42, 53, 0.45);
+  border-radius: 50%;
 }
 
 .epi-mixed-series-list,
