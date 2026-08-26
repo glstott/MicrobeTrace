@@ -142,9 +142,10 @@ describe('EvolutionaryRateComponent', () => {
       </tr>
     `;
 
-    const output = new ExportService().exportTableAsSVG(table, true, true);
+    const output = new ExportService().exportTableAsSVG(table, true, true, 20);
 
     expect(output.svg).toContain('data-node-shape-key="fly"');
+    expect(output.svg).toContain('font-size="20"');
     expect(output.svg).toContain('<path');
     expect(output.svg).toContain('>Fly</text>');
     expect(output.svg).not.toContain('<image');
@@ -257,6 +258,15 @@ describe('EvolutionaryRateComponent', () => {
     expect(reportSvg).toContain('evolutionary-rate-outlier-point');
     expect(reportSvg).toContain('data-outlier="true"');
     expect(reportSvg).not.toContain('<image');
+    const reportDocument = new DOMParser().parseFromString(reportSvg, 'image/svg+xml');
+    const tickLabels = Array.from(reportDocument.querySelectorAll('.tick text'));
+    const axisTitles = Array.from(reportDocument.querySelectorAll('.axis-title'));
+    expect(tickLabels.length).toBeGreaterThan(0);
+    expect(tickLabels.every(label => label.getAttribute('font-size') === '20')).toBeTrue();
+    expect(axisTitles).toHaveSize(2);
+    expect(axisTitles.every(title => title.getAttribute('font-size') === '24')).toBeTrue();
+    expect(reportDocument.querySelector('[data-testid="evolutionary-rate-outlier-legend"] text')
+      ?.getAttribute('font-size')).toBe('20');
   });
 
   it('recalculates statistics from selected nodes while retaining and highlighting all plotted points', async () => {
@@ -306,6 +316,9 @@ describe('EvolutionaryRateComponent', () => {
     const reportSvg = (component as any).serializeRegressionPlotSvg() as string;
     expect(reportSvg).toContain('data-testid="evolutionary-rate-selection-legend"');
     expect(reportSvg).toContain('Regression based on 2 highlighted nodes');
+    const reportDocument = new DOMParser().parseFromString(reportSvg, 'image/svg+xml');
+    expect(reportDocument.querySelector('[data-testid="evolutionary-rate-selection-legend"] text')
+      ?.getAttribute('font-size')).toBe('20');
 
     component.plotExportFileType = 'svg';
     component.downloadRegressionPlot();
@@ -326,6 +339,46 @@ describe('EvolutionaryRateComponent', () => {
     expect((component as any).serializeRegressionPlotSvg()).not.toContain(
       'data-testid="evolutionary-rate-selection-legend"'
     );
+  });
+
+  it('labels a complete selected cluster in the view, plot, and outlier report scope', async () => {
+    const nodes = [
+      { _id: 'a', collectionDate: '2020-01-01', cluster: 7, selected: true },
+      { _id: 'b', collectionDate: '2021-01-01', cluster: 7, selected: true },
+      { _id: 'c', collectionDate: '2022-01-01', cluster: 7, selected: true },
+    ];
+    const { component, host } = createComponent({
+      nodeFields: ['_id', 'collectionDate', 'cluster'],
+      nodes,
+      pairDistances: {
+        'a|b': 2,
+        'a|c': 4,
+      },
+      widgets: { 'evolutionary-rate-date-field': 'collectionDate' },
+    });
+    component.loadSettings();
+
+    await (component as any).refreshPlot();
+
+    expect(component.selectedClusterLabel).toBe('Cluster 7');
+    expect(host.querySelector('[data-testid="evolutionary-rate-selection-legend"]')?.textContent)
+      .toContain('Cluster 7: Regression based on 3 highlighted nodes');
+    const report = (component as any).buildOutlierReport();
+    expect(report.contextRows.find((row: any) => row.label === 'Analysis scope')?.value)
+      .toBe('Cluster 7; 3 selected visible nodes');
+    const reportDocument = new DOMParser().parseFromString(report.regressionPlotSvg, 'image/svg+xml');
+    const reportSelectionLabel = reportDocument.querySelector(
+      '[data-testid="evolutionary-rate-selection-legend"] text'
+    );
+    expect(reportSelectionLabel?.textContent).toContain('Cluster 7');
+    expect(reportSelectionLabel?.getAttribute('font-size')).toBe('20');
+
+    nodes[2].selected = false;
+    await (component as any).refreshPlot();
+
+    expect(component.selectedClusterLabel).toBe('');
+    expect(host.querySelector('[data-testid="evolutionary-rate-selection-legend"]')?.textContent)
+      .toBe('Regression based on 2 highlighted nodes');
   });
 
   it('selects plotted nodes with 2D-style single and additive interactions', async () => {
@@ -538,7 +591,8 @@ describe('EvolutionaryRateComponent', () => {
       expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="report-node-color-key"');
       expect(pdfDownloadArgs[0].regressionPlotSvg).toContain('data-testid="report-node-shape-key"');
       expect(pdfDownloadArgs[0].regressionPlotSvg).not.toContain('<image');
-      expect(exportService.exportTableAsSVG.calls.allArgs()).toContain([nodeShapeTable, true, true]);
+      expect(exportService.exportTableAsSVG.calls.allArgs()).toContain([nodeColorTable, true, false, 20]);
+      expect(exportService.exportTableAsSVG.calls.allArgs()).toContain([nodeShapeTable, true, true, 20]);
       const reportSvgDocument = new DOMParser().parseFromString(
         pdfDownloadArgs[0].regressionPlotSvg,
         'image/svg+xml'

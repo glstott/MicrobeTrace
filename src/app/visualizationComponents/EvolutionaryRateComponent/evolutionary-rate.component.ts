@@ -140,6 +140,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   regressionMessage = '';
   selectionActive = false;
   selectedNodeCount = 0;
+  selectedClusterLabel = '';
   analysis: EvolutionaryRateAnalysis = calculateEvolutionaryRate([], 0);
 
   private readonly destroy$ = new Subject<void>();
@@ -156,6 +157,9 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   private distanceSourceError = '';
   private plotAnalysis: EvolutionaryRateAnalysis = calculateEvolutionaryRate([], 0);
   private readonly outlierHighlightColor = '#d32f2f';
+  private readonly outlierReportLabelFontSize = 20;
+  private readonly outlierReportAxisTitleFontSize = 24;
+  private readonly outlierReportLegendFontSize = 20;
 
   constructor(
     @Inject(BaseComponentDirective.GoldenLayoutContainerInjectionToken) private container: ComponentContainer,
@@ -547,6 +551,7 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     const selectedVisibleNodes = visibleNodes.filter((node: any) => Boolean(node?.selected));
     this.selectionActive = selectedVisibleNodes.length > 0;
     this.selectedNodeCount = selectedVisibleNodes.length;
+    this.selectedClusterLabel = this.getSelectedClusterLabel(selectedVisibleNodes, visibleNodes);
     const analysisNodes = this.selectionActive ? selectedVisibleNodes : visibleNodes;
     const analysisNodeSet = new Set<any>(analysisNodes);
     const analysisNodeIds = new Set<string>();
@@ -849,8 +854,11 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
     if (showSelectionRegressionLegend) {
       const regressionNodeCount = displayAnalysis.includedCount;
-      const legendText = `Regression based on ${regressionNodeCount} highlighted node${regressionNodeCount === 1 ? '' : 's'}`;
-      const legendWidth = 272;
+      const regressionText = `Regression based on ${regressionNodeCount} highlighted node${regressionNodeCount === 1 ? '' : 's'}`;
+      const legendText = this.selectedClusterLabel
+        ? `${this.selectedClusterLabel}: ${regressionText}`
+        : regressionText;
+      const legendWidth = Math.max(272, Math.ceil(22 + (legendText.length * 6.4)));
       const legend = svg.append('g')
         .attr('data-testid', 'evolutionary-rate-selection-legend')
         .attr('role', 'img')
@@ -1073,6 +1081,35 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     return this.widgets['selected-node-stroke-color']
       || this.widgets['selected-color']
       || '#ff8300';
+  }
+
+  private getSelectedClusterLabel(selectedNodes: any[], visibleNodes: any[]): string {
+    if (selectedNodes.length === 0) return '';
+
+    const clusterField = (this.commonService.session.data.nodeFields || [])
+      .find((field: any) => typeof field === 'string' && field.toLowerCase() === 'cluster');
+    if (!clusterField) return '';
+
+    const clusterValues = new Set<string>();
+    selectedNodes.forEach(node => {
+      const value = node?.[clusterField];
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        clusterValues.add(String(value));
+      }
+    });
+    if (clusterValues.size !== 1) return '';
+
+    const clusterValue = Array.from(clusterValues)[0];
+    const selectedNodeSet = new Set(selectedNodes);
+    const visibleClusterNodes = visibleNodes.filter(node => String(node?.[clusterField]) === clusterValue);
+    if (
+      visibleClusterNodes.length !== selectedNodes.length
+      || visibleClusterNodes.some(node => !selectedNodeSet.has(node))
+    ) {
+      return '';
+    }
+
+    return `Cluster ${clusterValue}`;
   }
 
   private getNodeMarkerDataUri(node: any, markerSize: number): string {
@@ -1389,11 +1426,14 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
 
   private buildOutlierReport(): EvolutionaryRateOutlierReport {
     const totalAnalysisNodes = this.analysis.includedCount + this.analysis.excludedCount;
+    const scopeLabel = this.selectionActive
+      ? `${totalAnalysisNodes} selected visible node${totalAnalysisNodes === 1 ? '' : 's'}`
+      : `${totalAnalysisNodes} visible node${totalAnalysisNodes === 1 ? '' : 's'}`;
     return buildEvolutionaryRateOutlierReport({
       analysis: this.analysis,
-      scopeLabel: this.selectionActive
-        ? `${totalAnalysisNodes} selected visible node${totalAnalysisNodes === 1 ? '' : 's'}`
-        : `${totalAnalysisNodes} visible node${totalAnalysisNodes === 1 ? '' : 's'}`,
+      scopeLabel: this.selectedClusterLabel
+        ? `${this.selectedClusterLabel}; ${scopeLabel}`
+        : scopeLabel,
       dateField: this.selectedDateField,
       distanceSourceLabel: this.distanceSourceLabel,
       distanceSourceKind: this.distanceSourceKind,
@@ -1420,16 +1460,56 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     reportSvg.querySelectorAll('[role="button"]').forEach(element => element.removeAttribute('role'));
     this.replaceEmbeddedSvgMarkersWithVectors(reportSvg);
     this.appendNodeKeyTablesToReportSvg(reportSvg);
+    this.applyOutlierReportTypography(reportSvg);
 
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
     style.textContent = [
       'text { font-family: Roboto, Helvetica Neue, Arial, sans-serif; }',
-      '.axis-title { font-size: 16px; font-weight: 500; }',
       '.evolutionary-rate-point { cursor: default; }',
     ].join(' ');
     reportSvg.insertBefore(style, reportSvg.firstChild);
 
     return new XMLSerializer().serializeToString(reportSvg);
+  }
+
+  private applyOutlierReportTypography(reportSvg: SVGSVGElement): void {
+    reportSvg.querySelectorAll<SVGTextElement>('.tick text').forEach(label => {
+      label.setAttribute('font-size', String(this.outlierReportLabelFontSize));
+    });
+    reportSvg.querySelectorAll<SVGTextElement>('.axis-title').forEach(title => {
+      title.setAttribute('font-size', String(this.outlierReportAxisTitleFontSize));
+      title.setAttribute('font-weight', '500');
+    });
+    reportSvg.querySelectorAll<SVGTextElement>([
+      '[data-testid="evolutionary-rate-selection-legend"] text',
+      '[data-testid="evolutionary-rate-outlier-legend"] text',
+    ].join(', ')).forEach(legend => {
+      legend.setAttribute('font-size', String(this.outlierReportLegendFontSize));
+    });
+
+    const reportWidth = reportSvg.viewBox?.baseVal?.width
+      || Number(reportSvg.getAttribute('width'))
+      || 800;
+    const legendLayouts = [
+      { selector: '[data-testid="evolutionary-rate-selection-legend"]', minimumWidth: 360 },
+      { selector: '[data-testid="evolutionary-rate-outlier-legend"]', minimumWidth: 300 },
+    ];
+    legendLayouts.forEach(layout => {
+      const legend = reportSvg.querySelector<SVGGElement>(layout.selector);
+      if (!legend) return;
+
+      const currentTransform = legend.getAttribute('transform') || '';
+      const translate = currentTransform.match(/translate\([^,]+,\s*([^\)]+)\)/);
+      if (!translate) return;
+
+      const legendTextLength = legend.querySelector('text')?.textContent?.length || 0;
+      const legendWidth = Math.max(
+        layout.minimumWidth,
+        Math.ceil(22 + (legendTextLength * this.outlierReportLegendFontSize * 0.56))
+      );
+      const x = Math.max(88, reportWidth - 40 - legendWidth);
+      legend.setAttribute('transform', `translate(${x},${translate[1]})`);
+    });
   }
 
   private replaceEmbeddedSvgMarkersWithVectors(reportSvg: SVGSVGElement): void {
@@ -1486,7 +1566,8 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
       .map(table => this.exportService.exportTableAsSVG(
         table,
         true,
-        Boolean(table.querySelector('[data-shape-key]'))
+        Boolean(table.querySelector('[data-shape-key]')),
+        this.outlierReportLegendFontSize
       ))
       .filter(key => key.svg && key.width > 0 && key.height > 0)
       .map(key => {

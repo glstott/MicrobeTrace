@@ -84,8 +84,14 @@
     }
 
     @if (selectedDateField !== 'None' && !isLoading) {
-      <div class="evolutionary-rate-counts" data-testid="evolutionary-rate-counts">
+      <div
+        class="evolutionary-rate-counts"
+        [class.evolutionary-rate-counts--selection-active]="selectionActive"
+        data-testid="evolutionary-rate-counts">
         @if (selectionActive) {
+          @if (selectedClusterLabel) {
+            <strong data-testid="evolutionary-rate-selected-cluster">{{ selectedClusterLabel }}</strong> &middot;
+          }
           Selected subset: {{ selectedNodeCount }} nodes &middot;
         }
         {{ includedCount }} included &middot; {{ excludedCount }} excluded
