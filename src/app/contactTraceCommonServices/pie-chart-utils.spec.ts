@@ -1,6 +1,7 @@
 import {
   buildPieChartPatternDef,
   buildPieChartSlicesWithSegmentedFills,
+  buildSegmentedPieChartPathSlices,
   getPieChartTotalCount,
   hasCompositePieChartFill
 } from './pie-chart-utils';
@@ -41,7 +42,7 @@ describe('segmented pie chart slices', () => {
     expect(hasCompositePieChartFill(slices)).toBe(true);
   });
 
-  it('renders a lone mixed value as one full striped circle', () => {
+  it('renders a lone mixed value as one full pie split into component slices', () => {
     const slices = buildPieChartSlicesWithSegmentedFills(
       [{ label: '6/7a', count: 1 }],
       () => ({
@@ -54,15 +55,31 @@ describe('segmented pie chart slices', () => {
     );
     const pattern = buildPieChartPatternDef('mixed-only', slices, 20);
 
-    expect(pattern).toContain('<pattern id="mixed-only-stripes-0"');
-    expect(pattern).toContain('width="0.8" height="0.8"');
-    expect(pattern).toContain('patternTransform="rotate(45)"');
-    expect(pattern).toContain('fill="#ff0000"');
-    expect(pattern).toContain('fill="#0000ff"');
-    expect(pattern).toContain("fill='url(#mixed-only-stripes-0)'");
-    expect((pattern.match(/<path /g) || []).length).toBe(1);
+    expect(pattern).toContain("<pattern id='mixed-only'");
+    expect(pattern).toContain("fill='#ff0000'");
+    expect(pattern).toContain("fill='#0000ff'");
+    expect(pattern).not.toContain('patternTransform');
+    expect(pattern).not.toContain('stripes');
+    expect((pattern.match(/<path /g) || []).length).toBe(2);
 
     const largerPattern = buildPieChartPatternDef('mixed-large', slices, 40);
-    expect(largerPattern).toContain('width="0.4" height="0.4"');
+    expect(largerPattern.replace('mixed-large', 'mixed-only')).toBe(pattern);
+  });
+
+  it('uses component weights when subdividing a mixed pie wedge', () => {
+    const paths = buildSegmentedPieChartPathSlices([{
+      label: 'weighted mix',
+      count: 1,
+      color: '#ff0000',
+      segments: [
+        { value: 'small', color: '#ff0000', weight: 1 },
+        { value: 'large', color: '#0000ff', weight: 3 }
+      ]
+    }], 0, 0, 1);
+
+    expect(paths.map(path => path.count)).toEqual([0.25, 0.75]);
+    expect(paths.map(path => path.segmentValue)).toEqual(['small', 'large']);
+    expect(paths[0].path).toContain('A 1 1 0 0 1');
+    expect(paths[1].path).toContain('A 1 1 0 1 1');
   });
 });

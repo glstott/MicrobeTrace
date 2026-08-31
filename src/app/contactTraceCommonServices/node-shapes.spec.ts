@@ -10,15 +10,15 @@ describe('mixed node shape SVG helpers', () => {
     { value: '3a', color: '#ffff00', alpha: 0.8, weight: 1 }
   ];
 
-  it('emits diagonal stripe fills with the component colors', () => {
+  it('emits pie slices with the component colors', () => {
     const svg = decodeSvgDataUri(getMixedNodeShapeDataUri('triangle', '#ffffff', '#000000', 4, 1, segments));
 
-    expect(svg).toContain('<pattern');
-    expect(svg).toContain('patternTransform="rotate(45)"');
+    expect(svg).toContain('<clipPath id="mixed-node-clip">');
     expect(svg).toContain('fill="#00aa00"');
     expect(svg).toContain('fill="#ffff00"');
-    expect(svg).toContain('width="100" height="100"');
-    expect(svg).not.toContain('A 1 1 0');
+    expect((svg.match(/<path d="M 150 150 L /g) || []).length).toBe(2);
+    expect(svg).toContain('A 220 220');
+    expect(svg).not.toContain('<pattern');
   });
 
   it('does not emit a mixed pattern when fewer than two segments are supplied', () => {
@@ -31,11 +31,11 @@ describe('mixed node shape SVG helpers', () => {
       [segments[0]]
     ));
 
-    expect(svg).not.toContain('<pattern');
+    expect(svg).not.toContain('<clipPath');
     expect(svg).toContain('fill="#ffffff"');
   });
 
-  it('keeps stripe bands four screen pixels wide across rendered node sizes', () => {
+  it('keeps pie geometry stable across rendered node sizes', () => {
     const smallSvg = decodeSvgDataUri(getMixedNodeShapeDataUri(
       'ellipse',
       '#ffffff',
@@ -57,8 +57,8 @@ describe('mixed node shape SVG helpers', () => {
       { fillCanvas: true, includeStroke: false, renderedSize: 40 }
     ));
 
-    expect(smallSvg).toContain('width="120" height="120"');
-    expect(largeSvg).toContain('width="60" height="60"');
+    expect(smallSvg).toEqual(largeSvg);
+    expect((smallSvg.match(/<path d="M 150 150 L /g) || []).length).toBe(2);
   });
 
   it('can provide a full-canvas fill without embedding an oversized Cytoscape border', () => {
@@ -73,9 +73,9 @@ describe('mixed node shape SVG helpers', () => {
       { fillCanvas: true, includeStroke: false }
     ));
 
-    expect(svg).toContain('<rect x="0" y="0" width="300" height="300"');
+    expect((svg.match(/<path d="M 150 150 L /g) || []).length).toBe(2);
     expect(svg).toContain('viewBox="0 0 300 300"');
-    expect(svg).toContain('fill="url(#mixed-node-fill)"');
+    expect(svg).not.toContain('<rect x="0" y="0" width="300" height="300"');
     expect(svg).not.toContain('stroke-width="48"');
   });
 
@@ -95,12 +95,13 @@ describe('mixed node shape SVG helpers', () => {
     expect(svg).toContain('stroke-width="16"');
   });
 
-  it('clips custom icon shapes to the selected path instead of using pie arcs', () => {
+  it('clips custom icon pie slices to the selected path', () => {
     const svg = decodeSvgDataUri(getMixedNodeShapeDataUri('virus', '#ffffff', '#000000', 8, 1, segments));
 
-    expect(svg).toContain('<pattern');
-    expect(svg).toContain('fill="url(#mixed-node-fill)"');
-    expect(svg).not.toContain('A 1 1 0');
+    expect(svg).toContain('<clipPath id="mixed-node-clip">');
+    expect(svg).toContain('transform="translate(0,300) scale(1,-1)"');
+    expect((svg.match(/A 213\.[0-9]+ 213\.[0-9]+/g) || []).length).toBe(2);
+    expect(svg).not.toContain('<pattern');
   });
 
   it('can render custom icon mixed fills without embedding a stroke', () => {
@@ -115,7 +116,7 @@ describe('mixed node shape SVG helpers', () => {
       { includeStroke: false, customShapePadding: 0, customShapeViewBoxPadding: 0 }
     ));
 
-    expect(svg).toContain('fill="url(#mixed-node-fill)"');
+    expect(svg).toContain('<clipPath id="mixed-node-clip">');
     expect(svg).not.toContain('stroke-width="8"');
   });
 });

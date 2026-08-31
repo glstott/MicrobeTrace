@@ -23,7 +23,8 @@ import { MicobeTraceNextPluginEvents } from '../../helperClasses/interfaces';
 import { throws } from 'assert';
 import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
-import { getMixedNodeShapeDataUri, getTreeNodeShapeDataUri, getTreeNodeShapeScale, isCustomNodeShape as isCustomNodeIconShape, MIXED_NODE_STRIPE_BAND_WIDTH_PX, resolveNodeShapeForNode } from '@app/contactTraceCommonServices/node-shapes';
+import { getMixedNodeShapeDataUri, getTreeNodeShapeDataUri, getTreeNodeShapeScale, isCustomNodeShape as isCustomNodeIconShape, resolveNodeShapeForNode } from '@app/contactTraceCommonServices/node-shapes';
+import { buildPieChartPathSlices, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
 import { createGlobalSettingsDialogRequest, GlobalSettingsDialogRequest } from '@app/helperClasses/globalSettingsDialogRequest';
 
 /**
@@ -414,7 +415,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       if (shapeKey === 'ellipse') {
         let strokeWidth = isSelected? (leafSize > 9 ? '5px': '3px') : (leafSize > 9 ? '2px' : '1px')
         const mixedFill = mixedSegments.length > 1
-          ? this.renderLeafCircleMixedFill(node, mixedSegments, fillOpacity)
+          ? this.renderLeafCircleMixedPieFill(node, mixedSegments, fillOpacity)
           : null;
         this.removeLeafNodeShapeOverlay(node);
         nodeSelection
@@ -437,7 +438,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.removeLeafNodeShapeOverlay(node);
     let strokeWidth = isSelected? (leafSize > 9 ? '5px': '3px') : (leafSize > 9 ? '2px' : '1px')
     const mixedFill = mixedSegments.length > 1
-      ? this.renderLeafCircleMixedFill(node, mixedSegments, fillOpacity)
+      ? this.renderLeafCircleMixedPieFill(node, mixedSegments, fillOpacity)
       : null;
     nodeSelection
       .style('fill', mixedFill ?? fillColor)
@@ -456,25 +457,6 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return this.visuals.phylogenetic.commonService.getNodeFillStyle(nodeData);
   }
 
-  private getWeightedMixedSegments(segments: any[]): Array<{ segment: any; startFraction: number; endFraction: number }> {
-    const validSegments = segments.filter(segment => Number(segment.weight ?? 1) > 0);
-    const totalWeight = validSegments.reduce((sum, segment) => sum + Number(segment.weight ?? 1), 0);
-    if (validSegments.length < 2 || totalWeight <= 0) {
-      return [];
-    }
-
-    let startFraction = 0;
-    return validSegments.map((segment, index) => {
-      const endFraction = index === validSegments.length - 1
-        ? 1
-        : startFraction + (Number(segment.weight ?? 1) / totalWeight);
-      const weightedSegment = { segment, startFraction, endFraction };
-      startFraction = endFraction;
-
-      return weightedSegment;
-    });
-  }
-
   private getLeafMixedFillPatternId(node: SVGElement): string {
     const nodeWithPattern = node as SVGElement & { __mixedFillPatternId?: string };
     if (!nodeWithPattern.__mixedFillPatternId) {
@@ -485,10 +467,19 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return nodeWithPattern.__mixedFillPatternId;
   }
 
-  private renderLeafCircleMixedFill(node: SVGElement, segments: any[], fallbackOpacity: number): string | null {
-    const weightedSegments = this.getWeightedMixedSegments(segments);
+  private renderLeafCircleMixedPieFill(node: SVGElement, segments: any[], fallbackOpacity: number): string | null {
+    const pieSlices: PieChartSlice[] = segments
+      .map((segment, index) => ({
+        label: String(segment.value ?? index),
+        count: Number(segment.weight ?? 1),
+        color: String(segment.color || '#000000'),
+        alpha: Number.isFinite(Number(segment.alpha))
+          ? Math.min(1, Math.max(0, Number(segment.alpha)))
+          : Math.min(1, Math.max(0, Number(fallbackOpacity)))
+      }))
+      .filter(slice => Number.isFinite(slice.count) && slice.count > 0);
     const svgElement = node.ownerSVGElement;
-    if (!svgElement || weightedSegments.length < 2) {
+    if (!svgElement || pieSlices.length < 2) {
       return null;
     }
 
@@ -500,7 +491,6 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     }
 
     const patternId = this.getLeafMixedFillPatternId(node);
-    const stripePeriod = MIXED_NODE_STRIPE_BAND_WIDTH_PX * weightedSegments.length;
     const patternSelection = defsSelection
       .selectAll<SVGPatternElement, string>(`pattern#${patternId}`)
       .data([patternId]);
@@ -512,35 +502,24 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
           .attr('id', patternId),
         update => update
       )
-      .attr('patternUnits', 'userSpaceOnUse')
-      .attr('width', stripePeriod)
-      .attr('height', stripePeriod)
-      .attr('patternTransform', 'rotate(45)');
+      .attr('x', '0')
+      .attr('y', '0')
+      .attr('width', '100%')
+      .attr('height', '100%')
+      .attr('viewBox', '-1 -1 2 2')
+      .attr('preserveAspectRatio', 'xMidYMid meet');
 
-    const stripes = weightedSegments.map(({ segment, startFraction, endFraction }) => {
-      const color = String(segment.color || '#000000');
-      const opacity = Number.isFinite(Number(segment.alpha))
-        ? Math.min(1, Math.max(0, Number(segment.alpha)))
-        : Math.min(1, Math.max(0, Number(fallbackOpacity)));
-
-      return {
-        x: startFraction * stripePeriod,
-        width: (endFraction - startFraction) * stripePeriod,
-        color,
-        opacity
-      };
-    });
+    const pathSlices = buildPieChartPathSlices(pieSlices, 0, 0, 1);
+    mergedPattern.selectAll('rect').remove();
 
     mergedPattern
-      .selectAll<SVGRectElement, { x: number; width: number; color: string; opacity: number }>('rect')
-      .data(stripes)
-      .join('rect')
-      .attr('x', stripe => stripe.x)
-      .attr('y', 0)
-      .attr('width', stripe => stripe.width)
-      .attr('height', stripePeriod)
-      .attr('fill', stripe => stripe.color)
-      .attr('fill-opacity', stripe => stripe.opacity);
+      .selectAll<SVGPathElement, typeof pathSlices[number]>('path')
+      .data(pathSlices)
+      .join('path')
+      .attr('d', slice => slice.path)
+      .attr('fill', slice => slice.color)
+      .attr('fill-opacity', slice => slice.alpha ?? 1)
+      .attr('stroke', 'none');
 
     return `url(#${patternId})`;
   }

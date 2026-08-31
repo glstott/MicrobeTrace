@@ -14,7 +14,7 @@ import { saveSvgAsPng } from 'save-svg-as-png';
 import { ComponentContainer } from 'golden-layout';
 import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { GraphData } from './data';
-import { getCustomNodeShapeData, getCustomNodeShapeVectorData, getMixedNodeShapeDataUri, isCustomNodeShape as isCustomNodeIconShape, MIXED_NODE_STRIPE_BAND_WIDTH_PX, resolveNodeShapeCytoscapeShape as resolveCustomNodeIconCytoscapeShape, resolveNodeShapeForNode, resolveNodeShapeKey } from '@app/contactTraceCommonServices/node-shapes';
+import { getCustomNodeShapeData, getCustomNodeShapeVectorData, getMixedNodeShapeDataUri, isCustomNodeShape as isCustomNodeIconShape, resolveNodeShapeCytoscapeShape as resolveCustomNodeIconCytoscapeShape, resolveNodeShapeForNode, resolveNodeShapeKey } from '@app/contactTraceCommonServices/node-shapes';
 import cytoscape, { Core, Style } from 'cytoscape';
 import svg from 'cytoscape-svg';
 import { Subject, Subscription, takeUntil } from 'rxjs';
@@ -33,7 +33,7 @@ import {
 } from '../KeyTablesComponent/style-key-table.component';
 import { showColorTransparencyPicker } from '../KeyTablesComponent/color-transparency-picker';
 import { buildThresholdConnectedComponents } from '@app/contactTraceCommonServices/threshold-analysis';
-import { buildPieChartSlicesWithSegmentedFills, buildPieChartSvgDataUri, hasCompositePieChartFill, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
+import { buildPieChartPathSlices, buildPieChartSlicesWithSegmentedFills, buildPieChartSvgDataUri, hasCompositePieChartFill, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
 import { createGlobalSettingsDialogRequest, GlobalSettingsDialogRequest } from '@app/helperClasses/globalSettingsDialogRequest';
 
 interface CustomNodeSvgExportReplacement {
@@ -3116,66 +3116,30 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         return Number(value.toFixed(6)).toString();
     }
 
-    private getWeightedMixedExportSegments(
-        segments: Array<{ color: string; alpha?: number; weight?: number }>
-    ): Array<{ color: string; alpha: number; startFraction: number; endFraction: number }> {
-        const validSegments = segments.filter(segment => Number(segment.weight ?? 1) > 0);
-        const totalWeight = validSegments.reduce((sum, segment) => sum + Number(segment.weight ?? 1), 0);
-        if (validSegments.length < 2 || totalWeight <= 0) {
-            return [];
-        }
-
-        let startFraction = 0;
-        return validSegments.map((segment, index) => {
-            const endFraction = index === validSegments.length - 1
-                ? 1
-                : startFraction + (Number(segment.weight ?? 1) / totalWeight);
-            const weightedSegment = {
-                color: segment.color,
-                alpha: this.commonService.clampStyleAlpha(segment.alpha ?? 1, 1),
-                startFraction,
-                endFraction
-            };
-            startFraction = endFraction;
-
-            return weightedSegment;
-        });
-    }
-
-    private appendMixedStripePattern(
+    private appendMixedPiePaths(
         doc: XMLDocument,
         parent: SVGElement,
-        patternId: string,
         segments: Array<{ color: string; alpha?: number; weight?: number }>,
-        coordinateScale: number = 1
+        centerX: number,
+        centerY: number,
+        radius: number
     ): void {
         const svgNamespace = 'http://www.w3.org/2000/svg';
-        const defs = doc.createElementNS(svgNamespace, 'defs');
-        const pattern = doc.createElementNS(svgNamespace, 'pattern');
-        const weightedSegments = this.getWeightedMixedExportSegments(segments);
-        const safeCoordinateScale = Math.max(0.0001, Number(coordinateScale) || 1);
-        const stripePeriod = MIXED_NODE_STRIPE_BAND_WIDTH_PX
-            * Math.max(2, weightedSegments.length)
-            / safeCoordinateScale;
-        pattern.setAttribute('id', patternId);
-        pattern.setAttribute('patternUnits', 'userSpaceOnUse');
-        pattern.setAttribute('width', this.formatSvgExportNumber(stripePeriod));
-        pattern.setAttribute('height', this.formatSvgExportNumber(stripePeriod));
-        pattern.setAttribute('patternTransform', 'rotate(45)');
+        const slices: PieChartSlice[] = segments.map((segment, index) => ({
+            label: `${index}`,
+            count: Number(segment.weight ?? 1),
+            color: segment.color,
+            alpha: this.commonService.clampStyleAlpha(segment.alpha ?? 1, 1)
+        }));
 
-        weightedSegments.forEach(segment => {
-            const stripe = doc.createElementNS(svgNamespace, 'rect');
-            stripe.setAttribute('x', this.formatSvgExportNumber(segment.startFraction * stripePeriod));
-            stripe.setAttribute('y', '0');
-            stripe.setAttribute('width', this.formatSvgExportNumber((segment.endFraction - segment.startFraction) * stripePeriod));
-            stripe.setAttribute('height', this.formatSvgExportNumber(stripePeriod));
-            stripe.setAttribute('fill', segment.color);
-            stripe.setAttribute('fill-opacity', this.formatSvgExportNumber(segment.alpha));
-            pattern.appendChild(stripe);
+        buildPieChartPathSlices(slices, centerX, centerY, radius).forEach(slice => {
+            const path = doc.createElementNS(svgNamespace, 'path');
+            path.setAttribute('d', slice.path);
+            path.setAttribute('fill', slice.color);
+            path.setAttribute('fill-opacity', this.formatSvgExportNumber(slice.alpha ?? 1));
+            path.setAttribute('stroke', 'none');
+            parent.appendChild(path);
         });
-
-        defs.appendChild(pattern);
-        parent.appendChild(defs);
     }
 
     private createCustomNodeVectorExportElement(
@@ -3273,41 +3237,43 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             vectorGroup.setAttribute('transform', transforms.join(' '));
         }
 
-        const patternId = `mt-mixed-node-export-${replacementIndex}`;
-        const coordinateScale = replacement.vectorData
-            ? Math.min(
-                imageWidth / replacement.vectorData.width,
-                imageHeight / replacement.vectorData.height
-            )
-            : 1;
-        this.appendMixedStripePattern(doc, vectorGroup, patternId, replacement.segments, coordinateScale);
-
         if (replacement.vectorData) {
+            const clipId = `mt-mixed-node-export-clip-${replacementIndex}`;
+            const defs = doc.createElementNS(svgNamespace, 'defs');
+            const clipPath = doc.createElementNS(svgNamespace, 'clipPath');
+            clipPath.setAttribute('id', clipId);
+            const clipShape = doc.createElementNS(svgNamespace, 'path');
+            clipShape.setAttribute('d', replacement.vectorData.fillPath);
+            clipShape.setAttribute('transform', `translate(0, ${replacement.vectorData.height}) scale(1,-1)`);
+            clipPath.appendChild(clipShape);
+            defs.appendChild(clipPath);
+            vectorGroup.appendChild(defs);
+
             const scaleGroup = doc.createElementNS(svgNamespace, 'g');
             scaleGroup.setAttribute('transform', `scale(${imageWidth / replacement.vectorData.width}, ${imageHeight / replacement.vectorData.height})`);
-
-            const shapeGroup = doc.createElementNS(svgNamespace, 'g');
-            shapeGroup.setAttribute('transform', `translate(0, ${replacement.vectorData.height}) scale(1,-1)`);
-
-            const fillPath = doc.createElementNS(svgNamespace, 'path');
-            fillPath.setAttribute('d', replacement.vectorData.fillPath);
-            fillPath.setAttribute('fill', `url(#${patternId})`);
-            fillPath.setAttribute('stroke', 'none');
-            shapeGroup.appendChild(fillPath);
-
-            scaleGroup.appendChild(shapeGroup);
+            const pieGroup = doc.createElementNS(svgNamespace, 'g');
+            pieGroup.setAttribute('clip-path', `url(#${clipId})`);
+            this.appendMixedPiePaths(
+                doc,
+                pieGroup,
+                replacement.segments,
+                replacement.vectorData.width / 2,
+                replacement.vectorData.height / 2,
+                Math.hypot(replacement.vectorData.width, replacement.vectorData.height) / 2 + 1
+            );
+            scaleGroup.appendChild(pieGroup);
             vectorGroup.appendChild(scaleGroup);
             return vectorGroup;
         }
 
-        const fillRect = doc.createElementNS(svgNamespace, 'rect');
-        fillRect.setAttribute('x', '0');
-        fillRect.setAttribute('y', '0');
-        fillRect.setAttribute('width', `${imageWidth}`);
-        fillRect.setAttribute('height', `${imageHeight}`);
-        fillRect.setAttribute('fill', `url(#${patternId})`);
-        fillRect.setAttribute('stroke', 'none');
-        vectorGroup.appendChild(fillRect);
+        this.appendMixedPiePaths(
+            doc,
+            vectorGroup,
+            replacement.segments,
+            imageWidth / 2,
+            imageHeight / 2,
+            Math.hypot(imageWidth, imageHeight) / 2 + 1
+        );
 
         return vectorGroup;
     }

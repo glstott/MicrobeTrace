@@ -1,4 +1,5 @@
 import { normalizeNodeStyleCategoryValue } from './color-mapping.service';
+import { buildPieChartPathSlices, PieChartSlice } from './pie-chart-utils';
 
 export type NodeShapeGroupKey = 'basic' | 'places' | 'people' | 'vectors' | 'animals' | 'specimen' | 'other';
 
@@ -60,8 +61,6 @@ export interface MixedNodeShapeDataUriOptions {
     includeStroke?: boolean;
     renderedSize?: number;
 }
-
-export const MIXED_NODE_STRIPE_BAND_WIDTH_PX = 4;
 
 export const BASIC_NODE_SYMBOL_OPTIONS: NodeShapeOption[] = [
     { key: 'ellipse', value: '\u2b24', name: ' (Circle) ', groupKey: 'basic' },
@@ -948,62 +947,28 @@ function buildBasicNodeShapeDataUri(
     return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export interface WeightedMixedNodeShapeSegment {
-    segment: MixedNodeShapeSegment;
-    startFraction: number;
-    endFraction: number;
-}
-
-function formatSvgFraction(value: number): string {
-    return Number(value.toFixed(6)).toString();
-}
-
-export function getWeightedMixedNodeShapeSegments(segments: MixedNodeShapeSegment[]): WeightedMixedNodeShapeSegment[] {
-    const validSegments = segments.filter(segment => Number(segment.weight ?? 1) > 0);
-    const totalWeight = validSegments.reduce((sum, segment) => sum + Number(segment.weight ?? 1), 0);
-    if (validSegments.length < 2 || totalWeight <= 0) {
-        return [];
-    }
-
-    let startFraction = 0;
-    return validSegments.map((segment, index) => {
-        const segmentWeight = Number(segment.weight ?? 1);
-        const endFraction = index === validSegments.length - 1
-            ? 1
-            : startFraction + (segmentWeight / totalWeight);
-        const weightedSegment = { segment, startFraction, endFraction };
-        startFraction = endFraction;
-
-        return weightedSegment;
-    });
-}
-
-export function buildMixedNodeStripePatternDefinition(
-    patternId: string,
+function buildMixedNodePiePaths(
     segments: MixedNodeShapeSegment[],
     fallbackOpacity: number,
-    coordinateSpan: number,
-    renderedSize: number
+    centerX: number,
+    centerY: number,
+    radius: number
 ): string {
-    const weightedSegments = getWeightedMixedNodeShapeSegments(segments);
-    if (!weightedSegments.length) {
+    const pieSlices: PieChartSlice[] = segments
+        .map((segment, index) => ({
+            label: `${index}`,
+            count: Number(segment.weight ?? 1),
+            color: sanitizeSvgColor(segment.color),
+            alpha: sanitizeSvgOpacity(segment.alpha ?? fallbackOpacity)
+        }))
+        .filter(slice => Number.isFinite(slice.count) && slice.count > 0);
+    if (pieSlices.length < 2) {
         return '';
     }
 
-    const safeCoordinateSpan = Math.max(1, Number(coordinateSpan) || 1);
-    const safeRenderedSize = Math.max(1, Number(renderedSize) || 24);
-    const stripePeriod = MIXED_NODE_STRIPE_BAND_WIDTH_PX
-        * weightedSegments.length
-        * safeCoordinateSpan
-        / safeRenderedSize;
-    const stripes = weightedSegments.map(({ segment, startFraction, endFraction }) => {
-        const color = sanitizeSvgColor(segment.color);
-        const opacity = sanitizeSvgOpacity(segment.alpha ?? fallbackOpacity);
-
-        return `<rect x="${formatSvgFraction(startFraction * stripePeriod)}" y="0" width="${formatSvgFraction((endFraction - startFraction) * stripePeriod)}" height="${formatSvgFraction(stripePeriod)}" fill="${color}" fill-opacity="${opacity}"/>`;
+    return buildPieChartPathSlices(pieSlices, centerX, centerY, radius).map(slice => {
+        return `<path d="${slice.path}" fill="${slice.color}" fill-opacity="${slice.alpha}" stroke="none"/>`;
     }).join('');
-
-    return `<pattern id="${patternId}" patternUnits="userSpaceOnUse" width="${formatSvgFraction(stripePeriod)}" height="${formatSvgFraction(stripePeriod)}" patternTransform="rotate(45)">${stripes}</pattern>`;
 }
 
 function buildMixedBasicNodeShapeContent(
@@ -1021,16 +986,7 @@ function buildMixedBasicNodeShapeContent(
     const viewBoxPadding = !options.fillCanvas
         ? Math.max(0, Number(options.basicShapeViewBoxPadding ?? 0))
         : 0;
-    const stripePattern = buildMixedNodeStripePatternDefinition(
-        'mixed-node-fill',
-        segments,
-        safeFillOpacity,
-        300 + (viewBoxPadding * 2),
-        Number(options.renderedSize) || 24
-    );
-    const stripeDefinition = stripePattern ? `<defs>${stripePattern}</defs>` : '';
-    const fillPaint = stripePattern ? 'url(#mixed-node-fill)' : safeFill;
-    const fillOpacityValue = stripePattern ? 1 : safeFillOpacity;
+    const piePaths = buildMixedNodePiePaths(segments, safeFillOpacity, 150, 150, 220);
     const includeStroke = options.includeStroke !== false;
     const outlineStroke = sanitizeSvgColor(selectedStrokeColor ?? strokeColor);
     const strokeAttributes = includeStroke
@@ -1038,21 +994,26 @@ function buildMixedBasicNodeShapeContent(
         : 'stroke="none"';
 
     if (options.fillCanvas) {
-        return `${stripeDefinition}<rect x="0" y="0" width="300" height="300" fill="${fillPaint}" fill-opacity="${fillOpacityValue}" stroke="none"/>`;
-    }
-
-    if (normalizedShapeKey === 'ellipse') {
-        return `${stripeDefinition}<circle cx="150" cy="150" r="110" fill="${fillPaint}" fill-opacity="${fillOpacityValue}" ${strokeAttributes}/>`;
+        return piePaths || `<rect x="0" y="0" width="300" height="300" fill="${safeFill}" fill-opacity="${safeFillOpacity}" stroke="none"/>`;
     }
 
     const path = normalizedShapeKey === 'barrel'
         ? 'M 90 45 C 60 45 45 82 45 150 C 45 218 60 255 90 255 L 210 255 C 240 255 255 218 255 150 C 255 82 240 45 210 45 Z'
         : buildBasicNodeShapePath(normalizedShapeKey);
-    if (!path) {
-        return `${stripeDefinition}<circle cx="150" cy="150" r="110" fill="${fillPaint}" fill-opacity="${fillOpacityValue}" ${strokeAttributes}/>`;
+    const shapeElement = normalizedShapeKey === 'ellipse' || !path
+        ? '<circle cx="150" cy="150" r="110"/>'
+        : `<path d="${path}"/>`;
+    const solidShape = normalizedShapeKey === 'ellipse' || !path
+        ? `<circle cx="150" cy="150" r="110" fill="${safeFill}" fill-opacity="${safeFillOpacity}" ${strokeAttributes}/>`
+        : `<path d="${path}" fill="${safeFill}" fill-opacity="${safeFillOpacity}" ${strokeAttributes}/>`;
+    if (!piePaths) {
+        return solidShape;
     }
 
-    return `${stripeDefinition}<path d="${path}" fill="${fillPaint}" fill-opacity="${fillOpacityValue}" ${strokeAttributes}/>`;
+    const outlineShape = normalizedShapeKey === 'ellipse' || !path
+        ? `<circle cx="150" cy="150" r="110" fill="none" ${strokeAttributes}/>`
+        : `<path d="${path}" fill="none" ${strokeAttributes}/>`;
+    return `<defs><clipPath id="mixed-node-clip">${shapeElement}</clipPath></defs><g clip-path="url(#mixed-node-clip)">${piePaths}</g>${outlineShape}`;
 }
 
 function buildMixedCustomNodeShapeContent(
@@ -1072,28 +1033,29 @@ function buildMixedCustomNodeShapeContent(
     const customShapePadding = Math.min(100, Math.max(0, Number(options.customShapePadding ?? 40)));
     const customShapeSize = Math.max(1, 300 - (customShapePadding * 2));
     const viewBoxPadding = Math.max(0, Number(options.customShapeViewBoxPadding ?? strokeWidth));
-    const renderedStripeAreaSize = (Number(options.renderedSize) || 24) * customShapeSize / 300;
-    const stripePattern = buildMixedNodeStripePatternDefinition(
-        'mixed-node-fill',
+    const pieRadius = Math.hypot(definition.width, definition.height) / 2 + 1;
+    const piePaths = buildMixedNodePiePaths(
         segments,
         safeFillOpacity,
-        Math.max(definition.width, definition.height) + (viewBoxPadding * 2),
-        renderedStripeAreaSize
+        definition.width / 2,
+        definition.height / 2,
+        pieRadius
     );
-    const stripeDefinition = stripePattern ? `<defs>${stripePattern}</defs>` : '';
-    const fillPaint = stripePattern ? 'url(#mixed-node-fill)' : safeFill;
-    const fillOpacityValue = stripePattern ? 1 : safeFillOpacity;
     const outlinePath = includeStroke
         ? `<path d="${definition.path}" fill="none" stroke="${outlineStroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`
         : '';
+    const flippedTransform = `translate(0,${definition.height}) scale(1,-1)`;
+    const fillContent = piePaths
+        ? [
+            `<defs><clipPath id="mixed-node-clip"><path d="${definition.fillPath ?? definition.path}" transform="${flippedTransform}"/></clipPath></defs>`,
+            `<g clip-path="url(#mixed-node-clip)">${piePaths}</g>`
+        ].join('')
+        : `<g transform="${flippedTransform}"><path d="${definition.fillPath ?? definition.path}" fill="${safeFill}" fill-opacity="${safeFillOpacity}" stroke="none"/></g>`;
 
     return [
         `<svg x="${customShapePadding}" y="${customShapePadding}" width="${customShapeSize}" height="${customShapeSize}" viewBox="${buildPaddedViewBox(definition.viewBox, viewBoxPadding)}" preserveAspectRatio="xMidYMid meet">`,
-        stripeDefinition,
-        `<g transform="translate(0,${definition.height}) scale(1,-1)">`,
-        `<path d="${definition.fillPath ?? definition.path}" fill="${fillPaint}" fill-opacity="${fillOpacityValue}" stroke="none"/>`,
-        outlinePath,
-        '</g>',
+        fillContent,
+        `<g transform="${flippedTransform}">${outlinePath}</g>`,
         '</svg>'
     ].join('');
 }

@@ -158,8 +158,11 @@ describe('Journey Flow - mixed node coloring', () => {
       const cyInstance = typedWindow.cytoscapeInstance;
       const mixedNode = cyInstance.getElementById('sample-4');
       const singleNode = cyInstance.getElementById('sample-2');
+      const mixedNodeSvg = decodeURIComponent(String(mixedNode.data('mixedColorImage') || ''));
 
       expect(String(mixedNode.data('mixedColorImage') || '')).to.contain('data:image/svg+xml');
+      expect(mixedNodeSvg).to.contain('A 220 220');
+      expect(mixedNodeSvg).not.to.contain('patternTransform');
       expect(singleNode.data('mixedColorImage')).to.equal(undefined);
     });
 
@@ -386,6 +389,8 @@ describe('Journey Flow - mixed node coloring', () => {
       const iconUrl = String(marker?.options?.icon?.options?.iconUrl || '');
       expect(iconUrl).to.contain('data:image/svg+xml');
       expect(decodeURIComponent(iconUrl)).to.contain('#00aa00');
+      expect(decodeURIComponent(iconUrl)).to.contain('A 220 220');
+      expect(decodeURIComponent(iconUrl)).not.to.contain('patternTransform');
     });
 
     goToPhyloTreeView();
@@ -393,10 +398,11 @@ describe('Journey Flow - mixed node coloring', () => {
       .should(($circle) => {
         expect($circle.css('fill')).to.match(/url\(.+mt-tree-mixed-fill-/);
       });
-    cy.get('#phylocanvas defs.mt-tree-mixed-fill-defs pattern rect')
-      .should(($stripes) => {
-        const stripeColors = [...$stripes].map((stripe) => String(stripe.getAttribute('fill')).toLowerCase());
-        expect(stripeColors).to.include('#00aa00');
+    cy.get('#phylocanvas defs.mt-tree-mixed-fill-defs pattern path')
+      .should(($slices) => {
+        const sliceColors = [...$slices].map((slice) => String(slice.getAttribute('fill')).toLowerCase());
+        expect(sliceColors).to.include('#00aa00');
+        expect($slices).to.have.length(2);
       });
   });
 

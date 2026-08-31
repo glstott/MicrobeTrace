@@ -1,5 +1,3 @@
-import { buildMixedNodeStripePatternDefinition } from './node-shapes';
-
 export interface PieChartSlice {
   label: string;
   count: number;
@@ -23,6 +21,12 @@ export interface SegmentedPieChartStyle {
 
 export interface PieChartPathSlice extends PieChartSlice {
   path: string;
+}
+
+export interface SegmentedPieChartPathSlice extends PieChartPathSlice {
+  parentLabel: string;
+  parentCount: number;
+  segmentValue?: any;
 }
 
 export function buildPieChartSlicesWithSegmentedFills(
@@ -129,6 +133,59 @@ export function buildPieChartPathSlices(
   });
 }
 
+function getValidPieChartFillSegments(slice: PieChartSlice): PieChartFillSegment[] {
+  return (slice.segments || []).filter(segment => {
+    const weight = Number(segment?.weight ?? 1);
+    return typeof segment?.color === 'string'
+      && !!segment.color
+      && Number.isFinite(weight)
+      && weight > 0;
+  });
+}
+
+export function buildSegmentedPieChartPathSlices(
+  slices: PieChartSlice[],
+  centerX: number,
+  centerY: number,
+  radius: number
+): SegmentedPieChartPathSlice[] {
+  const renderSlices: SegmentedPieChartPathSlice[] = [];
+
+  getValidPieChartSlices(slices).forEach(slice => {
+    const segments = getValidPieChartFillSegments(slice);
+    if (segments.length < 2) {
+      renderSlices.push({
+        ...slice,
+        parentLabel: slice.label,
+        parentCount: slice.count,
+        path: ''
+      });
+      return;
+    }
+
+    const totalWeight = segments.reduce((sum, segment) => sum + Number(segment.weight ?? 1), 0);
+    segments.forEach(segment => {
+      const segmentWeight = Number(segment.weight ?? 1);
+      renderSlices.push({
+        label: slice.label,
+        count: slice.count * segmentWeight / totalWeight,
+        color: segment.color,
+        alpha: segment.alpha ?? slice.alpha,
+        parentLabel: slice.label,
+        parentCount: slice.count,
+        segmentValue: segment.value,
+        path: ''
+      });
+    });
+  });
+
+  const pathSlices = buildPieChartPathSlices(renderSlices, centerX, centerY, radius);
+  return pathSlices.map((pathSlice, index) => ({
+    ...renderSlices[index],
+    path: pathSlice.path
+  }));
+}
+
 export function buildPieChartPatternDef(patternId: string, slices: PieChartSlice[], renderedSize: number = 24): string {
   const totalCount = getPieChartTotalCount(slices);
   const validSlices = getValidPieChartSlices(slices);
@@ -137,32 +194,17 @@ export function buildPieChartPatternDef(patternId: string, slices: PieChartSlice
     return '';
   }
 
-  const pathSlices = buildPieChartPathSlices(validSlices, 0, 0, 1);
-  const stripedFillDefs: string[] = [];
-  const paths = pathSlices.map((slice, sliceIndex) => {
-    const segments = (slice.segments || []).filter(segment => {
-      const weight = Number(segment?.weight ?? 1);
-      return typeof segment?.color === 'string' && !!segment.color && Number.isFinite(weight) && weight > 0;
-    });
+  // Keep the argument for API compatibility with callers that size generated
+  // patterns. Pie geometry scales through the viewBox and is size-independent.
+  void renderedSize;
+  const pathSlices = buildSegmentedPieChartPathSlices(validSlices, 0, 0, 1);
+  const paths = pathSlices.map(slice => {
     const alpha = Number(slice.alpha);
     const fillOpacity = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1;
-
-    if (segments.length < 2) {
-      return `<path d='${slice.path}' fill='${slice.color}' fill-opacity='${fillOpacity}' />`;
-    }
-
-    const stripedPatternId = `${patternId}-stripes-${sliceIndex}`;
-    stripedFillDefs.push(buildMixedNodeStripePatternDefinition(
-      stripedPatternId,
-      segments,
-      fillOpacity,
-      2,
-      renderedSize
-    ));
-    return `<path d='${slice.path}' fill='url(#${stripedPatternId})' fill-opacity='1' />`;
+    return `<path d='${slice.path}' fill='${slice.color}' fill-opacity='${fillOpacity}' />`;
   }).join('');
 
-  return `${stripedFillDefs.join('')}<pattern id='${patternId}' viewBox='-1 -1 2 2' width='100%' height='100%'>${paths}</pattern>`;
+  return `<pattern id='${patternId}' viewBox='-1 -1 2 2' width='100%' height='100%'>${paths}</pattern>`;
 }
 
 export function buildPieChartSvgDataUri(patternId: string, size: number, slices: PieChartSlice[]): string {
