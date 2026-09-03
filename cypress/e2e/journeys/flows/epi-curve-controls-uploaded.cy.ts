@@ -7,6 +7,7 @@ import {
   openEpiCurveSettingsDialog,
 } from '../../../support/journey-helpers';
 import {
+  addEpiCurveAnnotation,
   assertEpiCurveHasBars,
   assertEpiCurveColorPickerVisible,
   readEpiCurveBars,
@@ -17,6 +18,7 @@ import {
   selectEpiCurveDropdown,
   selectEpiCurveSettingsTab,
   setEpiCurveColor,
+  setEpiCurveChartText,
   setEpiCurveCumulative,
   setEpiCurveLegendPosition,
   setEpiCurveLineStyle,
@@ -77,21 +79,21 @@ const readUniqueEpiCurveFillsInRenderOrder = (): Cypress.Chainable<string[]> =>
     return fills;
   }, []));
 
-const assertLegendPosition = (position: 'Hide' | 'Left' | 'Right' | 'Bottom'): void => {
+const assertLegendPosition = (position: 'Hide' | 'Left' | 'Top' | 'Right' | 'Bottom'): void => {
   if (position === 'Hide') {
-    cy.get('#epiCurveSVG .epiCurve-epi-curve circle').should('have.length', 0);
+    cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker').should('have.length', 0);
     return;
   }
 
-  cy.get('#epiCurveSVG .epiCurve-epi-curve circle')
+  cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker')
     .should('have.length.greaterThan', 0);
 
   if (position === 'Left') {
-    cy.get('#epiCurveSVG .epiCurve-epi-curve circle')
+    cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker')
       .first()
-      .should(($circle) => {
-        const cx = Number($circle.attr('cx'));
-        const cy = Number($circle.attr('cy'));
+      .should(($marker) => {
+        const cx = Number($marker.attr('cx') ?? $marker.attr('data-x'));
+        const cy = Number($marker.attr('cy') ?? $marker.attr('data-y'));
         expect(cx, 'left legend x position').to.be.lessThan(120);
         expect(cy, 'left legend y position').to.be.lessThan(120);
       });
@@ -103,13 +105,30 @@ const assertLegendPosition = (position: 'Hide' | 'Left' | 'Right' | 'Bottom'): v
       .invoke('attr', 'width')
       .then((svgWidthAttr) => {
         const svgWidth = Number(svgWidthAttr);
-        cy.get('#epiCurveSVG .epiCurve-epi-curve circle')
+        cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker')
           .first()
-          .should(($circle) => {
-            const cx = Number($circle.attr('cx'));
-            const cy = Number($circle.attr('cy'));
+          .should(($marker) => {
+            const cx = Number($marker.attr('cx') ?? $marker.attr('data-x'));
+            const cy = Number($marker.attr('cy') ?? $marker.attr('data-y'));
             expect(cx, 'right legend x position').to.be.greaterThan(svgWidth * 0.45);
             expect(cy, 'right legend y position').to.be.lessThan(120);
+          });
+      });
+    return;
+  }
+
+  if (position === 'Top') {
+    cy.get('#epiCurveSVG')
+      .invoke('attr', 'width')
+      .then((svgWidthAttr) => {
+        const svgWidth = Number(svgWidthAttr);
+        cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker')
+          .first()
+          .should(($marker) => {
+            const cx = Number($marker.attr('cx') ?? $marker.attr('data-x'));
+            const cy = Number($marker.attr('cy') ?? $marker.attr('data-y'));
+            expect(cx, 'top legend x position').to.be.greaterThan(svgWidth * 0.15);
+            expect(cy, 'top legend y position').to.be.lessThan(120);
           });
       });
     return;
@@ -119,10 +138,10 @@ const assertLegendPosition = (position: 'Hide' | 'Left' | 'Right' | 'Bottom'): v
     .invoke('attr', 'height')
     .then((svgHeightAttr) => {
       const svgHeight = Number(svgHeightAttr);
-      cy.get('#epiCurveSVG .epiCurve-epi-curve circle')
+      cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker')
         .first()
-        .should(($circle) => {
-          const cy = Number($circle.attr('cy'));
+        .should(($marker) => {
+          const cy = Number($marker.attr('cy') ?? $marker.attr('data-y'));
           expect(cy, 'bottom legend y position').to.be.greaterThan(svgHeight * 0.45);
         });
     });
@@ -478,7 +497,7 @@ describe('Journey Flow - Epi Curve controls on uploaded data', () => {
     });
 
     cy.get('#epiCurveSVG .epiCurve-epi-curve rect').should('have.length', 0);
-    cy.get('#epiCurveSVG .epiCurve-epi-curve circle').should('have.length', 0);
+    cy.get('#epiCurveSVG .epiCurve-epi-curve .epiCurve-legend-marker').should('have.length', 0);
     cy.get('#epiCurveSVG .axis--x').should('have.length', 0);
     cy.get('#epiCurveSVG .axis--y').should('have.length', 0);
 
@@ -536,6 +555,20 @@ describe('Journey Flow - Epi Curve controls on uploaded data', () => {
     getEpiSettingsDialog().find('#epi-line-style-select-3').should('be.visible');
     setEpiCurveLineStyle(1, 'Solid');
     setEpiCurveLineStyle(2, 'Dashed');
+    selectEpiCurveDropdown('Line 1 Value', 'Zipcode');
+    selectEpiCurveDropdown('Line 2 Value', 'Zipcode');
+
+    ensureEpiSettingsDialogOpen();
+    setEpiCurveLegendPosition('Top');
+    assertLegendPosition('Top');
+    selectEpiCurveDropdown('Tick Unit', 'Day');
+    setEpiCurveTickInterval(14);
+
+    setEpiCurveChartText('Chart Title', 'MMWR-style example');
+    setEpiCurveChartText('X-axis Label', 'Onset date');
+    setEpiCurveChartText('Left Y-axis Label', 'Cumulative doses');
+    setEpiCurveChartText('Right Y-axis Label', 'Measles cases');
+    setEpiCurveChartText('Footnote', 'Abbreviation: MMR vaccine.');
 
     readEpiCurveBars().then((bars) => {
       expect(bars[0].width, 'overlay bar width').to.be.greaterThan(sideBySideBarWidth);
@@ -564,8 +597,44 @@ describe('Journey Flow - Epi Curve controls on uploaded data', () => {
     cy.get('#epiCurveSVG .epiCurve-overlay-bar')
       .first()
       .should('have.attr', 'stroke', 'black');
+    cy.get('#epiCurveSVG .axis--y-right').should('exist');
+    cy.get('#epiCurveSVG .epiCurve-chart-title').should('contain.text', 'MMWR-style example');
+    cy.get('#epiCurveSVG text.x.label').should('have.text', 'Onset date');
+    cy.get('#epiCurveSVG .label--left').should('have.text', 'Cumulative doses');
+    cy.get('#epiCurveSVG .label--right').should('have.text', 'Measles cases');
+    cy.get('#epiCurveSVG .epiCurve-footnote').should('contain.text', 'Abbreviation: MMR vaccine.');
     cy.get('#epiCurveSVG .epiCurve-legend-marker').should('have.length', 1);
     cy.get('#epiCurveSVG .epiCurve-legend-line').should('have.length', 2);
+
+    cy.closeSettingsPane('Epi Curve Settings');
+  });
+
+  it('adds, persists, renders, and removes dated plot annotations', () => {
+    const annotationDate = '2021-07-16';
+    const annotationLabel = 'Outbreak declared';
+
+    addEpiCurveAnnotation(annotationDate, annotationLabel);
+
+    cy.get('#epiCurveSVG .epiCurve-annotation')
+      .should('have.length', 1)
+      .and('have.attr', 'data-annotation-date', annotationDate);
+    cy.get('#epiCurveSVG .epiCurve-annotation-date')
+      .should('have.text', 'Jul 16, 2021:');
+    cy.get('#epiCurveSVG .epiCurve-annotation-label-line')
+      .should('have.text', annotationLabel);
+    cy.get('#epiCurveSVG .epiCurve-annotation-leader')
+      .should('have.attr', 'marker-end', 'url(#epiCurve-annotation-arrowhead)');
+
+    ensureEpiSettingsDialogOpen();
+    selectEpiCurveSettingsTab('Annotations');
+    getEpiSettingsDialog()
+      .find('.epi-remove-annotation')
+      .click();
+
+    cy.window()
+      .its('commonService.session.style.widgets.epiCurve-annotations')
+      .should('deep.equal', []);
+    cy.get('#epiCurveSVG .epiCurve-annotation').should('not.exist');
 
     cy.closeSettingsPane('Epi Curve Settings');
   });

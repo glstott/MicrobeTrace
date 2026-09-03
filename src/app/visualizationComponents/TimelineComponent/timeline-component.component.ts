@@ -14,6 +14,11 @@ import { ExportService } from '@app/contactTraceCommonServices/export.service';
 import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 
+type EpiCurveAnnotation = {
+  date: string;
+  label: string;
+};
+
 @Component({
     selector: 'app-timeline-component',
     templateUrl: './timeline-component.component.html',
@@ -34,6 +39,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
 
   FieldList: SelectItem[] = [];
   FieldListStack: SelectItem[] = [];
+  ValueFieldList: SelectItem[] = [];
   SelectedDateFieldVariable;
   SelectedDateFieldVariable2;
   SelectedDateFieldVariable3;
@@ -44,8 +50,10 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
 
   graphTypes = ['Single Date Field', 'Multi: Side by Side', 'Multi: Overlay']
   lineStyleOptions = ['Solid', 'Dashed'];
+  annotations: EpiCurveAnnotation[] = [];
   selectedGraphType = 'Single Date Field';
-  legendPositionOptions = ['Hide', 'Left', 'Right', 'Bottom']
+  legendPositionOptions = ['Hide', 'Left', 'Top', 'Right', 'Bottom']
+  tickUnitOptions = ['Automatic', 'Day', 'Week', 'Month', 'Year'];
   stackOrderOptions = ['Largest at Bottom', 'Smallest at Bottom', 'Custom']
   customStackOrderItems = [];
 
@@ -66,6 +74,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   private middle;
   private x;
   private y;
+  private yRight;
   private histogram;
   private brush;
   private brushG;
@@ -108,10 +117,12 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   private updateFieldLists(): void {
     this.FieldList = [];
     this.FieldListStack = [];
+    this.ValueFieldList = [{ label: "Count records", value: "None" }];
     this.FieldList.push({ label: "None", value: "None" });
     this.FieldListStack.push({ label: "None", value: 'None'}, { label: "Node Color", value: "Node Color"});
 
     const nodeFields = this.commonService.session.data['nodeFields'] || [];
+    const nodes = this.commonService.session.data.nodes || [];
     nodeFields.forEach((d) => {
         if (d != 'seq' && d != 'sequence') {
             this.FieldList.push(
@@ -124,6 +135,15 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
                     label: this.commonService.capitalize(d.replace("_", "")),
                     value: d
                 });
+            const populatedValues = nodes
+              .map(node => node?.[d])
+              .filter(value => value != null && String(value).trim() != '');
+            if (populatedValues.length > 0 && populatedValues.every(value => Number.isFinite(Number(value)))) {
+              this.ValueFieldList.push({
+                label: this.commonService.capitalize(d.replace("_", "")),
+                value: d,
+              });
+            }
         }
     });
   }
@@ -133,7 +153,6 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     // populate this.twoD.FieldList with [None, ...nodeFields]
     this.updateFieldLists();
 
-    this.tickInterval = 1;
     this.updateSettingsRows();    
 
     this.store.clusterUpdate$.pipe(takeUntil(this.destroy$)).subscribe(() => {
@@ -172,6 +191,11 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     this.SelectedDateFieldVariable2 = this.widgets['epiCurve-date-fields'][1];
     this.SelectedDateFieldVariable3 = this.widgets['epiCurve-date-fields'][2];
 
+    const savedValueFields = Array.isArray(this.widgets['epiCurve-value-fields'])
+      ? this.widgets['epiCurve-value-fields']
+      : [];
+    this.widgets['epiCurve-value-fields'] = [0, 1, 2].map(index => savedValueFields[index] || 'None');
+
     // colors
     if (this.widgets['epiCurve-colors'] == undefined) {
       this.widgets['epiCurve-colors'] = ['#C6D8EB','#B79ECC', '#F3BF79'];
@@ -184,6 +208,17 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
       savedLineStyles[index] == 'Solid' || savedLineStyles[index] == 'Dashed'
         ? savedLineStyles[index]
         : defaultStyle);
+
+    const savedAnnotations = Array.isArray(this.widgets['epiCurve-annotations'])
+      ? this.widgets['epiCurve-annotations']
+      : [];
+    this.annotations = savedAnnotations
+      .filter(annotation => annotation && typeof annotation == 'object')
+      .map(annotation => ({
+        date: typeof annotation.date == 'string' ? annotation.date : '',
+        label: typeof annotation.label == 'string' ? annotation.label : '',
+      }));
+    this.widgets['epiCurve-annotations'] = this.annotations;
 
     // stackColorBy field
     if (this.widgets['epiCurve-stackColorBy'] == undefined) {
@@ -218,7 +253,26 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     if (this.widgets['epiCurve-legendPosition'] == undefined) {
       this.widgets['epiCurve-legendPosition'] = 'Left';
     }
- }
+    if (this.widgets['epiCurve-tickUnit'] == undefined) {
+      this.widgets['epiCurve-tickUnit'] = 'Automatic';
+    }
+    if (this.widgets['epiCurve-tickInterval'] == undefined) {
+      this.widgets['epiCurve-tickInterval'] = 1;
+    }
+    this.tickInterval = Math.max(1, Number(this.widgets['epiCurve-tickInterval']) || 1);
+
+    [
+      'epiCurve-chartTitle',
+      'epiCurve-xAxisLabel',
+      'epiCurve-leftYAxisLabel',
+      'epiCurve-rightYAxisLabel',
+      'epiCurve-footnote',
+    ].forEach(widgetName => {
+      if (this.widgets[widgetName] == undefined) {
+        this.widgets[widgetName] = '';
+      }
+    });
+  }
 
  ngAfterViewInit() {
 
@@ -337,6 +391,8 @@ public refresh(): void {
   }
 
   this.updateAxes();
+  this.renderAnnotations(epiCurve);
+  this.renderChartText();
 } 
 
 /**
@@ -355,6 +411,7 @@ private refreshMulti(): void {
     return;
   }
 
+  const useDualAxis = this.isDualAxisOverlay();
   this.updateSizes();
   if (this.height < 0) {
     return;
@@ -385,9 +442,7 @@ private refreshMulti(): void {
 
   this.x = d3.scaleTime().domain([this.timeDomainStart, this.timeDomainEnd]).rangeRound([0, this.width]);
   this.y = d3.scaleLinear().range([this.height, 0]);
-
-  //@ts-ignore
-  this.histogram = d3.histogram().domain(this.x.domain()).thresholds(binInterval);
+  this.yRight = useDualAxis ? d3.scaleLinear().range([this.height, 0]) : undefined;
 
   this.svg = d3.select(this.epiCurveSVGElement.nativeElement)
     .attr("width", this.width + this.margin.left + this.margin.right)
@@ -400,31 +455,49 @@ private refreshMulti(): void {
 
   let maxCount = 0;
   let bins = [];
-  fields.forEach((field) => {
+  let barMax = 0;
+  let lineMax = 0;
+  fields.forEach((field, ind) => {
     if (field != 'None') {
-      let currentCount = 0;
-      let currentbin = this.histogram(this.vnodes.map((d) => d[field]).filter(value => value != null));
-      [currentCount, currentbin] = this.updateBins(currentbin);
+      //@ts-ignore
+      const seriesHistogram = d3.histogram()
+        .value(d => d[field])
+        .domain(this.x.domain())
+        .thresholds(binInterval);
+      let currentbin = seriesHistogram(this.vnodes);
+      const [currentCount, updatedBins] = this.updateMultiSeriesBins(currentbin, fieldIndexes[ind]);
+      currentbin = updatedBins;
       bins.push(currentbin)
       if (currentCount > maxCount) maxCount = currentCount;
+      if (fieldIndexes[ind] == 0) {
+        barMax = Math.max(barMax, currentCount);
+      } else {
+        lineMax = Math.max(lineMax, currentCount);
+      }
     }
   })
 
-  this.y.domain([0, maxCount]).nice();
+  if (useDualAxis) {
+    this.y.domain([0, Math.max(1, lineMax * 1.08)]).nice();
+    this.yRight.domain([0, Math.max(1, barMax * 1.1)]).nice();
+  } else {
+    this.y.domain([0, Math.max(1, maxCount)]).nice();
+  }
 
   if (this.selectedGraphType == 'Multi: Overlay') {
     fields.forEach((field, ind) => {
       const fieldIndex = fieldIndexes[ind];
       if (fieldIndex == 0) {
+        const barScale = useDualAxis ? this.yRight : this.y;
         const rects = epiCurve.selectAll(`rect${ind}`)
         .data(bins[ind])
         .enter()
         .append("rect")
         .attr("class", "epiCurve-bar-series epiCurve-overlay-bar")
         .attr("data-field-index", fieldIndex)
-        .attr("transform", d => `translate(${this.x(d.x0)}, ${this.y(d.length)})`)
+        .attr("transform", d => `translate(${this.x(d.x0)}, ${barScale(this.getBinCount(d))})`)
         .attr("width", d => this.x(d.x1) - this.x(d.x0))
-        .attr("height", d => this.height - this.y(d.length))
+        .attr("height", d => this.height - barScale(this.getBinCount(d)))
         .attr("fill", colors[ind])
         .attr("stroke", "black");
 
@@ -488,9 +561,9 @@ private refreshMulti(): void {
         .append("rect")
         .attr("class", "epiCurve-bar-series")
         .attr("data-field-index", fieldIndexes[ind])
-        .attr("transform", d => `translate(${xOffset[ind](d, that)}, ${this.y(d.length)})`)
+        .attr("transform", d => `translate(${xOffset[ind](d, that)}, ${this.y(this.getBinCount(d))})`)
         .attr("width", width)
-        .attr("height", d => this.height - this.y(d.length))
+        .attr("height", d => this.height - this.y(this.getBinCount(d)))
         .attr("fill", colors[ind])
         .attr("stroke", "black" );
 
@@ -499,12 +572,41 @@ private refreshMulti(): void {
     });
   }
 
-  this.updateAxes();
+  this.updateAxes(useDualAxis);
   const seriesTypes = fieldIndexes.map(fieldIndex =>
     this.selectedGraphType == 'Multi: Overlay' && fieldIndex > 0 ? 'line' : 'bar');
   const lineStyles = fieldIndexes.map(fieldIndex => this.getLineStyle(fieldIndex));
   this.generateLegend(epiCurve, colors, fields, [], seriesTypes, lineStyles)
+  this.renderAnnotations(epiCurve);
+  this.renderChartText();
 } 
+
+private isDualAxisOverlay(): boolean {
+  return this.selectedGraphType == 'Multi: Overlay'
+    && this.SelectedDateFieldVariable != 'None'
+    && (this.SelectedDateFieldVariable2 != 'None' || this.SelectedDateFieldVariable3 != 'None');
+}
+
+private updateMultiSeriesBins(bins, fieldIndex: number): [number, any[]] {
+  const valueField = this.widgets['epiCurve-value-fields']?.[fieldIndex] || 'None';
+  let cumulativeCount = 0;
+  let maxCount = 0;
+
+  bins.forEach(bin => {
+    const binCount = valueField == 'None'
+      ? bin.length
+      : d3.sum(bin, node => {
+        const numericValue = Number(node?.[valueField]);
+        return Number.isFinite(numericValue) ? numericValue : 0;
+      });
+    cumulativeCount += binCount;
+    bin.binCount = binCount;
+    bin.cumulativeCount = cumulativeCount;
+    maxCount = Math.max(maxCount, this.widgets['epiCurve-cumulative'] ? cumulativeCount : binCount);
+  });
+
+  return [maxCount, bins];
+}
 
 private getLineStyle(fieldIndex): string {
   return this.widgets['epiCurve-lineStyles']?.[fieldIndex] == 'Dashed' ? 'Dashed' : 'Solid';
@@ -512,6 +614,189 @@ private getLineStyle(fieldIndex): string {
 
 private getLineDashArray(lineStyle): string | null {
   return lineStyle == 'Dashed' ? '10 7' : null;
+}
+
+private renderAnnotations(epiCurve): void {
+  if (!this.x || this.height < 40 || !Array.isArray(this.annotations)) {
+    return;
+  }
+
+  const domain = this.x.domain();
+  const domainStart = domain?.[0]?.getTime?.();
+  const domainEnd = domain?.[1]?.getTime?.();
+  if (!Number.isFinite(domainStart) || !Number.isFinite(domainEnd)) {
+    return;
+  }
+
+  const renderableAnnotations = this.annotations
+    .map((annotation, index) => {
+      const date = moment(annotation.date, 'YYYY-MM-DD', true);
+      return {
+        annotation,
+        date,
+        index,
+        timestamp: date.valueOf(),
+      };
+    })
+    .filter(entry => entry.date.isValid()
+      && entry.timestamp >= domainStart
+      && entry.timestamp <= domainEnd)
+    .map(entry => ({ ...entry, x: this.x(entry.date.toDate()) }))
+    .sort((a, b) => a.x - b.x);
+
+  if (renderableAnnotations.length == 0) {
+    return;
+  }
+
+  const markerId = 'epiCurve-annotation-arrowhead';
+  const defs = this.svg.append('defs');
+  defs.append('marker')
+    .attr('id', markerId)
+    .attr('viewBox', '0 0 10 10')
+    .attr('refX', 9)
+    .attr('refY', 5)
+    .attr('markerWidth', 7)
+    .attr('markerHeight', 7)
+    .attr('orient', 'auto-start-reverse')
+    .append('path')
+    .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+    .attr('fill', '#212529');
+
+  const annotationLayer = epiCurve.append('g')
+    .attr('class', 'epiCurve-annotations');
+  const annotationFontSize = Math.max(11, Math.min(14, Number(this.labelSize || 12)));
+  const lineHeight = annotationFontSize + 3;
+  const rowHeight = lineHeight * 4 + 10;
+  const maxRows = Math.max(1, Math.min(4, Math.floor((this.height - 30) / rowHeight)));
+  const minimumLabelGap = Math.min(300, Math.max(220, annotationFontSize * 17));
+  const lastXByRow = new Array(maxRows).fill(Number.NEGATIVE_INFINITY);
+
+  renderableAnnotations.forEach(entry => {
+    let rowIndex = lastXByRow.findIndex(lastX => entry.x - lastX >= minimumLabelGap);
+    if (rowIndex < 0) {
+      rowIndex = lastXByRow.reduce(
+        (oldestRow, lastX, index) => lastX < lastXByRow[oldestRow] ? index : oldestRow,
+        0);
+    }
+    lastXByRow[rowIndex] = entry.x;
+
+    const labelLines = this.getAnnotationLabelLines(entry.annotation.label);
+    const labelY = 14 + rowIndex * rowHeight;
+    const formattedDate = entry.date.format(entry.annotation.label.trim() ? 'MMM D, YYYY:' : 'MMM D, YYYY');
+    const textLines = [formattedDate, ...labelLines];
+    const lineStartY = Math.min(this.height - 20, labelY + textLines.length * lineHeight + 3);
+    const textAnchor = entry.x < 120 ? 'start' : entry.x > this.width - 120 ? 'end' : 'middle';
+    const textX = textAnchor == 'start'
+      ? Math.max(4, entry.x + 7)
+      : textAnchor == 'end'
+        ? Math.min(this.width - 4, entry.x - 7)
+        : entry.x;
+    const accessibleLabel = `${entry.date.format('MMM D, YYYY')}${entry.annotation.label.trim() ? `: ${entry.annotation.label.trim()}` : ''}`;
+
+    const annotationGroup = annotationLayer.append('g')
+      .attr('class', 'epiCurve-annotation')
+      .attr('data-annotation-index', entry.index)
+      .attr('data-annotation-date', entry.annotation.date)
+      .attr('aria-label', accessibleLabel);
+
+    annotationGroup.append('line')
+      .attr('class', 'epiCurve-annotation-leader')
+      .attr('x1', entry.x)
+      .attr('x2', entry.x)
+      .attr('y1', lineStartY)
+      .attr('y2', this.height - 6)
+      .attr('stroke', '#212529')
+      .attr('stroke-width', 1.5)
+      .attr('marker-end', `url(#${markerId})`)
+      .attr('vector-effect', 'non-scaling-stroke');
+
+    const text = annotationGroup.append('text')
+      .attr('class', 'epiCurve-annotation-text')
+      .attr('x', textX)
+      .attr('y', labelY)
+      .attr('text-anchor', textAnchor)
+      .attr('font-size', annotationFontSize)
+      .attr('fill', '#212529')
+      .style('paint-order', 'stroke')
+      .style('stroke', 'white')
+      .style('stroke-width', 4)
+      .style('stroke-linejoin', 'round');
+
+    text.append('tspan')
+      .attr('class', 'epiCurve-annotation-date')
+      .attr('x', textX)
+      .attr('font-weight', 600)
+      .text(formattedDate);
+
+    labelLines.forEach(labelLine => {
+      text.append('tspan')
+        .attr('class', 'epiCurve-annotation-label-line')
+        .attr('x', textX)
+        .attr('dy', lineHeight)
+        .attr('font-weight', 400)
+        .text(labelLine);
+    });
+
+    annotationGroup.append('title').text(accessibleLabel);
+  });
+}
+
+private getAnnotationLabelLines(label: string, maxCharacters = 26, maxLines = 3): string[] {
+  const words = String(label || '').trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  words.forEach(word => {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (candidate.length <= maxCharacters || currentLine == '') {
+      currentLine = candidate;
+      return;
+    }
+
+    lines.push(currentLine);
+    currentLine = word;
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  const wasTruncated = lines.length > maxLines || lines.some(line => line.length > maxCharacters);
+  const visibleLines = lines.slice(0, maxLines).map(line => line.slice(0, maxCharacters));
+  if (wasTruncated && visibleLines.length > 0) {
+    visibleLines[visibleLines.length - 1] = `${visibleLines[visibleLines.length - 1].slice(0, maxCharacters - 3).trimEnd()}...`;
+  }
+
+  return visibleLines;
+}
+
+private getDefaultAnnotationDate(): string {
+  const domain = this.x?.domain?.();
+  if (domain?.length == 2 && domain[0] instanceof Date && domain[1] instanceof Date) {
+    return moment(new Date((domain[0].getTime() + domain[1].getTime()) / 2)).format('YYYY-MM-DD');
+  }
+
+  return '';
+}
+
+addAnnotation(): void {
+  this.annotations.push({
+    date: this.getDefaultAnnotationDate(),
+    label: '',
+  });
+  this.widgets['epiCurve-annotations'] = this.annotations;
+  this.refresh();
+}
+
+removeAnnotation(index: number): void {
+  this.annotations.splice(index, 1);
+  this.widgets['epiCurve-annotations'] = this.annotations;
+  this.refresh();
+}
+
+onAnnotationChange(): void {
+  this.widgets['epiCurve-annotations'] = this.annotations;
+  this.refresh();
 }
 
 /**
@@ -721,8 +1006,8 @@ private hasValidStackDate(node) {
 }
 
 updateSizes() {
-  this.updateBottomMargin();
   const wrapper = $(this.epiCurveElement.nativeElement).parent();
+  this.updateBottomMargin(wrapper.width());
   $('#epiCurve').height(wrapper.height() - 50);
   this.width = wrapper.width() - this.margin.left - this.margin.right;
   // height represents the height of y axis
@@ -730,14 +1015,118 @@ updateSizes() {
   this.middle = this.height / 2;
 }
 
-private updateBottomMargin() {
+private updateBottomMargin(outerWidth = 0) {
   const baseBottomMargin = this.widgets['epiCurve-legendPosition'] == 'Bottom' ? 100 : 50;
   const labelSizePadding = Math.max(0, this.labelSize - 12) * 2;
   const legendSizePadding = this.widgets['epiCurve-legendPosition'] == 'Bottom' ? Math.max(0, this.legendLabelSize - 15) * 2 : 0;
-  this.margin.bottom = baseBottomMargin + labelSizePadding + legendSizePadding;
-  this.margin.top = Math.max(8, Math.round(this.labelSize * 0.75));
-  this.margin.left = Math.max(45, Math.round(this.labelSize * 3.2));
-  this.margin.right = Math.max(20, Math.round(this.labelSize * 2))+10;
+  const titleFontSize = Math.max(14, Number(this.labelSize || 12) + 2);
+  const footnoteFontSize = Math.max(10, Number(this.labelSize || 12) - 1);
+  const dualAxisPadding = this.isDualAxisOverlay() ? Math.round(this.labelSize * 5) : 0;
+  this.margin.left = Math.max(64, Math.round(this.labelSize * 4.8));
+  this.margin.right = Math.max(30, Math.round(this.labelSize * 2) + 10, dualAxisPadding);
+
+  const availableWidth = Math.max(200, outerWidth - this.margin.left - this.margin.right);
+  const titleLines = this.getWrappedChartTextLines(
+    this.widgets['epiCurve-chartTitle'],
+    availableWidth,
+    titleFontSize,
+    4);
+  const footnoteLines = this.getWrappedChartTextLines(
+    this.widgets['epiCurve-footnote'],
+    availableWidth,
+    footnoteFontSize,
+    3);
+  this.margin.top = Math.max(8, Math.round(this.labelSize * 0.75))
+    + titleLines.length * (titleFontSize + 3);
+  this.margin.bottom = baseBottomMargin + labelSizePadding + legendSizePadding
+    + footnoteLines.length * (footnoteFontSize + 3);
+}
+
+private getWrappedChartTextLines(value, availableWidth: number, fontSize: number, maxLines: number): string[] {
+  const text = String(value || '').trim();
+  if (!text) {
+    return [];
+  }
+
+  const maxCharacters = Math.max(20, Math.floor(availableWidth / Math.max(5, fontSize * 0.56)));
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  words.forEach(word => {
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (candidate.length <= maxCharacters || currentLine == '') {
+      currentLine = candidate;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  });
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  if (lines.length > maxLines) {
+    const visibleLines = lines.slice(0, maxLines);
+    visibleLines[maxLines - 1] = `${visibleLines[maxLines - 1].slice(0, Math.max(1, maxCharacters - 3)).trimEnd()}...`;
+    return visibleLines;
+  }
+
+  return lines;
+}
+
+private renderChartText(): void {
+  if (!this.svg) {
+    return;
+  }
+
+  const titleFontSize = Math.max(14, Number(this.labelSize || 12) + 2);
+  const footnoteFontSize = Math.max(10, Number(this.labelSize || 12) - 1);
+  const titleLines = this.getWrappedChartTextLines(
+    this.widgets['epiCurve-chartTitle'],
+    this.width,
+    titleFontSize,
+    4);
+  const footnoteLines = this.getWrappedChartTextLines(
+    this.widgets['epiCurve-footnote'],
+    this.width,
+    footnoteFontSize,
+    3);
+
+  if (titleLines.length > 0) {
+    const title = this.svg.append('text')
+      .attr('class', 'epiCurve-chart-title')
+      .attr('x', this.margin.left)
+      .attr('y', titleFontSize)
+      .attr('font-size', titleFontSize)
+      .attr('font-weight', 700)
+      .attr('text-anchor', 'start');
+    titleLines.forEach((line, index) => {
+      title.append('tspan')
+        .attr('x', this.margin.left)
+        .attr('dy', index == 0 ? 0 : titleFontSize + 3)
+        .text(line);
+    });
+  }
+
+  if (footnoteLines.length > 0) {
+    const lineHeight = footnoteFontSize + 3;
+    const firstLineY = this.height + this.margin.top + this.margin.bottom
+      - 24 - (footnoteLines.length - 1) * lineHeight;
+    const footnote = this.svg.append('text')
+      .attr('class', 'epiCurve-footnote')
+      .attr('x', this.margin.left)
+      .attr('y', firstLineY)
+      .attr('font-size', footnoteFontSize)
+      .attr('font-weight', 500)
+      .attr('text-anchor', 'start');
+    footnoteLines.forEach((line, index) => {
+      footnote.append('tspan')
+        .attr('x', this.margin.left)
+        .attr('dy', index == 0 ? 0 : lineHeight)
+        .text(line);
+    });
+  }
 }
 
 getTimes(fields) {
@@ -842,26 +1231,36 @@ private getMultiBinTooltip(fields, bins, binIndex): string {
   ];
 
   fields.forEach((field, fieldIndex) => {
-    lines.push(`${this.getTooltipLabel(field)}: ${this.getBinCount(bins[fieldIndex]?.[binIndex])}`);
+    lines.push(`${this.getTooltipLabel(field)}: ${this.formatNumericValue(this.getBinCount(bins[fieldIndex]?.[binIndex]))}`);
   });
 
   return lines.join("\n");
+}
+
+private formatNumericValue(value: number): string {
+  const numericValue = this.getCount(value);
+  return numericValue.toLocaleString(undefined, {
+    maximumFractionDigits: Number.isInteger(numericValue) ? 0 : 2,
+  });
 }
 onLabelSizeChange() {
   this.refresh();
 }
 
-updateAxes() {
+updateAxes(showRightAxis = false) {
   const xAxis = this.configureXAxisSettings();
-  const yDomainMax = Math.max(0, Math.ceil(this.y.domain()[1] as number));
-  const yTickStep = Math.max(1, Math.ceil(yDomainMax / 10));
-  const yTickValues = d3.range(0, yDomainMax + 1, yTickStep);
-  if (yTickValues[yTickValues.length - 1] !== yDomainMax) {
-    yTickValues.push(yDomainMax);
-  }
+  const createTickValues = scale => {
+    const domainMax = Math.max(0, Math.ceil(scale.domain()[1] as number));
+    const tickStep = Math.max(1, Math.ceil(domainMax / 10));
+    const tickValues = d3.range(0, domainMax + 1, tickStep);
+    if (tickValues[tickValues.length - 1] !== domainMax) {
+      tickValues.push(domainMax);
+    }
+    return tickValues;
+  };
   const yAxis = d3.axisLeft(this.y)
-    .tickValues(yTickValues)
-    .tickFormat((d: number) => `${Math.round(d)}`);
+    .tickValues(createTickValues(this.y))
+    .tickFormat((d: number) => this.formatNumericValue(Number(d)));
 
   const xLabelY = this.height + this.margin.top + Math.max(40, Math.round(this.labelSize * 2.3));
   const yTickOffset = -Math.max(9, Math.round(this.labelSize * 0.9));
@@ -889,44 +1288,33 @@ updateAxes() {
     .attr("font-size", this.labelSize)
     .attr("x", this.margin.left + this.width / 2)
     .attr("y", xLabelY)
-    .text(`Date (${this.widgets['epiCurve-binSize']=='Day'? 'Dai': this.widgets['epiCurve-binSize']}ly Bins)`);
+    .text(this.widgets['epiCurve-xAxisLabel']
+      || `Date (${this.widgets['epiCurve-binSize']=='Day'? 'Dai': this.widgets['epiCurve-binSize']}ly Bins)`);
 
   this.svg.append("text")
-    .attr("class", "y label")
+    .attr("class", "y label label--left")
     .attr("text-anchor", "middle")
     .attr("font-size", this.labelSize)
-    .attr("y", Math.max(14, Math.round(this.labelSize * 0.95)))
-    .attr("x", -(this.margin.top + this.height / 2))
-    .attr("transform", "rotate(-90)")
-    .text("Number of Cases");
+    .attr("transform", `translate(${Math.max(14, Math.round(this.labelSize * 0.95))}, ${this.margin.top + this.height / 2}) rotate(-90)`)
+    .text(this.widgets['epiCurve-leftYAxisLabel'] || (showRightAxis ? 'Line value' : 'Number of Cases'));
 
-  /*this.brush = d3.brushX()
-    .extent([[0, 0], [this.width, this.height]])
-    .on("start brush", () => {
-      this.selection = d3.brushSelection(this.brushG.node());
-      if (!this.selection) return;
-      if (this.selection[0] > 0) {
-        this.selection[0] = 0;
-        this.brushG.call(this.brush.move, this.selection);
-      }
-    })
-    .on("end", function () {
-      this.selection = d3.brushSelection(this.brushG.node());
-      if (!this.selection) return;
-      if (this.selection[0] > 0) {
-        this.selection[0] = 0;
-        this.brushG.call(this.brush.move, this.selection);
-        this.propagate();
-      }
-    });
+  if (showRightAxis && this.yRight) {
+    const yRightAxis = d3.axisRight(this.yRight)
+      .tickValues(createTickValues(this.yRight))
+      .tickFormat((d: number) => this.formatNumericValue(Number(d)));
+    this.svg.append("g")
+      .attr("class", "axis axis--y-right")
+      .attr("transform", `translate(${this.margin.left + this.width}, ${this.margin.top})`)
+      .call(yRightAxis)
+      .attr("font-size", this.labelSize);
 
-    this.brushG = this.svg
-    .append("g")
-    .attr("class", "brush")
-    .attr("transform", "translate(" + this.margin.left + ",0)")
-    .call(this.brush);
-    */
-
+    this.svg.append("text")
+      .attr("class", "y label label--right")
+      .attr("text-anchor", "middle")
+      .attr("font-size", this.labelSize)
+      .attr("transform", `translate(${this.margin.left + this.width + this.margin.right - Math.max(10, Math.round(this.labelSize * 0.7))}, ${this.margin.top + this.height / 2}) rotate(90)`)
+      .text(this.widgets['epiCurve-rightYAxisLabel'] || 'Number of Cases');
+  }
 }
 
 generateLegend(epiCurve, colors, fieldNames, opacities = [], seriesTypes = [], lineStyles = []) {
@@ -972,6 +1360,15 @@ generateLegend(epiCurve, colors, fieldNames, opacities = [], seriesTypes = [], l
       rowCount += 1;
     })
     return;
+  } else if (this.widgets['epiCurve-legendPosition'] == 'Top') {
+    const longestLabelLength = fieldNames.reduce(
+      (longest, name) => Math.max(longest, String(name ?? '(Empty)').length),
+      0);
+    const estimatedLegendWidth = longestLabelLength * legendCharWidth + markerRadius * 4 + markerTextGap;
+    const centeredX = Math.round((this.width - estimatedLegendWidth) / 2);
+    const referenceStyleX = Math.round(this.width * 0.42);
+    const rightSafeX = Math.max(markerRadius * 2 + 6, this.width - estimatedLegendWidth - 8);
+    xOffset = Math.max(markerRadius * 2 + 6, Math.min(Math.max(centeredX, referenceStyleX), rightSafeX));
   } else if (this.widgets['epiCurve-legendPosition'] == 'Right') {
     xOffset = this.width - Math.max(120, Math.round(legendFontSize * 8));
   }
@@ -1005,6 +1402,18 @@ private appendLegendMarker(epiCurve, x, y, markerRadius, color, opacity, seriesT
       .attr("stroke-width", 3)
       .attr("stroke-linecap", "round")
       .attr("stroke-dasharray", this.getLineDashArray(lineStyle))
+      .style("opacity", opacity);
+    return;
+  }
+
+  if (this.selectedGraphType == 'Multi: Overlay') {
+    epiCurve.append("path")
+      .attr("class", "epiCurve-legend-marker")
+      .attr("data-x", x)
+      .attr("data-y", y)
+      .attr("d", `M ${x - markerRadius} ${y - markerRadius} h ${markerRadius * 2} v ${markerRadius * 2} h ${-markerRadius * 2} Z`)
+      .style("fill", color)
+      .style("stroke", "black")
       .style("opacity", opacity);
     return;
   }
@@ -1175,6 +1584,26 @@ updateBins(bins, colorVariable='None', nodeColorKeys=undefined) {
 configureXAxisSettings() {
   let xAxis;
   let numberOfDays = d3.timeDay.count(this.timeDomainStart, this.timeDomainEnd);
+  const tickUnit = this.widgets['epiCurve-tickUnit'] || 'Automatic';
+  const tickInterval = Math.max(1, Number(this.tickInterval) || 1);
+  if (tickUnit != 'Automatic') {
+    const intervals = {
+      Day: d3.timeDay,
+      Week: d3.timeWeek,
+      Month: d3.timeMonth,
+      Year: d3.timeYear,
+    };
+    const interval = intervals[tickUnit] || d3.timeMonth;
+    const tickValues = interval.range(this.timeDomainStart, new Date(this.timeDomainEnd.getTime() + 1), tickInterval);
+    const tickFormat = tickUnit == 'Year'
+      ? d3.timeFormat('%Y')
+      : tickUnit == 'Month'
+        ? d3.timeFormat('%b %Y')
+        : numberOfDays < 366
+          ? d3.timeFormat('%b %-d')
+          : d3.timeFormat('%b %-d, %Y');
+    return d3.axisBottom(this.x).tickValues(tickValues).tickFormat(tickFormat as any);
+  }
   if (this.widgets['epiCurve-binSize'] == 'Year') {
     xAxis = d3.axisBottom(this.x).ticks(d3.timeYear).tickFormat(d3.timeFormat("%Y"));
   } else if (numberOfDays<366) {
@@ -1217,6 +1646,7 @@ onBinSizeChange() {
   } else {
     if (this.widgets['epiCurve-binSize'] == 'Quarter') {
       this.tickInterval = 1;
+      this.widgets['epiCurve-tickInterval'] = this.tickInterval;
     }
     $('#epi-tick-size').slideDown();
   }
@@ -1315,7 +1745,21 @@ openStackGroupTransparencyPicker(event, item) {
 }
 
 onTickIntevalChange() {
+  this.tickInterval = Math.max(1, Number(this.tickInterval) || 1);
+  this.widgets['epiCurve-tickInterval'] = this.tickInterval;
   this.refresh()
+}
+
+onTickUnitChange() {
+  this.refresh();
+}
+
+onValueFieldChange() {
+  this.refresh();
+}
+
+onChartTextChange() {
+  this.refresh();
 }
 
 onNodeColorChanged() {

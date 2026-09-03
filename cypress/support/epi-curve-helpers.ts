@@ -10,21 +10,28 @@ export type EpiCurveFieldLabel =
   | 'Date Field'
   | 'Date Field 2'
   | 'Date Field 3'
+  | 'Bar Value'
+  | 'Line 1 Value'
+  | 'Line 2 Value'
+  | 'Value Field 1'
+  | 'Value Field 2'
+  | 'Value Field 3'
   | 'Color By'
   | 'Stack Order'
-  | 'Bin Size';
+  | 'Bin Size'
+  | 'Tick Unit';
 
 export type EpiCurveBinSize = 'Day' | 'Week' | 'Month' | 'Quarter' | 'Year';
 export type EpiCurveLineStyle = 'Solid' | 'Dashed';
-export type EpiCurveLegendPosition = 'Hide' | 'Left' | 'Right' | 'Bottom';
+export type EpiCurveLegendPosition = 'Hide' | 'Left' | 'Top' | 'Right' | 'Bottom';
 export type EpiCurveRangeLabel = 'Label Size' | 'Legend Size';
-export type EpiCurveTickInterval = 1 | 2 | 3 | 4;
+export type EpiCurveTickInterval = number;
 
 type WinWithMT = Window & {
   commonService: any;
 };
 
-type EpiCurveSettingsTab = 'Graph' | 'Legend & Labels' | 'Order & Color';
+type EpiCurveSettingsTab = 'Graph' | 'Legend & Labels' | 'Titles & Axes' | 'Annotations' | 'Order & Color';
 type EpiCurveStackItem = {
   label: string;
   value: any;
@@ -79,6 +86,11 @@ function selectEpiCurveFieldTab(field: EpiCurveFieldLabel): void {
     return;
   }
 
+  if (field === 'Tick Unit') {
+    selectEpiCurveSettingsTab('Legend & Labels');
+    return;
+  }
+
   selectEpiCurveSettingsTab('Graph');
 }
 
@@ -120,9 +132,16 @@ const widgetPathByField: Record<EpiCurveFieldLabel, string> = {
   'Date Field': 'commonService.session.style.widgets.epiCurve-date-fields.0',
   'Date Field 2': 'commonService.session.style.widgets.epiCurve-date-fields.1',
   'Date Field 3': 'commonService.session.style.widgets.epiCurve-date-fields.2',
+  'Bar Value': 'commonService.session.style.widgets.epiCurve-value-fields.0',
+  'Line 1 Value': 'commonService.session.style.widgets.epiCurve-value-fields.1',
+  'Line 2 Value': 'commonService.session.style.widgets.epiCurve-value-fields.2',
+  'Value Field 1': 'commonService.session.style.widgets.epiCurve-value-fields.0',
+  'Value Field 2': 'commonService.session.style.widgets.epiCurve-value-fields.1',
+  'Value Field 3': 'commonService.session.style.widgets.epiCurve-value-fields.2',
   'Color By': 'commonService.session.style.widgets.epiCurve-stackColorBy',
   'Stack Order': 'commonService.session.style.widgets.epiCurve-stackOrder',
   'Bin Size': 'commonService.session.style.widgets.epiCurve-binSize',
+  'Tick Unit': 'commonService.session.style.widgets.epiCurve-tickUnit',
 };
 
 export function selectEpiCurveDropdown(field: EpiCurveFieldLabel, value: string): void {
@@ -186,6 +205,31 @@ export function setEpiCurveLineStyle(fieldIndex: 1 | 2, style: EpiCurveLineStyle
   cy.window()
     .its(`commonService.session.style.widgets.epiCurve-lineStyles.${fieldIndex}`)
     .should('equal', style);
+}
+
+export function addEpiCurveAnnotation(date: string, label: string): void {
+  selectEpiCurveSettingsTab('Annotations');
+
+  getEpiCurveSettingsDialog()
+    .find('#epi-add-annotation')
+    .click();
+
+  getEpiCurveSettingsDialog()
+    .find('.epi-annotation-editor')
+    .last()
+    .within(() => {
+      cy.get('input[type="date"]')
+        .clear()
+        .type(date);
+      cy.get('input[type="text"]')
+        .clear()
+        .type(label);
+    });
+
+  cy.window().should((win) => {
+    const annotations = Cypress._.get(win, 'commonService.session.style.widgets.epiCurve-annotations');
+    expect(annotations[annotations.length - 1]).to.deep.equal({ date, label });
+  });
 }
 
 export function setEpiCurveColor(index: 0 | 1 | 2, color: string): void {
@@ -296,6 +340,36 @@ export function setEpiCurveTickInterval(value: EpiCurveTickInterval): void {
     .should((tickInterval) => {
       expect(Number(tickInterval), 'epi curve tick interval').to.equal(value);
     });
+}
+
+export function setEpiCurveChartText(
+  field: 'Chart Title' | 'X-axis Label' | 'Left Y-axis Label' | 'Right Y-axis Label' | 'Footnote',
+  value: string,
+): void {
+  const inputByField = {
+    'Chart Title': '#epi-chart-title',
+    'X-axis Label': '#epi-x-axis-label',
+    'Left Y-axis Label': '#epi-left-y-axis-label',
+    'Right Y-axis Label': '#epi-right-y-axis-label',
+    Footnote: '#epi-chart-footnote',
+  };
+  const widgetByField = {
+    'Chart Title': 'epiCurve-chartTitle',
+    'X-axis Label': 'epiCurve-xAxisLabel',
+    'Left Y-axis Label': 'epiCurve-leftYAxisLabel',
+    'Right Y-axis Label': 'epiCurve-rightYAxisLabel',
+    Footnote: 'epiCurve-footnote',
+  };
+
+  selectEpiCurveSettingsTab('Titles & Axes');
+  getEpiCurveSettingsDialog()
+    .find(inputByField[field])
+    .clear()
+    .type(value)
+    .should('have.value', value);
+  cy.window()
+    .its(`commonService.session.style.widgets.${widgetByField[field]}`)
+    .should('equal', value);
 }
 
 export function readEpiCurveBars():

@@ -13,7 +13,7 @@
 
 @if (viewActive) {
   <p-dialog id="epiCurve-settings-pane" [(visible)]="ShowEpiSettingsPane" header="Epi Curve Settings"
-    [style]="{width: '560px', height:'490px'}" appendTo="body">
+    [style]="{width: '640px', height:'560px'}" appendTo="body">
     <tabset class="tab-container tabbable-line">
       <tab heading="{{'Graph' | localize}}" [active]="true" customClass="m-tabs__item">
         <div class="tab-pane fade show active" id="table-node-settings" role="tabpanel" aria-labelledby="nodes-tab">
@@ -41,6 +41,17 @@
                 }
               </div>
               @if (selectedGraphType!='Single Date Field') {
+                <div class="form-group row" title="Count records in each date bin, or sum a numeric field to set the series value.">
+                  <div class="col-4">
+                    <label for="epi-value-field-select-1">{{ selectedGraphType=='Multi: Overlay' ? 'Bar Value' : 'Value Field 1' }}</label>
+                  </div>
+                  <div class="col-8">
+                    <p-select inputId="epi-value-field-select-1" [options]="ValueFieldList" appendTo="body" class="width-percent-100"
+                      [(ngModel)]="widgets['epiCurve-value-fields'][0]" (ngModelChange)="onValueFieldChange()"></p-select>
+                  </div>
+                </div>
+              }
+              @if (selectedGraphType!='Single Date Field') {
                 <div class="form-group row additionalDateField" title="Select an additional date field.">
                   <div class="col-3">
                     <label>Date Field 2</label>
@@ -56,6 +67,15 @@
                   }
                   <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
                     <input type="color" id="epi-color-select-2" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][1]" (change)="onNodeColorChanged()">
+                  </div>
+                </div>
+                <div class="form-group row additionalDateField" title="Count records in each date bin, or sum a numeric field to set this series value.">
+                  <div class="col-4">
+                    <label for="epi-value-field-select-2">{{ selectedGraphType=='Multi: Overlay' ? 'Line 1 Value' : 'Value Field 2' }}</label>
+                  </div>
+                  <div class="col-8">
+                    <p-select inputId="epi-value-field-select-2" [options]="ValueFieldList" appendTo="body" class="width-percent-100"
+                      [(ngModel)]="widgets['epiCurve-value-fields'][1]" (ngModelChange)="onValueFieldChange()"></p-select>
                   </div>
                 </div>
               }
@@ -75,6 +95,15 @@
                   }
                   <div class="col-2" style="padding: 0px 15px 0px 10px" title="Select a color for this date field.">
                     <input type="color" id="epi-color-select-3" class="form-control" style="padding: 5px 8px;" [(ngModel)]="widgets['epiCurve-colors'][2]" (change)="onNodeColorChanged()">
+                  </div>
+                </div>
+                <div class="form-group row additionalDateField" title="Count records in each date bin, or sum a numeric field to set this series value.">
+                  <div class="col-4">
+                    <label for="epi-value-field-select-3">{{ selectedGraphType=='Multi: Overlay' ? 'Line 2 Value' : 'Value Field 3' }}</label>
+                  </div>
+                  <div class="col-8">
+                    <p-select inputId="epi-value-field-select-3" [options]="ValueFieldList" appendTo="body" class="width-percent-100"
+                      [(ngModel)]="widgets['epiCurve-value-fields'][2]" (ngModelChange)="onValueFieldChange()"></p-select>
                   </div>
                 </div>
               }
@@ -100,12 +129,21 @@
         </div>
       </tab>
       <tab heading="{{'Legend & Labels' | localize}}" customClass="m-tabs__item">
+        <div class="form-group row" title="Choose the time unit used between x-axis tick labels.">
+          <div class="col-4">
+            <label>Tick Unit</label>
+          </div>
+          <div class="col-8">
+            <p-select inputId="epi-tick-unit-select" [options]="tickUnitOptions" appendTo="body" class="width-percent-100"
+              [(ngModel)]="widgets['epiCurve-tickUnit']" (ngModelChange)="onTickUnitChange()"></p-select>
+          </div>
+        </div>
         <div class="form-group row" title="What interval to display ticks on x axis" id="epi-tick-size">
           <div class="col-4">
             <label for="cluster-minimum-size">X-axis Interval</label>
           </div>
           <div class="col-8">
-            <input type="number" class="form-control form-control-sm" min="1" max="4" step="1" [(ngModel)]="tickInterval" (ngModelChange)="onTickIntevalChange()">
+            <input type="number" class="form-control form-control-sm" min="1" max="90" step="1" [(ngModel)]="tickInterval" (ngModelChange)="onTickIntevalChange()">
           </div>
         </div>
         <div class="form-group row node-label-row" title="Select a font Size for axis labels.">
@@ -124,6 +162,72 @@
           <div class="form-group row node-label-row" title="Select a font size for legend labels.">
             <div class="col-4 padding-right-5"><label>Legend Size</label></div>
             <div class="col-8"><input type="range" class="custom-range" min="10" step="2" max="28" [(ngModel)]="legendLabelSize" (ngModelChange)="onLegendLabelSizeChange()"></div>
+          </div>
+        }
+      </tab>
+      <tab heading="{{'Titles & Axes' | localize}}" customClass="m-tabs__item">
+        <div class="epi-chart-text-help">Leave a field blank to use the standard Epi Curve label.</div>
+        <div class="form-group">
+          <label for="epi-chart-title">Chart Title</label>
+          <textarea id="epi-chart-title" class="form-control form-control-sm" rows="3" maxlength="400"
+            placeholder="Optional chart title" [(ngModel)]="widgets['epiCurve-chartTitle']" (ngModelChange)="onChartTextChange()"></textarea>
+        </div>
+        <div class="form-group row">
+          <div class="col-4"><label for="epi-x-axis-label">X-axis Label</label></div>
+          <div class="col-8"><input id="epi-x-axis-label" type="text" class="form-control form-control-sm" maxlength="120"
+            placeholder="Date (Daily Bins)" [(ngModel)]="widgets['epiCurve-xAxisLabel']" (ngModelChange)="onChartTextChange()"></div>
+        </div>
+        <div class="form-group row">
+          <div class="col-4"><label for="epi-left-y-axis-label">Left Y-axis Label</label></div>
+          <div class="col-8"><input id="epi-left-y-axis-label" type="text" class="form-control form-control-sm" maxlength="120"
+            placeholder="Number of Cases" [(ngModel)]="widgets['epiCurve-leftYAxisLabel']" (ngModelChange)="onChartTextChange()"></div>
+        </div>
+        <div class="form-group row">
+          <div class="col-4"><label for="epi-right-y-axis-label">Right Y-axis Label</label></div>
+          <div class="col-8"><input id="epi-right-y-axis-label" type="text" class="form-control form-control-sm" maxlength="120"
+            placeholder="Number of Cases" [(ngModel)]="widgets['epiCurve-rightYAxisLabel']" (ngModelChange)="onChartTextChange()"></div>
+        </div>
+        <div class="form-group">
+          <label for="epi-chart-footnote">Footnote</label>
+          <textarea id="epi-chart-footnote" class="form-control form-control-sm" rows="2" maxlength="300"
+            placeholder="Optional note below the chart" [(ngModel)]="widgets['epiCurve-footnote']" (ngModelChange)="onChartTextChange()"></textarea>
+        </div>
+      </tab>
+      <tab heading="{{'Annotations' | localize}}" customClass="m-tabs__item">
+        <div class="epi-annotation-toolbar">
+          <div>
+            <div class="epi-annotation-heading">Plot annotations</div>
+            <div class="epi-annotation-help">Add dated callouts to mark events. Dates outside the plotted range are saved but hidden.</div>
+          </div>
+          <button type="button" id="epi-add-annotation" class="btn btn-primary btn-sm" (click)="addAnnotation()">
+            <i class="pi pi-plus" aria-hidden="true"></i>
+            Add annotation
+          </button>
+        </div>
+        @if (annotations.length == 0) {
+          <div class="epi-annotation-empty">No annotations have been added.</div>
+        } @else {
+          <div id="epi-annotation-list" class="epi-annotation-list">
+            @for (annotation of annotations; track $index; let index = $index) {
+              <div class="epi-annotation-editor" [attr.data-annotation-index]="index">
+                <div class="epi-annotation-date-field">
+                  <label [for]="'epi-annotation-date-' + index">Date</label>
+                  <input type="date" [id]="'epi-annotation-date-' + index" class="form-control form-control-sm"
+                    [(ngModel)]="annotation.date" (ngModelChange)="onAnnotationChange()">
+                </div>
+                <div class="epi-annotation-label-field">
+                  <label [for]="'epi-annotation-label-' + index">Label</label>
+                  <input type="text" [id]="'epi-annotation-label-' + index" class="form-control form-control-sm"
+                    maxlength="160" placeholder="Describe the event"
+                    [(ngModel)]="annotation.label" (ngModelChange)="onAnnotationChange()">
+                </div>
+                <button type="button" class="btn btn-sm epi-remove-annotation"
+                  [attr.aria-label]="'Remove annotation ' + (index + 1)" title="Remove annotation"
+                  (click)="removeAnnotation(index)">
+                  <i class="pi pi-trash" aria-hidden="true"></i>
+                </button>
+              </div>
+            }
           </div>
         }
       </tab>
