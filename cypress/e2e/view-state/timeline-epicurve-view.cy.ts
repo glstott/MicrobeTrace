@@ -382,6 +382,7 @@ describe('Epi Curve / Timeline View', () => {
           .parents('.form-group.row')
           .first()
           .find('p-select')
+          .first()
           .click();
       });
 

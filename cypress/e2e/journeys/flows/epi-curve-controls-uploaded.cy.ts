@@ -19,6 +19,7 @@ import {
   setEpiCurveColor,
   setEpiCurveCumulative,
   setEpiCurveLegendPosition,
+  setEpiCurveLineStyle,
   setEpiCurveRange,
   setEpiStackGroupColor,
   setEpiStackGroupOpacity,
@@ -484,7 +485,7 @@ describe('Journey Flow - Epi Curve controls on uploaded data', () => {
     cy.closeSettingsPane('Epi Curve Settings');
   });
 
-  it('renders uploaded multi-date controls for side-by-side and overlay graph types', () => {
+  it('renders uploaded multi-date controls for side-by-side bars and line overlays', () => {
     let sideBySideBarWidth = 0;
 
     ensureEpiSettingsDialogOpen();
@@ -531,19 +532,40 @@ describe('Journey Flow - Epi Curve controls on uploaded data', () => {
 
     ensureEpiSettingsDialogOpen();
     selectEpiCurveDropdown('Graph Type', 'Multi: Overlay');
+    getEpiSettingsDialog().find('#epi-line-style-select-2').should('be.visible');
+    getEpiSettingsDialog().find('#epi-line-style-select-3').should('be.visible');
+    setEpiCurveLineStyle(1, 'Solid');
+    setEpiCurveLineStyle(2, 'Dashed');
 
     readEpiCurveBars().then((bars) => {
       expect(bars[0].width, 'overlay bar width').to.be.greaterThan(sideBySideBarWidth);
       expect(
         [...new Set(bars.map((bar) => bar.fill))].sort(),
-        'multi-date overlay fill set',
-      ).to.deep.equal(['#00aa00', '#0300aa', '#aa0000']);
+        'primary overlay bar fill',
+      ).to.deep.equal(['#aa0000']);
     });
 
-    cy.get('#epiCurveSVG .epiCurve-epi-curve rect')
+    cy.get('#epiCurveSVG .epiCurve-line-overlay')
+      .should('have.length', 2)
+      .then(($lines) => {
+        const lines = [...$lines].map((line) => ({
+          color: line.getAttribute('stroke'),
+          dashArray: line.getAttribute('stroke-dasharray'),
+          fieldIndex: line.getAttribute('data-field-index'),
+          style: line.getAttribute('data-line-style'),
+        }));
+
+        expect(lines).to.deep.equal([
+          { color: '#00aa00', dashArray: null, fieldIndex: '1', style: 'solid' },
+          { color: '#0300aa', dashArray: '10 7', fieldIndex: '2', style: 'dashed' },
+        ]);
+      });
+
+    cy.get('#epiCurveSVG .epiCurve-overlay-bar')
       .first()
-      .should('have.attr', 'opacity', '0.6');
-    cy.get('#epiCurveSVG .epiCurve-epi-curve circle').should('have.length', 3);
+      .should('have.attr', 'stroke', 'black');
+    cy.get('#epiCurveSVG .epiCurve-legend-marker').should('have.length', 1);
+    cy.get('#epiCurveSVG .epiCurve-legend-line').should('have.length', 2);
 
     cy.closeSettingsPane('Epi Curve Settings');
   });

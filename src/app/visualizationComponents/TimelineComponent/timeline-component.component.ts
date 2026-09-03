@@ -43,6 +43,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
   legendLabelSize = 15;
 
   graphTypes = ['Single Date Field', 'Multi: Side by Side', 'Multi: Overlay']
+  lineStyleOptions = ['Solid', 'Dashed'];
   selectedGraphType = 'Single Date Field';
   legendPositionOptions = ['Hide', 'Left', 'Right', 'Bottom']
   stackOrderOptions = ['Largest at Bottom', 'Smallest at Bottom', 'Custom']
@@ -163,7 +164,7 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
         this.widgets['epiCurve-date-fields'] = ['None', 'None', 'None']
       }
     } else if (this.widgets['epiCurve-date-fields'].length < 3) {
-      while (this.widgets['epiCurve-date-fields']< 3) {
+      while (this.widgets['epiCurve-date-fields'].length < 3) {
         this.widgets['epiCurve-date-fields'].push('None')
       }
     }
@@ -175,6 +176,14 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
     if (this.widgets['epiCurve-colors'] == undefined) {
       this.widgets['epiCurve-colors'] = ['#C6D8EB','#B79ECC', '#F3BF79'];
     }
+    const defaultLineStyles = ['Solid', 'Solid', 'Dashed'];
+    const savedLineStyles = Array.isArray(this.widgets['epiCurve-lineStyles'])
+      ? this.widgets['epiCurve-lineStyles']
+      : [];
+    this.widgets['epiCurve-lineStyles'] = defaultLineStyles.map((defaultStyle, index) =>
+      savedLineStyles[index] == 'Solid' || savedLineStyles[index] == 'Dashed'
+        ? savedLineStyles[index]
+        : defaultStyle);
 
     // stackColorBy field
     if (this.widgets['epiCurve-stackColorBy'] == undefined) {
@@ -353,10 +362,12 @@ private refreshMulti(): void {
 
   let fields = [];
   let colors = [];
+  let fieldIndexes = [];
   [this.SelectedDateFieldVariable, this.SelectedDateFieldVariable2, this.SelectedDateFieldVariable3].forEach((dateField, ind) => {
     if (dateField != 'None') {
       fields.push(dateField);
       colors.push(this.widgets["epiCurve-colors"][ind])
+      fieldIndexes.push(ind);
     }
   })
 
@@ -402,19 +413,46 @@ private refreshMulti(): void {
   this.y.domain([0, maxCount]).nice();
 
   if (this.selectedGraphType == 'Multi: Overlay') {
-    fields.forEach((_, ind) => {
+    fields.forEach((field, ind) => {
+      const fieldIndex = fieldIndexes[ind];
+      if (fieldIndex == 0) {
         const rects = epiCurve.selectAll(`rect${ind}`)
         .data(bins[ind])
         .enter()
         .append("rect")
+        .attr("class", "epiCurve-bar-series epiCurve-overlay-bar")
+        .attr("data-field-index", fieldIndex)
         .attr("transform", d => `translate(${this.x(d.x0)}, ${this.y(d.length)})`)
         .attr("width", d => this.x(d.x1) - this.x(d.x0))
         .attr("height", d => this.height - this.y(d.length))
         .attr("fill", colors[ind])
-        .attr("opacity", 0.6);
+        .attr("stroke", "black");
 
         rects.append("title")
           .text((_, binIndex) => this.getMultiBinTooltip(fields, bins, binIndex));
+        return;
+      }
+
+      const lineStyle = this.getLineStyle(fieldIndex);
+      const lineGenerator = d3.line<any>()
+        .x((d: any) => this.x(new Date((d.x0.getTime() + d.x1.getTime()) / 2)))
+        .y((d: any) => this.y(this.getBinCount(d)));
+      const linePath = epiCurve.append("path")
+        .datum(bins[ind])
+        .attr("class", "epiCurve-line-overlay")
+        .attr("data-field-index", fieldIndex)
+        .attr("data-line-style", lineStyle.toLowerCase())
+        .attr("fill", "none")
+        .attr("stroke", colors[ind])
+        .attr("stroke-width", 3)
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .attr("stroke-dasharray", this.getLineDashArray(lineStyle))
+        .attr("vector-effect", "non-scaling-stroke")
+        .attr("d", lineGenerator as any);
+
+      linePath.append("title")
+        .text(`${this.getTooltipLabel(field)} (${lineStyle.toLowerCase()} line)`);
     })
 
   } else {
@@ -448,6 +486,8 @@ private refreshMulti(): void {
         .data(bins[ind])
         .enter()
         .append("rect")
+        .attr("class", "epiCurve-bar-series")
+        .attr("data-field-index", fieldIndexes[ind])
         .attr("transform", d => `translate(${xOffset[ind](d, that)}, ${this.y(d.length)})`)
         .attr("width", width)
         .attr("height", d => this.height - this.y(d.length))
@@ -460,8 +500,19 @@ private refreshMulti(): void {
   }
 
   this.updateAxes();
-  this.generateLegend(epiCurve, colors, fields)
+  const seriesTypes = fieldIndexes.map(fieldIndex =>
+    this.selectedGraphType == 'Multi: Overlay' && fieldIndex > 0 ? 'line' : 'bar');
+  const lineStyles = fieldIndexes.map(fieldIndex => this.getLineStyle(fieldIndex));
+  this.generateLegend(epiCurve, colors, fields, [], seriesTypes, lineStyles)
 } 
+
+private getLineStyle(fieldIndex): string {
+  return this.widgets['epiCurve-lineStyles']?.[fieldIndex] == 'Dashed' ? 'Dashed' : 'Solid';
+}
+
+private getLineDashArray(lineStyle): string | null {
+  return lineStyle == 'Dashed' ? '10 7' : null;
+}
 
 /**
  * Return an array of unique options for nodes[this.widgets['epiCurve-stackColorBy']] and then also used that information to update localColorMap function
@@ -878,7 +929,7 @@ updateAxes() {
 
 }
 
-generateLegend(epiCurve, colors, fieldNames, opacities = []) {
+generateLegend(epiCurve, colors, fieldNames, opacities = [], seriesTypes = [], lineStyles = []) {
   const legendFontSize = Math.max(6, Number(this.legendLabelSize || 15));
   const legendFontSizePx = `${legendFontSize}px`;
   const markerRadius = Math.max(4, Math.round(legendFontSize * 0.35));
@@ -906,15 +957,16 @@ generateLegend(epiCurve, colors, fieldNames, opacities = []) {
       // this first section calculates the location for each item/name in the legend
       let nLength = name==null ? 7: name.toString().length
       let baseX = 70 + legendItemGap * rowCount + prevLength * legendCharWidth;
-      if (baseX + markerRadius * 2 + markerTextGap + nLength * legendCharWidth > this.width - 70) {
+      const markerHalfWidth = seriesTypes[i] == 'line' ? markerRadius * 2 : markerRadius;
+      if (baseX + markerHalfWidth + markerTextGap + nLength * legendCharWidth > this.width - 70) {
         rowCount = 0;
         y -= legendRowHeight;
         prevLength = 0;
         baseX = 70;
       }
 
-      epiCurve.append("circle").attr("cx", baseX).attr("cy", y).attr("r", markerRadius).style("fill", colors[i]).style("opacity", opacities[i] ?? 1)
-      epiCurve.append("text").attr("x", baseX + markerRadius + markerTextGap).attr("y", y).text(this.commonService.capitalize(name==null? '(Empty)': name.toString())).style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
+      this.appendLegendMarker(epiCurve, baseX, y, markerRadius, colors[i], opacities[i] ?? 1, seriesTypes[i], lineStyles[i]);
+      epiCurve.append("text").attr("x", baseX + markerHalfWidth + markerTextGap).attr("y", y).text(this.commonService.capitalize(name==null? '(Empty)': name.toString())).style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
 
       prevLength += nLength;
       rowCount += 1;
@@ -933,10 +985,37 @@ generateLegend(epiCurve, colors, fieldNames, opacities = []) {
     count += 1;
   }
   fieldNames.forEach((name, i) => {
-    epiCurve.append("circle").attr("cx", xOffset).attr("cy", legendRowHeight * (count + 1)).attr("r", markerRadius).style("fill", colors[i]).style("opacity", opacities[i] ?? 1)
-    epiCurve.append("text").attr("x", xOffset + markerRadius + markerTextGap).attr("y", legendRowHeight * (count + 1)).text(this.commonService.capitalize(name==null? '(Empty)': name.toString())).style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
+    const markerHalfWidth = seriesTypes[i] == 'line' ? markerRadius * 2 : markerRadius;
+    this.appendLegendMarker(epiCurve, xOffset, legendRowHeight * (count + 1), markerRadius, colors[i], opacities[i] ?? 1, seriesTypes[i], lineStyles[i]);
+    epiCurve.append("text").attr("x", xOffset + markerHalfWidth + markerTextGap).attr("y", legendRowHeight * (count + 1)).text(this.commonService.capitalize(name==null? '(Empty)': name.toString())).style("font-size", legendFontSizePx).attr("alignment-baseline","middle")
     count += 1;
   })
+}
+
+private appendLegendMarker(epiCurve, x, y, markerRadius, color, opacity, seriesType = 'bar', lineStyle = 'Solid'): void {
+  if (seriesType == 'line') {
+    epiCurve.append("line")
+      .attr("class", "epiCurve-legend-line")
+      .attr("data-line-style", lineStyle.toLowerCase())
+      .attr("x1", x - markerRadius * 2)
+      .attr("x2", x + markerRadius * 2)
+      .attr("y1", y)
+      .attr("y2", y)
+      .attr("stroke", color)
+      .attr("stroke-width", 3)
+      .attr("stroke-linecap", "round")
+      .attr("stroke-dasharray", this.getLineDashArray(lineStyle))
+      .style("opacity", opacity);
+    return;
+  }
+
+  epiCurve.append("circle")
+    .attr("class", "epiCurve-legend-marker")
+    .attr("cx", x)
+    .attr("cy", y)
+    .attr("r", markerRadius)
+    .style("fill", color)
+    .style("opacity", opacity);
 }
 
 private setupEventListeners(): void {
@@ -1240,6 +1319,10 @@ onTickIntevalChange() {
 }
 
 onNodeColorChanged() {
+  this.refresh();
+}
+
+onLineStyleChange() {
   this.refresh();
 }
 

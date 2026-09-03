@@ -15,6 +15,7 @@ export type EpiCurveFieldLabel =
   | 'Bin Size';
 
 export type EpiCurveBinSize = 'Day' | 'Week' | 'Month' | 'Quarter' | 'Year';
+export type EpiCurveLineStyle = 'Solid' | 'Dashed';
 export type EpiCurveLegendPosition = 'Hide' | 'Left' | 'Right' | 'Bottom';
 export type EpiCurveRangeLabel = 'Label Size' | 'Legend Size';
 export type EpiCurveTickInterval = 1 | 2 | 3 | 4;
@@ -132,6 +133,7 @@ export function selectEpiCurveDropdown(field: EpiCurveFieldLabel, value: string)
   getEpiCurveRowByLabel(field)
     .scrollIntoView()
     .find('.p-select')
+    .first()
     .should('exist')
     .click({ force: true });
 
@@ -159,10 +161,31 @@ export function selectEpiCurveDropdown(field: EpiCurveFieldLabel, value: string)
 
   getEpiCurveRowByLabel(field)
     .find('.p-select-label')
+    .first()
     .should(($label) => {
       expect(normalizeValue($label.text()), `${field} select label`)
         .to.equal(normalizeValue(value));
     });
+}
+
+export function setEpiCurveLineStyle(fieldIndex: 1 | 2, style: EpiCurveLineStyle): void {
+  const inputId = `#epi-line-style-select-${fieldIndex + 1}`;
+
+  selectEpiCurveSettingsTab('Graph');
+
+  getEpiCurveSettingsDialog()
+    .find(inputId)
+    .should('exist')
+    .click({ force: true });
+
+  cy.get('.p-select-overlay:visible', { timeout: 10000 })
+    .last()
+    .contains('li[role="option"]', new RegExp(`^${style}$`))
+    .click({ force: true });
+
+  cy.window()
+    .its(`commonService.session.style.widgets.epiCurve-lineStyles.${fieldIndex}`)
+    .should('equal', style);
 }
 
 export function setEpiCurveColor(index: 0 | 1 | 2, color: string): void {
