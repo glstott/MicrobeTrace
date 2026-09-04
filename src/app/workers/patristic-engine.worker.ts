@@ -27,6 +27,7 @@ import type {
   PatristicNearestNeighborTimings,
 } from './patristic-engine.types';
 import { findPatristicBestFitRoot } from './patristic-best-fit-root';
+import { clampNegativeBranchLengthsToZero } from './phylogenetic-tree-utils';
 
 // ─── Worker state (persists across messages) ─────────────────────────────────
 
@@ -768,6 +769,7 @@ addEventListener('message', ({ data }: { data: PatristicWorkerRequest }) => {
         let parsedTree: any;
         try {
           parsedTree = patristic.parseNewick(newickString);
+          clampNegativeBranchLengthsToZero(parsedTree, { terminalOnly: true });
         } catch (e: any) {
           respond({ type: 'ERROR', jobId, message: `Failed to parse Newick: ${e.message || e}` });
           return;

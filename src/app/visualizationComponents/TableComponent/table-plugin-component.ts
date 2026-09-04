@@ -22,7 +22,6 @@
   import { BaseComponentDirective } from '@app/base-component.directive';
   import { ComponentContainer } from 'golden-layout';
   import { saveAs } from 'file-saver';
-  import { GoogleTagManagerService } from 'angular-google-tag-manager';
   import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 import { sanitizeExportCell } from '@app/contactTraceCommonServices/export-sanitization';
@@ -148,8 +147,7 @@ import {
       private cdref: ChangeDetectorRef,
       private eventManager: EventManager,
       private commonService: CommonService,
-      private store: CommonStoreService,
-      private gtmService: GoogleTagManagerService
+      private store: CommonStoreService
     ) {
       super(elRef.nativeElement);
   
@@ -158,11 +156,6 @@ import {
     }
   
     ngOnInit() {
-      this.gtmService.pushTag({
-        event: 'page_view',
-        page_location: '/table',
-        page_title: 'Table View'
-      });
       this.dataSetView = [];
       this.dataSetView.push({ label: 'Nodes', value: 'Node' });
       this.dataSetView.push({ label: 'Links', value: 'Link' });
