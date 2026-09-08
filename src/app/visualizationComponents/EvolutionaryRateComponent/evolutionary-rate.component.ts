@@ -26,7 +26,6 @@ import { BaseComponentDirective } from '@app/base-component.directive';
 import { DialogSettings } from '@app/helperClasses/dialogSettings';
 import { MicobeTraceNextPluginEvents } from '@app/helperClasses/interfaces';
 import { MicrobeTraceNextVisuals } from '@app/microbe-trace-next-plugin-visuals';
-import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { ComponentContainer } from 'golden-layout';
 import { SelectItem } from 'primeng/api';
 import { Subject, takeUntil } from 'rxjs';
@@ -167,7 +166,6 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
     public commonService: CommonService,
     private store: CommonStoreService,
     private changeDetector: ChangeDetectorRef,
-    private gtmService: GoogleTagManagerService,
     private visuals: MicrobeTraceNextVisuals,
     private exportService: ExportService,
   ) {
@@ -176,12 +174,6 @@ export class EvolutionaryRateComponent extends BaseComponentDirective implements
   }
 
   ngOnInit(): void {
-    this.gtmService.pushTag({
-      event: 'page_view',
-      page_location: '/evolutionary_rate',
-      page_title: 'Evolutionary Rate View',
-    });
-
     this.widgets = this.commonService.session.style.widgets;
     this.buildFieldOptions();
     this.loadSettings();

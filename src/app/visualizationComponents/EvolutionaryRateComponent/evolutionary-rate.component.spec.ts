@@ -105,7 +105,6 @@ describe('EvolutionaryRateComponent', () => {
       commonService,
       store,
       changeDetector,
-      { pushTag: jasmine.createSpy('pushTag') } as any,
       visuals,
       exportService,
     );
