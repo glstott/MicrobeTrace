@@ -308,6 +308,8 @@ describe('Continuous numeric color ramps', () => {
       app.onVariableColorModeChanged('node', 'categorical');
       app.onVariableColorModeChanged('link', 'categorical');
     });
+    cy.openGlobalSettings();
+    cy.contains('#global-settings-modal .nav-link', 'Styling').click();
     cy.get('#apply-style').selectFile(styleFilePath, { force: true });
 
     cy.window().should((win: any) => {
@@ -374,6 +376,8 @@ describe('Continuous numeric color ramps', () => {
       cy.writeFile(malformedStylePath, style);
     });
 
+    cy.openGlobalSettings();
+    cy.contains('#global-settings-modal .nav-link', 'Styling').click();
     cy.get('#apply-style').selectFile(malformedStylePath, { force: true });
     cy.get('[data-testid="style-file-status"]', { timeout: 15000 })
       .should('have.attr', 'role', 'status')
