@@ -62,6 +62,38 @@ The `seq` values are aligned and form three related synthetic lineages, so the s
 
 Simple CSV and TSV assignment files use the field name as the first column header and `color` as the color column. Add an optional `mode` column with `continuous` in at least one row to declare a continuous ramp. Every first-column value must then be a finite number, and the file must contain at least two distinct stops. Empty mode cells inherit the declared mode; conflicting mode values are rejected atomically.
 
+## Style-file format
+
+Saved `.style` files persist color-ramp choices in `variableColorScales`. Settings are stored by target and field so switching among fields does not discard their categorical or continuous configuration. A custom node ramp has this shape:
+
+```json
+{
+  "widgets": {
+    "node-color-variable": "RiskScore"
+  },
+  "variableColorScales": {
+    "version": 1,
+    "node": {
+      "RiskScore": {
+        "mode": "continuous",
+        "domain": { "kind": "custom", "min": 10, "max": 90 },
+        "stops": [
+          { "value": 10, "color": "#313695" },
+          { "value": 50, "color": "#ffffbf" },
+          { "value": 90, "color": "#a50026" }
+        ],
+        "missingColor": "#eae553"
+      }
+    },
+    "link": {}
+  }
+}
+```
+
+Use `"domain": { "kind": "auto" }` when bounds should follow the complete loaded dataset. `mode` may be `auto`, `categorical`, or `continuous`; stop values must be finite and strictly increasing, and colors must be six-digit hexadecimal values. Files saved before `variableColorScales` existed remain categorical for their selected node and link fields, preserving their original appearance. The application adds normalized version-1 scale state when those files are saved again.
+
+Style files are checked against the application's Draft-07 JSON Schema before they are applied. Invalid file envelopes, such as a missing `widgets` object or a known legacy collection with the wrong container type, are rejected without changing the current style. Recoverable `variableColorScales` problems are normalized for backward and forward compatibility, and the Global Styling panel lists each repair—for example, an invalid mode falling back to Auto, invalid custom bounds returning to the automatic domain, or unusable stops returning to the default ramp.
+
 ## Embed example
 
 `embed-launch.example.json` is the value for the embed payload's `launch` property, not a standalone handoff. Merge it into a normal version-1 partner handoff whose file entries contain the two CSV files. Its custom stop values are finite, strictly increasing, span their domains, and use six-digit hexadecimal colors.

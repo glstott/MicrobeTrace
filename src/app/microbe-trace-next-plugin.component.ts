@@ -64,6 +64,7 @@ import {
     VariableColorScaleConfig,
     VariableColorTarget
 } from './contactTraceCommonServices/variable-color-scale';
+import { validateStyleFileSchema } from './contactTraceCommonServices/style-file.schema';
 
 type ThresholdSweepSnapshot = {
     threshold: number;
@@ -105,6 +106,12 @@ type DialogPlacementCandidate = {
 type ColorAssignmentStatus = {
     kind: 'success' | 'error' | 'info';
     message: string;
+};
+
+type StyleFileStatus = {
+    kind: 'success' | 'warning' | 'error';
+    message: string;
+    details: string[];
 };
 
 interface NodeShapeOptionGroup {
@@ -385,6 +392,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     SelectedApplyStyleVariable: string = '';
     nodeColorAssignmentStatus: ColorAssignmentStatus | null = null;
     linkColorAssignmentStatus: ColorAssignmentStatus | null = null;
+    styleFileStatus: StyleFileStatus | null = null;
 
 
     activeTabNdx = null;
@@ -2049,14 +2057,69 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
      * Reads the file and applies the style to MicrobeTrace session.style
      * 
      */
-    public onApplyStyle( file: any ){
-        $('.custom-file-label').text(this.SelectedApplyStyleVariable.substring(12))
-        const reader = new FileReader();
-        reader.onload = e => {
-            this.commonService.applyStyle(JSON.parse((e as any).target.result)); 
-            this.applyStyleFileSettings();
+    public onApplyStyle(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) {
+            return;
         }
-        reader.readAsText(file.target.files[0]);
+
+        this.styleFileStatus = null;
+        const reader = new FileReader();
+        reader.onerror = () => {
+            this.styleFileStatus = {
+                kind: 'error',
+                message: `Unable to read "${file.name}".`,
+                details: []
+            };
+            input.value = '';
+            this.SelectedApplyStyleVariable = '';
+            this.cdref.markForCheck();
+        };
+        reader.onload = e => {
+            try {
+                const style = JSON.parse(String((e as any).target.result ?? ''));
+                const validation = validateStyleFileSchema(style);
+                if (!validation.valid) {
+                    this.styleFileStatus = {
+                        kind: 'error',
+                        message: `Could not apply "${file.name}" because it is not a valid MicrobeTrace style file.`,
+                        details: validation.errors
+                    };
+                    return;
+                }
+
+                this.commonService.applyStyle(style);
+                this.applyStyleFileSettings();
+                this.styleFileStatus = validation.warnings.length
+                    ? {
+                        kind: 'warning',
+                        message: `Applied "${file.name}" with ${validation.warnings.length} normalization warning${validation.warnings.length === 1 ? '' : 's'}.`,
+                        details: validation.warnings
+                    }
+                    : {
+                        kind: 'success',
+                        message: `Applied "${file.name}".`,
+                        details: []
+                    };
+            } catch (error) {
+                const isSyntaxError = error instanceof SyntaxError;
+                this.styleFileStatus = {
+                    kind: 'error',
+                    message: isSyntaxError
+                        ? `Could not apply "${file.name}" because it is not valid JSON.`
+                        : `Could not apply "${file.name}".`,
+                    details: isSyntaxError
+                        ? [error.message]
+                        : [error instanceof Error ? error.message : 'An unexpected error occurred while applying the style.']
+                };
+            } finally {
+                input.value = '';
+                this.SelectedApplyStyleVariable = '';
+                this.cdref.markForCheck();
+            }
+        };
+        reader.readAsText(file, 'UTF-8');
 
     }
 
@@ -2072,12 +2135,12 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         if (this.SelectedColorNodesByVariable != this.widgets['node-color-variable']){
             this.SelectedColorNodesByVariable = this.widgets['node-color-variable'];
             this.getGlobalSettingsData();
-            this.onColorNodesByChanged();
+            this.onColorNodesByChanged(true);
         }
         
         if (this.SelectedColorLinksByVariable != this.widgets['link-color-variable']){
             this.SelectedColorLinksByVariable = this.widgets['link-color-variable'];
-            this.onColorLinksByChanged();
+            this.onColorLinksByChanged(true);
         }
 
         if (this.SelectedBackgroundColorVariable != this.widgets['background-color']){
@@ -2096,6 +2159,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         }
 
         this.applySavedNodeShapeSettingsFromSession();
+        // Applying a different ramp to an already-selected field does not pass
+        // through either selection-change branch above. Publish once after the
+        // complete style is loaded so every open view refreshes in both cases.
+        this.publishUpdateNodeColors();
+        this.publishUpdateLinkColor();
     }
 
     onEpsilonValueChange() {
@@ -5024,7 +5092,7 @@ ${warnings.join('\n')}`,
             case "Save": {
 
                 if (this.selectedSaveFileType == 'style') {
-                    const data = JSON.stringify(this.commonService.session.style);
+                    const data = this.commonService.serializeStyleFile();
                     const blob = new Blob([data], { type: "application/json;charset=utf-8" });
                     this.saveGeneratedFile(blob, this.saveFileName+'.style')
                     this.displayStashDialog = false;

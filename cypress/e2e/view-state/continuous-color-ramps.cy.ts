@@ -1,7 +1,18 @@
 /// <reference types="cypress" />
 
-import { visitAppAndAcceptEula } from '../../support/journey-helpers';
+import {
+  installSaveAsCaptureHook,
+  visitAppAndAcceptEula,
+  writeCapturedDownloadToDisk,
+} from '../../support/journey-helpers';
 import { selectEpiCurveDropdown } from '../../support/epi-curve-helpers';
+
+const canonicalColor = (win: any, color: string): string => {
+  const context = win.document.createElement('canvas').getContext('2d');
+  context.fillStyle = '#000000';
+  context.fillStyle = color;
+  return context.fillStyle.toLowerCase();
+};
 
 const launchSample = (): void => {
   visitAppAndAcceptEula({ skipDemoSession: false, dismissWelcomeOverlay: true });
@@ -235,16 +246,170 @@ describe('Continuous numeric color ramps', () => {
     });
   });
 
-  it('uses the same continuous node and link colors in every shared visual consumer', () => {
+  it('round-trips ramps through style files while keeping legacy styles categorical', () => {
+    const styleFileBase = `continuous_ramp_style_${Date.now()}`;
+    const styleFilePath = `${Cypress.config('downloadsFolder')}/${styleFileBase}.style`;
+    const legacyStylePath = `${Cypress.config('downloadsFolder')}/${styleFileBase}-legacy.style`;
+
     useNodeColorField('degree');
     useLinkColorField('distance');
 
-    const canonicalColor = (win: any, color: string): string => {
-      const context = win.document.createElement('canvas').getContext('2d');
-      context.fillStyle = '#000000';
-      context.fillStyle = color;
-      return context.fillStyle.toLowerCase();
-    };
+    cy.window().then((win: any) => {
+      const app = win.commonService.visuals.microbeTrace;
+      app.onVariableColorConfigChanged('node', {
+        mode: 'continuous',
+        domain: { kind: 'custom', min: 1, max: 13 },
+        stops: [
+          { value: 1, color: '#000000' },
+          { value: 7, color: '#ff0000' },
+          { value: 13, color: '#ffffff' },
+        ],
+        missingColor: '#123456',
+      });
+      app.onVariableColorConfigChanged('link', {
+        mode: 'continuous',
+        domain: { kind: 'custom', min: 0, max: 80 },
+        stops: [
+          { value: 0, color: '#000004' },
+          { value: 20, color: '#b5367a' },
+          { value: 80, color: '#fcfdbf' },
+        ],
+        missingColor: '#654321',
+      });
+    });
+
+    installSaveAsCaptureHook();
+    cy.window().then((win: any) => {
+      const app = win.commonService.visuals.microbeTrace;
+      app.selectedSaveFileType = 'style';
+      app.saveFileName = styleFileBase;
+      app.DisplayStashDialog('Save');
+    });
+    writeCapturedDownloadToDisk(`${styleFileBase}.style`, styleFilePath);
+
+    cy.readFile(styleFilePath, 'utf8').then((savedStyle) => {
+      const style = JSON.parse(String(savedStyle));
+      expect(style.variableColorScales.version).to.equal(1);
+      expect(style.variableColorScales.node.degree).to.deep.include({
+        mode: 'continuous',
+        domain: { kind: 'custom', min: 1, max: 13 },
+        missingColor: '#123456',
+      });
+      expect(style.variableColorScales.node.degree.stops).to.deep.equal([
+        { value: 1, color: '#000000' },
+        { value: 7, color: '#ff0000' },
+        { value: 13, color: '#ffffff' },
+      ]);
+      expect(style.variableColorScales.link.distance.mode).to.equal('continuous');
+    });
+
+    cy.window().then((win: any) => {
+      const app = win.commonService.visuals.microbeTrace;
+      app.onVariableColorModeChanged('node', 'categorical');
+      app.onVariableColorModeChanged('link', 'categorical');
+    });
+    cy.get('#apply-style').selectFile(styleFilePath, { force: true });
+
+    cy.window().should((win: any) => {
+      const common = win.commonService;
+      const nodeScale = common.temp.style.nodeColorScale;
+      const linkScale = common.temp.style.linkColorScale;
+      expect(nodeScale.mode).to.equal('continuous');
+      expect(nodeScale.domain).to.deep.equal({ min: 1, max: 13 });
+      expect(nodeScale.colorMap('invalid')).to.equal('#123456');
+      expect(linkScale.mode).to.equal('continuous');
+      expect(linkScale.domain).to.deep.equal({ min: 0, max: 80 });
+
+      const dataNode = common.session.data.nodes.find((node: any) => Number.isFinite(Number(node.degree)));
+      const renderedNode = common.visuals.twoD.cy.getElementById(dataNode._id);
+      expect(canonicalColor(win, renderedNode.style('background-color')))
+        .to.equal(canonicalColor(win, nodeScale.colorMap(dataNode.degree)));
+    });
+    cy.get('#key-tables-node-legend', { timeout: 15000 }).should('be.visible');
+    cy.get('#key-tables-link-legend', { timeout: 15000 }).should('be.visible');
+
+    cy.readFile(styleFilePath, 'utf8').then((savedStyle) => {
+      const legacyStyle = JSON.parse(String(savedStyle));
+      delete legacyStyle.variableColorScales;
+      cy.writeFile(legacyStylePath, legacyStyle);
+    });
+    cy.get('#apply-style').selectFile(legacyStylePath, { force: true });
+
+    cy.window().should((win: any) => {
+      const common = win.commonService;
+      expect(common.session.style.variableColorScales.node.degree.mode).to.equal('categorical');
+      expect(common.session.style.variableColorScales.link.distance.mode).to.equal('categorical');
+      expect(common.temp.style.nodeColorScale.mode).to.equal('categorical');
+      expect(common.temp.style.linkColorScale.mode).to.equal('categorical');
+
+      const dataNode = common.session.data.nodes.find((node: any) => Number.isFinite(Number(node.degree)));
+      const renderedNode = common.visuals.twoD.cy.getElementById(dataNode._id);
+      expect(canonicalColor(win, renderedNode.style('background-color')))
+        .to.equal(canonicalColor(win, common.getNodeFillStyle(dataNode).color));
+    });
+    cy.get('#key-tables-node-table', { timeout: 15000 }).should('be.visible');
+    cy.get('#key-tables-link-table', { timeout: 15000 }).should('be.visible');
+  });
+
+  it('reports style-file schema errors and explains normalized ramp settings', () => {
+    const malformedStylePath = `${Cypress.config('downloadsFolder')}/malformed-ramp-${Date.now()}.style`;
+    const invalidStylePath = `${Cypress.config('downloadsFolder')}/invalid-style-${Date.now()}.style`;
+
+    cy.window().then((win: any) => {
+      const style = JSON.parse(win.commonService.serializeStyleFile());
+      style.widgets['node-color-variable'] = 'degree';
+      style.variableColorScales = {
+        node: {
+          degree: {
+            mode: 'rainbow',
+            domain: { kind: 'custom', min: 13, max: 1 },
+            stops: [
+              { value: 1, color: 'black' },
+              { value: 1, color: '#ffffff' },
+            ],
+            missingColor: 'yellow',
+          },
+        },
+      };
+      cy.writeFile(malformedStylePath, style);
+    });
+
+    cy.get('#apply-style').selectFile(malformedStylePath, { force: true });
+    cy.get('[data-testid="style-file-status"]', { timeout: 15000 })
+      .should('have.attr', 'role', 'status')
+      .and('contain.text', 'Applied')
+      .and('contain.text', 'normalization warnings')
+      .and('contain.text', 'version 1 was assumed')
+      .and('contain.text', 'Auto mode was used')
+      .and('contain.text', 'automatic data domain was used')
+      .and('contain.text', 'default missing-value color was used')
+      .and('contain.text', 'invalid entry removed')
+      .and('contain.text', 'default ramp was used');
+
+    cy.window().should((win: any) => {
+      const config = win.commonService.session.style.variableColorScales.node.degree;
+      expect(config.mode).to.equal('auto');
+      expect(config.domain).to.deep.equal({ kind: 'auto' });
+      expect(config.stops).to.equal(undefined);
+      expect(config.missingColor.toLowerCase()).to.equal('#eae553');
+    });
+
+    cy.writeFile(invalidStylePath, { widgets: [], nodeColors: '#123456' });
+    cy.get('#apply-style').selectFile(invalidStylePath, { force: true });
+    cy.get('[data-testid="style-file-status"]', { timeout: 15000 })
+      .should('have.attr', 'role', 'alert')
+      .and('contain.text', 'not a valid MicrobeTrace style file')
+      .and('contain.text', 'widgets must be object')
+      .and('contain.text', 'nodeColors must be array');
+
+    cy.window().should((win: any) => {
+      expect(win.commonService.session.style.widgets['node-color-variable']).to.equal('degree');
+    });
+  });
+
+  it('uses the same continuous node and link colors in every shared visual consumer', () => {
+    useNodeColorField('degree');
+    useLinkColorField('distance');
 
     cy.window().should((win: any) => {
       const common = win.commonService;

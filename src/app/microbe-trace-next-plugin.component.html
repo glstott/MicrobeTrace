@@ -867,6 +867,23 @@
                       <label class="custom-file-label" for="apply-style">Choose MicrobeTrace Style File</label>
                     </div>
                   </div>
+                  @if (styleFileStatus) {
+                    <div
+                      id="style-file-status"
+                      data-testid="style-file-status"
+                      class="style-file-status"
+                      [ngClass]="'style-file-status--' + styleFileStatus.kind"
+                      [attr.role]="styleFileStatus.kind === 'error' ? 'alert' : 'status'">
+                      <div>{{ styleFileStatus.message }}</div>
+                      @if (styleFileStatus.details.length) {
+                        <ul class="style-file-status__details">
+                          @for (detail of styleFileStatus.details; track detail) {
+                            <li>{{ detail }}</li>
+                          }
+                        </ul>
+                      }
+                    </div>
+                  }
                 </div>
               </tab>
 

@@ -772,16 +772,33 @@ export class CommonService extends AppComponentBase implements OnInit {
         if (!hasVersionedState && preserveLegacySelections) {
             const nodeField = style.widgets?.['node-color-variable'];
             const linkField = style.widgets?.['link-color-variable'];
-            if (nodeField && nodeField !== 'None') {
+            if (nodeField && nodeField !== 'None' && !normalizedState.node[nodeField]) {
                 normalizedState.node[nodeField] = createDefaultVariableColorScaleConfig('categorical');
             }
-            if (linkField && linkField !== 'None') {
+            if (linkField && linkField !== 'None' && !normalizedState.link[linkField]) {
                 normalizedState.link[linkField] = createDefaultVariableColorScaleConfig('categorical');
             }
         }
 
         style.variableColorScales = normalizedState;
         return normalizedState;
+    }
+
+    /**
+     * Returns a detached, normalized style-file payload. Legacy styles did not
+     * record a color-scale mode, so active legacy selections are pinned to
+     * categorical before export rather than changing behavior on the next load.
+     */
+    public createStyleFilePayload(): any {
+        const style = _.cloneDeep(this.session?.style || {});
+        this.ensureVariableColorAssignmentState('node', style);
+        this.ensureVariableColorAssignmentState('link', style);
+        this.ensureVariableColorScaleState(style, true);
+        return style;
+    }
+
+    public serializeStyleFile(): string {
+        return JSON.stringify(this.createStyleFilePayload());
     }
 
     public getVariableColorScaleConfig(
@@ -4454,6 +4471,13 @@ align(params): Promise<any> {
         // 1) Gather the parameters from session & temp
         const nodeColorVariable = this.session.style.widgets['node-color-variable'];
         const nodes = this.session.data.nodes;
+
+        if (!nodeColorVariable || nodeColorVariable === 'None') {
+            this.temp.style.nodeColorMap = () => this.session.style.widgets['node-color'];
+            this.temp.style.nodeAlphaMap = () => 1;
+            this.temp.style.nodeColorScale = null;
+            return {};
+        }
         
         // The arrays and tables you use to store color config
         //const nodeColors = this.session.style.nodeColors;                 // e.g. [ "#1f77b4", ... ]
@@ -4510,6 +4534,7 @@ align(params): Promise<any> {
         if (linkColorVariable == "None") {
             this.temp.style.linkColorMap = () => this.session.style.widgets["link-color"];
             this.temp.style.linkAlphaMap = () => 1 - this.session.style.widgets["link-opacity"];
+            this.temp.style.linkColorScale = null;
             return [];
         }
 
