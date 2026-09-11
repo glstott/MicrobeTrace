@@ -284,8 +284,8 @@ describe('Epi Curve / Timeline View', () => {
         selectField('Graph Type', 'Multi: Overlay')
 
         selectColor(0, '#aa0000', 0)
-        selectColor(1, '#00aa00', 4)
-        selectColor(2, '#0300aa', 8)
+        selectOverlayLineColor(1, '#00aa00')
+        selectOverlayLineColor(2, '#0300aa')
 
         selectBinSize('Quarter')
 
@@ -455,6 +455,25 @@ describe('Epi Curve / Timeline View', () => {
       cy.get('#epiCurveSVG .epiCurve-epi-curve rect')
         .eq(rectToCheck)
         .should('have.attr', 'fill', color);
+    }
+
+    let selectOverlayLineColor = (fieldNumber: 1 | 2, color: string) => {
+      const selector = `#epi-color-select-${fieldNumber + 1}`;
+
+      selectEpiSettingsTab('Graph');
+
+      cy.get(selector)
+        .invoke('val', color)
+        .trigger('input')
+        .trigger('change');
+
+      cy.window()
+        .its(`commonService.session.style.widgets.epiCurve-colors.${fieldNumber}`)
+        .should('equal', color);
+
+      cy.get(`#epiCurveSVG .epiCurve-line-overlay[data-field-index="${fieldNumber}"]`)
+        .should('have.length', 1)
+        .and('have.attr', 'stroke', color);
     }
 
     let updateRangeSetting = (settingLabel: 'Label Size' | 'Legend Size', size: number) => {

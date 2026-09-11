@@ -137,7 +137,10 @@ export class TimelineComponent extends BaseComponentDirective implements OnInit,
                 });
             const populatedValues = nodes
               .map(node => node?.[d])
-              .filter(value => value != null && String(value).trim() != '');
+              .filter(value => {
+                const normalizedValue = value == null ? '' : String(value).trim().toLowerCase();
+                return normalizedValue != '' && normalizedValue != 'null';
+              });
             if (populatedValues.length > 0 && populatedValues.every(value => Number.isFinite(Number(value)))) {
               this.ValueFieldList.push({
                 label: this.commonService.capitalize(d.replace("_", "")),

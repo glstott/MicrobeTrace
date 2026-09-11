@@ -157,13 +157,13 @@ export function selectEpiCurveDropdown(field: EpiCurveFieldLabel, value: string)
     .click({ force: true });
 
   cy.get(visibleOverlaySelector, { timeout: 10000 })
-    .should('have.length.greaterThan', 0)
-    .last()
-    .within(() => {
-      cy.contains('li[role="option"]', new RegExp(`^${escapeRegExp(value)}$`), { timeout: 10000 })
-        .scrollIntoView()
-        .click({ force: true });
-    });
+    .should('have.length.greaterThan', 0);
+
+  cy.contains(
+    `${visibleOverlaySelector} li[role="option"]`,
+    new RegExp(`^${escapeRegExp(value)}$`),
+    { timeout: 10000 },
+  ).click({ force: true });
 
   cy.get('body', { timeout: 10000 })
     .find(visibleOverlaySelector)
@@ -198,9 +198,16 @@ export function setEpiCurveLineStyle(fieldIndex: 1 | 2, style: EpiCurveLineStyle
     .click({ force: true });
 
   cy.get('.p-select-overlay:visible', { timeout: 10000 })
-    .last()
-    .contains('li[role="option"]', new RegExp(`^${style}$`))
-    .click({ force: true });
+    .should('have.length.greaterThan', 0);
+
+  cy.contains(
+    '.p-select-overlay:visible li[role="option"]',
+    new RegExp(`^${escapeRegExp(style)}$`),
+    { timeout: 10000 },
+  ).click({ force: true });
+
+  cy.get('.p-select-overlay:visible', { timeout: 10000 })
+    .should('have.length', 0);
 
   cy.window()
     .its(`commonService.session.style.widgets.epiCurve-lineStyles.${fieldIndex}`)

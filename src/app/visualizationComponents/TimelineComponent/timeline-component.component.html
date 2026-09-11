@@ -28,10 +28,10 @@
                 </div>
               </div>
               <div class="form-group row" title="Select a date field from your data. One is required to generate graph.">
-                <div class="col-3">
+                <div class="col-4">
                   <label>Date Field</label>
                 </div>
-                <div class="col-7" style="padding-right: 5px">
+                <div class="col-6" style="padding-right: 5px">
                   <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable" (ngModelChange)="onDateFieldChange(0)"></p-select>
                 </div>
                 @if (selectedGraphType!='Single Date Field' || widgets['epiCurve-stackColorBy'] == 'None') {
@@ -53,10 +53,10 @@
               }
               @if (selectedGraphType!='Single Date Field') {
                 <div class="form-group row additionalDateField" title="Select an additional date field.">
-                  <div class="col-3">
+                  <div class="col-4">
                     <label>Date Field 2</label>
                   </div>
-                  <div [class.col-4]="selectedGraphType=='Multi: Overlay'" [class.col-7]="selectedGraphType!='Multi: Overlay'" style="padding-right: 5px">
+                  <div [class.col-3]="selectedGraphType=='Multi: Overlay'" [class.col-6]="selectedGraphType!='Multi: Overlay'" style="padding-right: 5px">
                     <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable2" (ngModelChange)="onDateFieldChange(1)"></p-select>
                   </div>
                   @if (selectedGraphType=='Multi: Overlay') {
@@ -81,10 +81,10 @@
               }
               @if (selectedGraphType!='Single Date Field') {
                 <div class="form-group row additionalDateField" title="Select an additional date field.">
-                  <div class="col-3">
+                  <div class="col-4">
                     <label>Date Field 3</label>
                   </div>
-                  <div [class.col-4]="selectedGraphType=='Multi: Overlay'" [class.col-7]="selectedGraphType!='Multi: Overlay'" style="padding-right: 5px">
+                  <div [class.col-3]="selectedGraphType=='Multi: Overlay'" [class.col-6]="selectedGraphType!='Multi: Overlay'" style="padding-right: 5px">
                     <p-select [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedDateFieldVariable3" (ngModelChange)="onDateFieldChange(2)"></p-select>
                   </div>
                   @if (selectedGraphType=='Multi: Overlay') {
