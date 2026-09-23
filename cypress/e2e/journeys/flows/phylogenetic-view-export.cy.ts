@@ -316,6 +316,79 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         expect(mappedNode.longitude).to.be.a('number');
       });
     });
+
+    it('customizes Auspice metadata, Color By, and Filters from advanced options', () => {
+      const exportFileBase = `cypress_tree_auspice_advanced_${Date.now()}`;
+      const exportPath = `cypress/downloads/${exportFileBase}.json`;
+
+      cy.window().then((win: any) => {
+        const session = win.commonService.session;
+        session.data.nodes.forEach((node: any, index: number) => {
+          node.auspice_group = index % 2 ? 'group_b' : 'group_a';
+          node.auspice_private_note = `private-${index}`;
+        });
+        session.data.nodeFields = Array.from(new Set([
+          ...(session.data.nodeFields || []),
+          'auspice_group',
+          'auspice_private_note',
+        ]));
+        session.style.widgets['node-color-variable'] = 'auspice_group';
+      });
+
+      cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
+      cy.get('#auspice-advanced-options')
+        .should('not.have.attr', 'open')
+        .find('summary')
+        .click();
+
+      cy.get('#auspice-metadata-toggle-all').should('contain.text', 'Deselect all');
+      cy.get('#auspice-colorings-toggle-all').should('contain.text', 'Deselect all');
+      cy.get('#auspice-filters-toggle-all').should('contain.text', 'Deselect all');
+      cy.get('#auspice-metadata-fields input[type="checkbox"]')
+        .should('have.length.greaterThan', 0)
+        .each(($checkbox) => cy.wrap($checkbox).should('be.checked'));
+
+      cy.get('#auspice-metadata-toggle-all').click();
+      cy.get('#auspice-metadata-auspice_group').should('not.be.checked');
+      cy.get('#auspice-coloring-auspice_group').should('not.be.checked').and('be.disabled');
+      cy.get('#auspice-filter-auspice_group').should('not.be.checked').and('be.disabled');
+      ['#auspice-coloring-fields', '#auspice-filter-fields'].forEach((selector) => {
+        cy.get(selector).then(($menu) => {
+          cy.wrap($menu.find('input[type="checkbox"]:checked:not(:disabled)'))
+            .each(($checkbox) => cy.wrap($checkbox).uncheck({ force: true }));
+        });
+      });
+
+      cy.get('#auspice-metadata-auspice_group').check();
+      cy.get('#auspice-coloring-auspice_group').should('be.enabled').check();
+      cy.get('#auspice-filter-auspice_group').should('be.enabled').check();
+
+      cy.get('#auspice-json-filename')
+        .clear({ force: true })
+        .type(exportFileBase, { delay: 0, force: true });
+      cy.get('#export-auspice-json').click({ force: true });
+
+      cy.readFile(exportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
+        const dataset = JSON.parse(savedText);
+        expect(dataset.meta.colorings.map((coloring: any) => coloring.key))
+          .to.deep.equal(['auspice_group']);
+        expect(dataset.meta.filters).to.deep.equal(['auspice_group']);
+        expect(dataset.meta.display_defaults.color_by).to.equal('auspice_group');
+
+        const visit = (node: any): void => {
+          const attributeKeys = Object.keys(node.node_attrs);
+          expect(attributeKeys.every(key => (
+            ['div', 'auspice_group', 'microbetrace_location'].includes(key)
+          ))).to.equal(true);
+          expect(node.node_attrs.auspice_private_note).to.equal(undefined);
+          if (!(node.children || []).length) {
+            expect(node.node_attrs.auspice_group?.value).to.match(/^group_[ab]$/);
+          }
+          (node.children || []).forEach(visit);
+        };
+        visit(dataset.tree);
+      });
+    });
   });
 
   context('Settings', () => {

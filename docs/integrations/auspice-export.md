@@ -12,7 +12,9 @@ MicrobeTrace can save the current Phylogenetic Tree as one Auspice v2 JSON file.
    - Visit [auspice.us](https://auspice.us), choose **Drag & drop files**, and drop the JSON file.
    - Install Auspice and run `auspice view --datasetDir <directory>`, following the [Auspice local-view instructions](https://docs.nextstrain.org/projects/auspice/en/stable/introduction/how-to-run.html).
 
-Do not upload identifiable, restricted, or otherwise sensitive records to a public service unless your data-use rules allow it. The downloaded file can include every safe scalar metadata field on each exported tip, even fields that are not currently displayed. Use a local `auspice view` server when public upload is not appropriate.
+The collapsed **Advanced options** section has separate checkbox menus for exported node metadata, Auspice color-by choices, and Auspice filters. Every eligible field is selected in all three menus by default, preserving the standard export behavior. Each menu has a **Select all** or **Deselect all** control. Removing a field from node metadata also removes it from the color-by and filter menus because those controls require the corresponding node attribute.
+
+Do not upload identifiable, restricted, or otherwise sensitive records to a public service unless your data-use rules allow it. The downloaded file can include every safe scalar metadata field on exported tips and identifiable internal nodes, even fields that are not currently displayed. Use a local `auspice view` server when public upload is not appropriate.
 
 ## What is exported
 
@@ -20,7 +22,7 @@ The single JSON file follows the Auspice v2 `version`, `meta`, and `tree` struct
 
 - the current tree topology, visible branch orientation after rerooting, rotation, flipping, or subtree selection, and cumulative branch-length divergence;
 - exact tip IDs and deterministic internal node names;
-- safe scalar tip metadata, including identity, cluster, degree, selected/visible state, and valid latitude/longitude values when present;
+- safe scalar node metadata, including retained metadata on uniquely identifiable internal nodes, plus tip identity, cluster, degree, selected/visible state, and valid latitude/longitude values when present;
 - the current node color-by field when that field is exportable;
 - current resolved tip coordinates as a `microbetrace_location` geography, without external geocoding;
 - stored bootstrap support when its split still matches a current branch; and
@@ -44,7 +46,7 @@ Export stops with an inline error instead of changing invalid data when a tip ID
 
 ## Round-trip limitations
 
-An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, and synthetic tip coordinates. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported Auspice dataset. Pixel-level styling, ancestral geography, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
+An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, retained scalar fields on identifiable internal nodes, and synthetic tip coordinates. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported Auspice dataset. Pixel-level styling, inferred ancestral geography, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
 
 Auspice displays sibling arrays in reverse traversal order compared with MicrobeTrace. The JSON therefore stores sibling arrays in the opposite order so that the visible tree orientation—including branch rotations—matches when the file is opened in Auspice. MicrobeTrace applies the same convention when an Auspice file is imported.
 

@@ -368,7 +368,7 @@
           </div>
         </div>
       </tab>
-      <tab heading="{{'Auspice JSON' | localize}}" customClass="m-tabs__item">
+      <tab heading="{{'Auspice JSON' | localize}}" customClass="m-tabs__item" (selectTab)="prepareAuspiceExportOptions()">
         <div class="modal-dialog" role="document">
           <div class="modal-content">
             <div class="modal-body" style='min-width: 500px; height: 100%;'>
@@ -381,6 +381,99 @@
                 <a href="https://auspice.us" target="_blank" rel="noopener noreferrer">auspice.us</a>
                 or <a href="https://docs.nextstrain.org/projects/auspice/en/stable/introduction/how-to-run.html" target="_blank" rel="noopener noreferrer">auspice view</a>.
               </p>
+              <details id="auspice-advanced-options" class="auspice-advanced-options mt-3">
+                <summary>Advanced options</summary>
+                <p class="auspice-advanced-help">
+                  Choose which fields are included as node metadata and which appear in Auspice's Color By and Filters menus. All eligible fields are selected by default.
+                </p>
+                <div class="auspice-option-grid">
+                  <section class="auspice-option-menu" aria-labelledby="auspice-metadata-heading">
+                    <div class="auspice-option-menu-header">
+                      <strong id="auspice-metadata-heading">Node metadata</strong>
+                      <button
+                        type="button"
+                        id="auspice-metadata-toggle-all"
+                        class="btn btn-link btn-sm"
+                        (click)="toggleAllAuspiceFields('metadata')">
+                        {{ areAllAuspiceFieldsSelected('metadata') ? 'Deselect all' : 'Select all' }}
+                      </button>
+                    </div>
+                    <div id="auspice-metadata-fields" class="auspice-checkbox-list" role="group" aria-labelledby="auspice-metadata-heading">
+                      @for (field of AuspiceMetadataFieldOptions; track field.key) {
+                        <label class="auspice-checkbox-option" [attr.for]="'auspice-metadata-' + field.key" [title]="field.title">
+                          <input
+                            type="checkbox"
+                            [id]="'auspice-metadata-' + field.key"
+                            [attr.data-field-key]="field.key"
+                            [checked]="isAuspiceFieldSelected('metadata', field.key)"
+                            (change)="setAuspiceFieldSelection('metadata', field.key, $any($event.target).checked)">
+                          <span>{{ field.title }}</span>
+                        </label>
+                      } @empty {
+                        <span class="auspice-empty-options">No exportable fields</span>
+                      }
+                    </div>
+                  </section>
+
+                  <section class="auspice-option-menu" aria-labelledby="auspice-colorings-heading">
+                    <div class="auspice-option-menu-header">
+                      <strong id="auspice-colorings-heading">Color By menu</strong>
+                      <button
+                        type="button"
+                        id="auspice-colorings-toggle-all"
+                        class="btn btn-link btn-sm"
+                        (click)="toggleAllAuspiceFields('colorings')">
+                        {{ areAllAuspiceFieldsSelected('colorings') ? 'Deselect all' : 'Select all' }}
+                      </button>
+                    </div>
+                    <div id="auspice-coloring-fields" class="auspice-checkbox-list" role="group" aria-labelledby="auspice-colorings-heading">
+                      @for (field of AuspiceColoringFieldOptions; track field.key) {
+                        <label class="auspice-checkbox-option" [class.disabled]="!field.synthetic && !isAuspiceFieldSelected('metadata', field.key)" [attr.for]="'auspice-coloring-' + field.key" [title]="field.title">
+                          <input
+                            type="checkbox"
+                            [id]="'auspice-coloring-' + field.key"
+                            [attr.data-field-key]="field.key"
+                            [checked]="isAuspiceFieldSelected('colorings', field.key)"
+                            [disabled]="!field.synthetic && !isAuspiceFieldSelected('metadata', field.key)"
+                            (change)="setAuspiceFieldSelection('colorings', field.key, $any($event.target).checked)">
+                          <span>{{ field.title }}</span>
+                        </label>
+                      } @empty {
+                        <span class="auspice-empty-options">No exportable fields</span>
+                      }
+                    </div>
+                  </section>
+
+                  <section class="auspice-option-menu" aria-labelledby="auspice-filters-heading">
+                    <div class="auspice-option-menu-header">
+                      <strong id="auspice-filters-heading">Filters menu</strong>
+                      <button
+                        type="button"
+                        id="auspice-filters-toggle-all"
+                        class="btn btn-link btn-sm"
+                        (click)="toggleAllAuspiceFields('filters')">
+                        {{ areAllAuspiceFieldsSelected('filters') ? 'Deselect all' : 'Select all' }}
+                      </button>
+                    </div>
+                    <div id="auspice-filter-fields" class="auspice-checkbox-list" role="group" aria-labelledby="auspice-filters-heading">
+                      @for (field of AuspiceColoringFieldOptions; track field.key) {
+                        <label class="auspice-checkbox-option" [class.disabled]="!field.synthetic && !isAuspiceFieldSelected('metadata', field.key)" [attr.for]="'auspice-filter-' + field.key" [title]="field.title">
+                          <input
+                            type="checkbox"
+                            [id]="'auspice-filter-' + field.key"
+                            [attr.data-field-key]="field.key"
+                            [checked]="isAuspiceFieldSelected('filters', field.key)"
+                            [disabled]="!field.synthetic && !isAuspiceFieldSelected('metadata', field.key)"
+                            (change)="setAuspiceFieldSelection('filters', field.key, $any($event.target).checked)">
+                          <span>{{ field.title }}</span>
+                        </label>
+                      } @empty {
+                        <span class="auspice-empty-options">No exportable fields</span>
+                      }
+                    </div>
+                  </section>
+                </div>
+              </details>
               @if (AuspiceExportErrorMessage) {
                 <div id="auspice-export-error" class="alert alert-danger mt-3 mb-0" role="alert" aria-live="assertive">
                   {{ AuspiceExportErrorMessage }}

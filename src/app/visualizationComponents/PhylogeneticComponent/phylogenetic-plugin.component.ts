@@ -44,9 +44,14 @@ import type {
 import { createGlobalSettingsDialogRequest, GlobalSettingsDialogRequest } from '@app/helperClasses/globalSettingsDialogRequest';
 import {
   AuspiceExportError,
+  AuspiceExportFieldOption,
+  AuspiceExportOptions,
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
+  getAuspiceExportFieldOptions,
 } from '@app/helperClasses/auspiceExporter';
+
+type AuspiceExportSelectionCategory = 'metadata' | 'colorings' | 'filters';
 
 /**
  * @title PhylogeneticComponent
@@ -177,7 +182,13 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   SelectedNewickStringFilenameVariable = 'default_tree.nwk';
   SelectedAuspiceFilenameVariable = 'microbetrace-auspice.json';
   AuspiceExportErrorMessage = '';
+  AuspiceMetadataFieldOptions: AuspiceExportFieldOption[] = [];
+  AuspiceColoringFieldOptions: AuspiceExportFieldOption[] = [];
+  SelectedAuspiceMetadataFieldKeys = new Set<string>();
+  SelectedAuspiceColoringFieldKeys = new Set<string>();
+  SelectedAuspiceFilterFieldKeys = new Set<string>();
   private auspiceFilenameSourceName = '';
+  private auspiceExportSelectionsCustomized = false;
 
   NetworkExportFileTypeList: object = [
     { label: 'png', value: 'png' },
@@ -809,6 +820,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       this.auspiceFilenameSourceName = sourceName;
     }
     this.AuspiceExportErrorMessage = '';
+    this.auspiceExportSelectionsCustomized = false;
+    this.prepareAuspiceExportOptions(true);
     this.ShowPhylogeneticExportPane = true;
 
     this.isExportClosed = false;
@@ -1428,18 +1441,12 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.AuspiceExportErrorMessage = '';
 
     try {
-      const widgets = this.commonService.session.style.widgets;
+      this.prepareAuspiceExportOptions();
       const dataset = buildAuspiceV2Dataset({
-        tree: this.tree?.data,
-        nodes: this.commonService.session.data?.nodes,
-        nodeFields: this.commonService.session.data?.nodeFields,
-        title: this.getAuspiceExportTitle(),
-        updated: new Date(),
-        colorBy: widgets['node-color-variable'],
-        temporalFields: this.getAuspiceTemporalFields(),
-        latitudeField: widgets['map-field-lat'],
-        longitudeField: widgets['map-field-lon'],
-        bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
+        ...this.getAuspiceExportOptions(),
+        metadataFieldKeys: Array.from(this.SelectedAuspiceMetadataFieldKeys),
+        coloringFieldKeys: Array.from(this.SelectedAuspiceColoringFieldKeys),
+        filterFieldKeys: Array.from(this.SelectedAuspiceFilterFieldKeys),
       });
       const filename = ensureAuspiceJsonFilename(
         this.SelectedAuspiceFilenameVariable,
@@ -1460,6 +1467,132 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         ? error.message
         : 'Unable to export the current tree as Auspice JSON.';
     }
+  }
+
+  prepareAuspiceExportOptions(resetSelections = false): void {
+    try {
+      const fieldOptions = getAuspiceExportFieldOptions(this.getAuspiceExportOptions())
+        .sort((left, right) => left.title.localeCompare(right.title));
+      this.AuspiceMetadataFieldOptions = fieldOptions.filter(field => !field.synthetic);
+      this.AuspiceColoringFieldOptions = fieldOptions;
+
+      if (resetSelections || !this.auspiceExportSelectionsCustomized) {
+        this.SelectedAuspiceMetadataFieldKeys = new Set(
+          this.AuspiceMetadataFieldOptions.map(field => field.key),
+        );
+        this.SelectedAuspiceColoringFieldKeys = new Set(fieldOptions.map(field => field.key));
+        this.SelectedAuspiceFilterFieldKeys = new Set(fieldOptions.map(field => field.key));
+        return;
+      }
+
+      const availableKeys = new Set(fieldOptions.map(field => field.key));
+      const metadataKeys = new Set(this.AuspiceMetadataFieldOptions.map(field => field.key));
+      this.SelectedAuspiceMetadataFieldKeys = new Set(
+        Array.from(this.SelectedAuspiceMetadataFieldKeys)
+          .filter(key => metadataKeys.has(key)),
+      );
+      this.SelectedAuspiceColoringFieldKeys = this.reconcileAuspiceMenuSelection(
+        this.SelectedAuspiceColoringFieldKeys,
+        availableKeys,
+      );
+      this.SelectedAuspiceFilterFieldKeys = this.reconcileAuspiceMenuSelection(
+        this.SelectedAuspiceFilterFieldKeys,
+        availableKeys,
+      );
+    } catch (error) {
+      this.AuspiceMetadataFieldOptions = [];
+      this.AuspiceColoringFieldOptions = [];
+      this.SelectedAuspiceMetadataFieldKeys = new Set();
+      this.SelectedAuspiceColoringFieldKeys = new Set();
+      this.SelectedAuspiceFilterFieldKeys = new Set();
+      this.AuspiceExportErrorMessage = error instanceof Error
+        ? error.message
+        : 'Unable to prepare Auspice export options.';
+    }
+  }
+
+  isAuspiceFieldSelected(category: AuspiceExportSelectionCategory, key: string): boolean {
+    return this.getAuspiceSelection(category).has(key);
+  }
+
+  setAuspiceFieldSelection(
+    category: AuspiceExportSelectionCategory,
+    key: string,
+    selected: boolean,
+  ): void {
+    this.auspiceExportSelectionsCustomized = true;
+    const selection = this.getAuspiceSelection(category);
+    selected ? selection.add(key) : selection.delete(key);
+
+    if (category === 'metadata' && !selected) {
+      this.SelectedAuspiceColoringFieldKeys.delete(key);
+      this.SelectedAuspiceFilterFieldKeys.delete(key);
+    } else if (category !== 'metadata' && selected) {
+      const field = this.AuspiceColoringFieldOptions.find(option => option.key === key);
+      if (field && !field.synthetic) this.SelectedAuspiceMetadataFieldKeys.add(key);
+    }
+  }
+
+  toggleAllAuspiceFields(category: AuspiceExportSelectionCategory): void {
+    this.auspiceExportSelectionsCustomized = true;
+    const fields = this.getAuspiceMenuFields(category);
+    const shouldSelect = !this.areAllAuspiceFieldsSelected(category);
+    const selection = this.getAuspiceSelection(category);
+
+    fields.forEach(field => {
+      shouldSelect ? selection.add(field.key) : selection.delete(field.key);
+      if (category === 'metadata' && !shouldSelect) {
+        this.SelectedAuspiceColoringFieldKeys.delete(field.key);
+        this.SelectedAuspiceFilterFieldKeys.delete(field.key);
+      } else if (category !== 'metadata' && shouldSelect && !field.synthetic) {
+        this.SelectedAuspiceMetadataFieldKeys.add(field.key);
+      }
+    });
+  }
+
+  areAllAuspiceFieldsSelected(category: AuspiceExportSelectionCategory): boolean {
+    const fields = this.getAuspiceMenuFields(category);
+    const selection = this.getAuspiceSelection(category);
+    return fields.length > 0 && fields.every(field => selection.has(field.key));
+  }
+
+  private getAuspiceExportOptions(): AuspiceExportOptions {
+    const widgets = this.commonService.session.style.widgets;
+    return {
+      tree: this.tree?.data,
+      nodes: this.commonService.session.data?.nodes,
+      nodeFields: this.commonService.session.data?.nodeFields,
+      title: this.getAuspiceExportTitle(),
+      updated: new Date(),
+      colorBy: widgets['node-color-variable'],
+      temporalFields: this.getAuspiceTemporalFields(),
+      latitudeField: widgets['map-field-lat'],
+      longitudeField: widgets['map-field-lon'],
+      bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
+    };
+  }
+
+  private getAuspiceSelection(category: AuspiceExportSelectionCategory): Set<string> {
+    if (category === 'metadata') return this.SelectedAuspiceMetadataFieldKeys;
+    if (category === 'colorings') return this.SelectedAuspiceColoringFieldKeys;
+    return this.SelectedAuspiceFilterFieldKeys;
+  }
+
+  private getAuspiceMenuFields(
+    category: AuspiceExportSelectionCategory,
+  ): AuspiceExportFieldOption[] {
+    if (category === 'metadata') return this.AuspiceMetadataFieldOptions;
+    return this.AuspiceColoringFieldOptions;
+  }
+
+  private reconcileAuspiceMenuSelection(
+    selection: Set<string>,
+    availableKeys: Set<string>,
+  ): Set<string> {
+    return new Set(Array.from(selection).filter(key => (
+      availableKeys.has(key)
+      && (key === 'microbetrace_location' || this.SelectedAuspiceMetadataFieldKeys.has(key))
+    )));
   }
 
   private getAuspiceSourceName(): string {

@@ -17,6 +17,10 @@ export interface AuspiceColoring {
   type: AuspiceColoringType;
 }
 
+export interface AuspiceExportFieldOption extends AuspiceColoring {
+  synthetic?: boolean;
+}
+
 export interface AuspiceGeoCoordinates {
   latitude: number;
   longitude: number;
@@ -75,6 +79,9 @@ export interface AuspiceExportOptions {
   tree: AuspiceSourceTreeNode;
   nodes?: any[];
   nodeFields?: string[];
+  metadataFieldKeys?: string[];
+  coloringFieldKeys?: string[];
+  filterFieldKeys?: string[];
   title?: string;
   updated?: Date | string;
   colorBy?: string;
@@ -156,7 +163,8 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const nodes = Array.isArray(options.nodes) ? options.nodes : [];
   const leafNames = collectLeafNamesAndValidate(options.tree);
   const nodeByName = indexNodesByName(nodes);
-  const exportFields = buildExportFields(options, nodes);
+  const availableExportFields = buildExportFields(options, nodes);
+  const exportFields = selectExportFields(availableExportFields, options.metadataFieldKeys);
   const coordinateByLeaf = buildCoordinateIndex(options, leafNames, nodeByName);
   const usedNames = new Set(leafNames);
   const bootstrapUniverse = options.bootstrap?.labels?.length
@@ -186,16 +194,17 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     const name = isLeaf ? String(source.id ?? '') : nextInternalName();
     const nodeAttrs: Record<string, number | AuspiceNodeAttribute> = Object.create(null);
     nodeAttrs.div = divergence;
+    const sourceName = String(source.id ?? '');
+    const sessionNode = sourceName.trim() ? nodeByName.get(sourceName) : undefined;
+
+    exportFields.forEach(field => {
+      const rawValue = sessionNode?.[field.sourceKey];
+      if (isExportableScalar(rawValue)) {
+        nodeAttrs[field.auspiceKey] = { value: rawValue };
+      }
+    });
 
     if (isLeaf) {
-      const sessionNode = nodeByName.get(name);
-      exportFields.forEach(field => {
-        const rawValue = sessionNode?.[field.sourceKey];
-        if (isExportableScalar(rawValue)) {
-          nodeAttrs[field.auspiceKey] = { value: rawValue };
-        }
-      });
-
       if (coordinateByLeaf.has(name)) {
         nodeAttrs[SYNTHETIC_LOCATION_KEY] = { value: name };
       }
@@ -238,7 +247,10 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   };
 
   const tree = convertTree(options.tree, 0, true);
-  const colorings = exportFields.map(field => field.coloring);
+  const selectedColoringKeys = normalizeSelectedKeys(options.coloringFieldKeys);
+  const colorings = exportFields
+    .filter(field => selectedColoringKeys === null || selectedColoringKeys.has(field.auspiceKey))
+    .map(field => field.coloring);
   let geoResolutions: AuspiceGeoResolution[] | undefined;
 
   if (coordinateByLeaf.size) {
@@ -251,11 +263,13 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
       title: 'MicrobeTrace location',
       demes,
     }];
-    colorings.push({
-      key: SYNTHETIC_LOCATION_KEY,
-      title: 'MicrobeTrace location',
-      type: 'categorical',
-    });
+    if (selectedColoringKeys === null || selectedColoringKeys.has(SYNTHETIC_LOCATION_KEY)) {
+      colorings.push({
+        key: SYNTHETIC_LOCATION_KEY,
+        title: 'MicrobeTrace location',
+        type: 'categorical',
+      });
+    }
   }
 
   const fieldBySource = new Map(exportFields.map(field => [field.sourceKey, field]));
@@ -263,7 +277,7 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const displayDefaults: AuspiceMeta['display_defaults'] = {
     distance_measure: 'div',
   };
-  if (selectedColoring) {
+  if (selectedColoring && colorings.some(coloring => coloring.key === selectedColoring.auspiceKey)) {
     displayDefaults.color_by = selectedColoring.auspiceKey;
   }
   if (exportedBootstrapLabel) {
@@ -281,7 +295,17 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   };
   if (colorings.length) {
     meta.colorings = colorings;
-    meta.filters = colorings.map(coloring => coloring.key);
+  }
+  const selectedFilterKeys = normalizeSelectedKeys(options.filterFieldKeys)
+    ?? new Set(colorings.map(coloring => coloring.key));
+  const filters = exportFields
+    .map(field => field.auspiceKey)
+    .filter(key => selectedFilterKeys.has(key));
+  if (coordinateByLeaf.size && selectedFilterKeys.has(SYNTHETIC_LOCATION_KEY)) {
+    filters.push(SYNTHETIC_LOCATION_KEY);
+  }
+  if (filters.length) {
+    meta.filters = filters;
   }
   if (geoResolutions) {
     meta.geo_resolutions = geoResolutions;
@@ -292,6 +316,29 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     meta,
     tree,
   };
+}
+
+export function getAuspiceExportFieldOptions(
+  options: AuspiceExportOptions,
+): AuspiceExportFieldOption[] {
+  const nodes = Array.isArray(options.nodes) ? options.nodes : [];
+  const fields: AuspiceExportFieldOption[] = buildExportFields(options, nodes)
+    .map(field => ({ ...field.coloring }));
+
+  if (options.tree) {
+    const leafNames = collectLeafNamesAndValidate(options.tree);
+    const nodeByName = indexNodesByName(nodes);
+    if (buildCoordinateIndex(options, leafNames, nodeByName).size) {
+      fields.push({
+        key: SYNTHETIC_LOCATION_KEY,
+        title: 'MicrobeTrace location',
+        type: 'categorical',
+        synthetic: true,
+      });
+    }
+  }
+
+  return fields;
 }
 
 function collectLeafNamesAndValidate(root: AuspiceSourceTreeNode): string[] {
@@ -325,11 +372,20 @@ function collectLeafNamesAndValidate(root: AuspiceSourceTreeNode): string[] {
 
 function indexNodesByName(nodes: any[]): Map<string, any> {
   const index = new Map<string, any>();
+  const ambiguousNames = new Set<string>();
   nodes.forEach(node => {
-    [node?._id, node?.id].forEach(value => {
+    const nodeNames = new Set([node?._id, node?.id]);
+    nodeNames.forEach(value => {
       if (value === undefined || value === null) return;
       const key = String(value);
-      if (!index.has(key)) index.set(key, node);
+      if (!key.trim() || ambiguousNames.has(key)) return;
+      const existingNode = index.get(key);
+      if (existingNode && existingNode !== node) {
+        index.delete(key);
+        ambiguousNames.add(key);
+        return;
+      }
+      index.set(key, node);
     });
   });
   return index;
@@ -368,6 +424,18 @@ function buildExportFields(options: AuspiceExportOptions, nodes: any[]): ExportF
       },
     }];
   });
+}
+
+function selectExportFields(fields: ExportField[], selectedKeys?: string[]): ExportField[] {
+  const selected = normalizeSelectedKeys(selectedKeys);
+  return selected === null
+    ? fields
+    : fields.filter(field => selected.has(field.auspiceKey));
+}
+
+function normalizeSelectedKeys(keys?: string[]): Set<string> | null {
+  if (!Array.isArray(keys)) return null;
+  return new Set(keys.map(key => String(key)));
 }
 
 function allocateAuspiceKey(sourceKey: string, usedKeys: Set<string>): string {

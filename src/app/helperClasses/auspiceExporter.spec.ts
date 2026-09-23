@@ -9,6 +9,7 @@ import {
   AuspiceExportError,
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
+  getAuspiceExportFieldOptions,
 } from './auspiceExporter';
 
 describe('Auspice v2 exporter', () => {
@@ -139,6 +140,87 @@ describe('Auspice v2 exporter', () => {
     expect(leafA.node_attrs.microbetrace_div).toEqual({ value: 'source-div' });
     expect(leafA.node_attrs.seq).toBeUndefined();
     expect(JSON.stringify(dataset)).not.toContain('ACGT');
+  });
+
+  it('preserves safe scalar metadata on identifiable internal nodes without inferring it', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: fourTipTree(),
+      nodes: [
+        { _id: 'original-root', clade: 'root-state', score: 4, selected: true, seq: 'AAAA' },
+        { _id: 'left-clade', clade: 'left-state', score: 2, selected: false, seq: 'CCCC' },
+        { _id: '', clade: 'must-not-be-attached' },
+        { _id: 'A', clade: 'tip-state' },
+      ],
+      nodeFields: ['clade', 'score', 'selected', 'seq'],
+    });
+
+    const root = dataset.tree;
+    const left = root.children!.find(child => (
+      child.branch_attrs?.labels?.microbetrace === 'left-clade'
+    ))!;
+    const unnamed = root.children!.find(child => child !== left)!;
+
+    expect(root.node_attrs.clade).toEqual({ value: 'root-state' });
+    expect(root.node_attrs.score).toEqual({ value: 4 });
+    expect(root.node_attrs.selected).toEqual({ value: true });
+    expect(root.node_attrs.seq).toBeUndefined();
+    expect(left.node_attrs.clade).toEqual({ value: 'left-state' });
+    expect(left.node_attrs.score).toEqual({ value: 2 });
+    expect(left.node_attrs.selected).toEqual({ value: false });
+    expect(unnamed.node_attrs.clade).toBeUndefined();
+    expect(unnamed.node_attrs.score).toBeUndefined();
+  });
+
+  it('does not attach metadata when a session node identifier is ambiguous', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: fourTipTree(),
+      nodes: [
+        { _id: 'left-clade', clade: 'first' },
+        { id: 'left-clade', clade: 'second' },
+      ],
+      nodeFields: ['clade'],
+    });
+    const left = dataset.tree.children!.find(child => (
+      child.branch_attrs?.labels?.microbetrace === 'left-clade'
+    ))!;
+
+    expect(left.node_attrs.clade).toBeUndefined();
+  });
+
+  it('independently selects exported metadata, colorings, and filters', () => {
+    const options = {
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        { _id: 'A', group: 'alpha', score: 1, note: 'first', _lat: 33.7, _lon: -84.4 },
+        { _id: 'B', group: 'beta', score: 2, note: 'second' },
+      ],
+      nodeFields: ['group', 'score', 'note'],
+      colorBy: 'group',
+    };
+    const fieldOptions = getAuspiceExportFieldOptions(options);
+    const dataset = buildAuspiceV2Dataset({
+      ...options,
+      metadataFieldKeys: ['group', 'note'],
+      coloringFieldKeys: ['group'],
+      filterFieldKeys: ['note'],
+    });
+
+    expect(fieldOptions).toContain(jasmine.objectContaining({
+      key: 'microbetrace_location',
+      synthetic: true,
+    }));
+    expect(dataset.meta.colorings).toEqual([
+      { key: 'group', title: 'group', type: 'categorical' },
+    ]);
+    expect(dataset.meta.filters).toEqual(['note']);
+    expect(dataset.meta.display_defaults.color_by).toBe('group');
+    expect(dataset.meta.geo_resolutions?.[0].key).toBe('microbetrace_location');
+
+    const leafA = dataset.tree.children!.find(child => child.name === 'A')!;
+    expect(leafA.node_attrs.group).toEqual({ value: 'alpha' });
+    expect(leafA.node_attrs.note).toEqual({ value: 'first' });
+    expect(leafA.node_attrs.score).toBeUndefined();
+    expect(leafA.node_attrs.microbetrace_location).toEqual({ value: 'A' });
   });
 
   it('adds a partial map from resolved and configured coordinates', () => {
