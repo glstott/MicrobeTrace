@@ -317,6 +317,57 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       });
     });
 
+    it('exports the full tree after entering a subtree and exports the subtree when requested', () => {
+      const fullExportBase = `cypress_tree_auspice_full_${Date.now()}`;
+      const visibleExportBase = `cypress_tree_auspice_visible_${Date.now()}`;
+      const fullExportPath = `cypress/downloads/${fullExportBase}.json`;
+      const visibleExportPath = `cypress/downloads/${visibleExportBase}.json`;
+      let fullLeafIds: string[] = [];
+      let visibleLeafIds: string[] = [];
+
+      cy.get('.p-dialog:visible button.p-dialog-header-close').click({ force: true });
+      cy.window().then((win: any) => {
+        const phylogenetic = win.commonService.visuals.phylogenetic;
+        fullLeafIds = phylogenetic.tree.data.getLeaves().map((leaf: any) => String(leaf.id));
+        const subtreeRoot = phylogenetic.tree.hierarchy.descendants().find((node: any) => (
+          node !== phylogenetic.tree.hierarchy
+          && Array.isArray(node.children)
+          && node.children.length > 0
+          && node.leaves().length >= 2
+          && node.leaves().length < fullLeafIds.length
+        ));
+        expect(subtreeRoot, 'a proper internal subtree').to.exist;
+        phylogenetic.viewSubtree([subtreeRoot]);
+        visibleLeafIds = phylogenetic.tree.data.getLeaves().map((leaf: any) => String(leaf.id));
+      });
+
+      cy.get(SELECTORS.exportBtn).click();
+      cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
+      cy.get('#auspice-advanced-options').find('summary').click();
+      cy.get('#auspice-tree-scope-full').should('be.checked');
+      cy.get('#auspice-tree-scope-visible').should('not.be.checked');
+      cy.get('#auspice-json-filename').clear({ force: true }).type(fullExportBase, { delay: 0, force: true });
+      cy.get('#export-auspice-json').click({ force: true });
+
+      cy.readFile(fullExportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
+        const dataset = JSON.parse(savedText);
+        expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(fullLeafIds);
+      });
+
+      cy.get(SELECTORS.exportBtn).click();
+      cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
+      cy.get('#auspice-advanced-options').find('summary').click();
+      cy.get('#auspice-tree-scope-visible').check();
+      cy.get('#auspice-json-filename').clear({ force: true }).type(visibleExportBase, { delay: 0, force: true });
+      cy.get('#export-auspice-json').click({ force: true });
+
+      cy.readFile(visibleExportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
+        const dataset = JSON.parse(savedText);
+        expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(visibleLeafIds);
+        expect(dataset.tree.node_attrs.div).to.equal(0);
+      });
+    });
+
     it('customizes Auspice metadata, Color By, and Filters from advanced options', () => {
       const exportFileBase = `cypress_tree_auspice_advanced_${Date.now()}`;
       const exportPath = `cypress/downloads/${exportFileBase}.json`;
@@ -341,6 +392,8 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         .find('summary')
         .click();
 
+      cy.get('#auspice-tree-scope-full').should('be.checked');
+      cy.get('#auspice-tree-scope-visible').should('not.be.checked');
       cy.get('#auspice-metadata-toggle-all').should('contain.text', 'Deselect all');
       cy.get('#auspice-colorings-toggle-all').should('contain.text', 'Deselect all');
       cy.get('#auspice-filters-toggle-all').should('contain.text', 'Deselect all');

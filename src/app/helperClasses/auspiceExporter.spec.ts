@@ -97,13 +97,13 @@ describe('Auspice v2 exporter', () => {
       {
         _id: 'A', id: 'A', group: 'alpha', score: 1.5, event_date: '2026-01-01',
         selected: true, visible: false, div: 'source-div', 'field with spaces': 'one',
-        seq: 'ACGT', _diff: 'A1G', x: 50, index: 0, hasDistance: false, nodeSize: 20,
+        seq: 'ACGT', _diff: 'A1G', length: 0.1, depth: 2, x: 50, index: 0, hasDistance: false, nodeSize: 20,
         nested: { unsafe: true }, values: ['unsafe'],
       },
       {
         _id: 'B', id: 'B', group: 'beta', score: 2.5, event_date: '2026-01-02',
         selected: false, visible: true, div: 'source-div-2', 'field with spaces': 'two',
-        seq: 'AGGT', _diff: 'C2T', x: 75, index: 1, hasDistance: true, nodeSize: 20,
+        seq: 'AGGT', _diff: 'C2T', length: 0.2, depth: 2, x: 75, index: 1, hasDistance: true, nodeSize: 20,
         nested: { unsafe: true }, values: ['unsafe'],
       },
     ];
@@ -112,7 +112,7 @@ describe('Auspice v2 exporter', () => {
       nodes,
       nodeFields: [
         '_id', 'id', 'group', 'score', 'event_date', 'selected', 'visible', 'div',
-        'field with spaces', 'seq', '_diff', 'x', 'index', 'hasDistance', 'nodeSize',
+        'field with spaces', 'seq', '_diff', 'length', 'depth', 'x', 'index', 'hasDistance', 'nodeSize',
         'nested', 'values',
       ],
       colorBy: 'group',
@@ -128,7 +128,7 @@ describe('Auspice v2 exporter', () => {
     expect(colorings).toContain(jasmine.objectContaining({ key: 'microbetrace_div', title: 'div' }));
     expect(colorings).toContain(jasmine.objectContaining({ key: 'microbetrace_field_with_spaces', title: 'field with spaces' }));
     expect(colorings.some(coloring => (
-      ['seq', '_diff', 'x', 'index', 'hasDistance', 'nodeSize', 'nested', 'values'].includes(coloring.key)
+      ['seq', '_diff', 'length', 'depth', 'x', 'index', 'hasDistance', 'nodeSize', 'nested', 'values'].includes(coloring.key)
     ))).toBeFalse();
     expect(dataset.meta.display_defaults.color_by).toBe('group');
     expect(dataset.meta.filters).toEqual(colorings.map(coloring => coloring.key));
@@ -169,6 +169,54 @@ describe('Auspice v2 exporter', () => {
     expect(left.node_attrs.selected).toEqual({ value: false });
     expect(unnamed.node_attrs.clade).toBeUndefined();
     expect(unnamed.node_attrs.score).toBeUndefined();
+  });
+
+  it('uses the saved full tree or the currently visible subtree according to tree scope', () => {
+    const fullTree = fourTipTree();
+    const visibleTree = {
+      id: 'left-clade',
+      length: 0,
+      children: fullTree.children[0].children,
+    };
+    const options = {
+      tree: visibleTree,
+      fullTree,
+      nodes: ['A', 'B', 'C', 'D'].map(_id => ({ _id, visible: _id !== 'B' })),
+      nodeFields: ['visible'],
+    };
+    const fullDataset = buildAuspiceV2Dataset({ ...options, treeScope: 'full' });
+    const visibleDataset = buildAuspiceV2Dataset({ ...options, treeScope: 'visible' });
+
+    expect(auspiceDisplayLeafOrder(fullDataset.tree)).toEqual(['A', 'B', 'C', 'D']);
+    expect(auspiceDisplayLeafOrder(visibleDataset.tree)).toEqual(['A', 'B']);
+    expect(visibleDataset.tree.node_attrs.div).toBe(0);
+    expect(visibleDataset.tree.children!.find(child => child.name === 'B')!.node_attrs.visible)
+      .toEqual({ value: false });
+  });
+
+  it('preserves internal-node attributes in a visible subtree using the full attribute tree', () => {
+    const attributeTree = fourTipTree();
+    (attributeTree.children[0] as any).data = {
+      id: 'left-clade',
+      lineage: 'left-ancestor',
+      confidence: 0.98,
+    };
+    const visibleTree = {
+      id: '',
+      length: 0,
+      children: attributeTree.children[0].children,
+    };
+    const dataset = buildAuspiceV2Dataset({
+      tree: visibleTree,
+      fullTree: attributeTree,
+      attributeTree,
+      treeScope: 'visible',
+      nodeFields: ['lineage', 'confidence'],
+    });
+
+    expect(dataset.tree.branch_attrs?.labels?.microbetrace).toBe('left-clade');
+    expect(dataset.tree.node_attrs.lineage).toEqual({ value: 'left-ancestor' });
+    expect(dataset.tree.node_attrs.confidence).toEqual({ value: 0.98 });
   });
 
   it('does not attach metadata when a session node identifier is ambiguous', () => {

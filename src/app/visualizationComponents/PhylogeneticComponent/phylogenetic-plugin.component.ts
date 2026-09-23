@@ -46,6 +46,8 @@ import {
   AuspiceExportError,
   AuspiceExportFieldOption,
   AuspiceExportOptions,
+  AuspiceSourceTreeNode,
+  AuspiceTreeScope,
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
   getAuspiceExportFieldOptions,
@@ -181,6 +183,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   SelectedTreeImageFilenameVariable = 'default_tree';
   SelectedNewickStringFilenameVariable = 'default_tree.nwk';
   SelectedAuspiceFilenameVariable = 'microbetrace-auspice.json';
+  SelectedAuspiceTreeScope: AuspiceTreeScope = 'full';
   AuspiceExportErrorMessage = '';
   AuspiceMetadataFieldOptions: AuspiceExportFieldOption[] = [];
   AuspiceColoringFieldOptions: AuspiceExportFieldOption[] = [];
@@ -213,6 +216,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   tree: TidyTree = null;
   originalTreeData: any = null;
   hasTreeBeenModifiedFromOriginal = false;
+  private auspiceFullTreeData: AuspiceSourceTreeNode | null = null;
+  private isSubtreeView = false;
   private treeLeafShapeUriCache = new Map<string, string>();
   private treeRenderRecoveryFrame: number | null = null;
   private treeRenderRecoveryAttempts = 0;
@@ -268,6 +273,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       this.commonService.visuals.phylogenetic.tree = tree;
       this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
       this.hasTreeBeenModifiedFromOriginal = false;
+      this.isSubtreeView = false;
+      this.captureAuspiceFullTreeData();
       //this.mergeNodeData();
       this.hideTooltip();
       this.styleTree();
@@ -281,6 +288,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         this.commonService.visuals.phylogenetic.tree = tree;
         this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
         this.hasTreeBeenModifiedFromOriginal = false;
+        this.isSubtreeView = false;
+        this.captureAuspiceFullTreeData();
         //this.mergeNodeData();
         this.hideTooltip();
         this.styleTree();
@@ -384,6 +393,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.commonService.visuals.phylogenetic.tree = tree;
     this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
     this.hasTreeBeenModifiedFromOriginal = false;
+    this.isSubtreeView = false;
+    this.captureAuspiceFullTreeData();
 
     const rebuiltNodeCount = canvas.selectAll('svg g.tidytree-node').size();
     const treeRendered = rebuiltNodeCount >= expectedNodeCount;
@@ -820,6 +831,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       this.auspiceFilenameSourceName = sourceName;
     }
     this.AuspiceExportErrorMessage = '';
+    this.SelectedAuspiceTreeScope = 'full';
     this.auspiceExportSelectionsCustomized = false;
     this.prepareAuspiceExportOptions(true);
     this.ShowPhylogeneticExportPane = true;
@@ -1240,6 +1252,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.commonService.session.data.newickString = this.tree.data.toNewick(false);
     this.originalTreeData = this.tree.data?.clone ? this.tree.data.clone() : this.tree.data;
     this.hasTreeBeenModifiedFromOriginal = false;
+    this.isSubtreeView = false;
+    this.captureAuspiceFullTreeData();
 
     if (redraw) {
       this.styleTree();
@@ -1475,6 +1489,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         .sort((left, right) => left.title.localeCompare(right.title));
       this.AuspiceMetadataFieldOptions = fieldOptions.filter(field => !field.synthetic);
       this.AuspiceColoringFieldOptions = fieldOptions;
+      this.AuspiceExportErrorMessage = '';
 
       if (resetSelections || !this.auspiceExportSelectionsCustomized) {
         this.SelectedAuspiceMetadataFieldKeys = new Set(
@@ -1509,6 +1524,11 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         ? error.message
         : 'Unable to prepare Auspice export options.';
     }
+  }
+
+  onAuspiceTreeScopeChange(): void {
+    this.AuspiceExportErrorMessage = '';
+    this.prepareAuspiceExportOptions();
   }
 
   isAuspiceFieldSelected(category: AuspiceExportSelectionCategory, key: string): boolean {
@@ -1560,6 +1580,9 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     const widgets = this.commonService.session.style.widgets;
     return {
       tree: this.tree?.data,
+      fullTree: this.auspiceFullTreeData ?? this.originalTreeData ?? this.tree?.data,
+      attributeTree: this.getAuspiceAttributeTreeData(),
+      treeScope: this.SelectedAuspiceTreeScope,
       nodes: this.commonService.session.data?.nodes,
       nodeFields: this.commonService.session.data?.nodeFields,
       title: this.getAuspiceExportTitle(),
@@ -1570,6 +1593,39 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       longitudeField: widgets['map-field-lon'],
       bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
     };
+  }
+
+  private getAuspiceAttributeTreeData(): AuspiceSourceTreeNode | undefined {
+    const sessionTree = this.commonService.session.data?.tree;
+    if (this.isAuspiceSourceTree(sessionTree)) return sessionTree;
+    return this.auspiceFullTreeData ?? undefined;
+  }
+
+  private isAuspiceSourceTree(value: any): value is AuspiceSourceTreeNode {
+    return !!value && typeof value === 'object' && (
+      Array.isArray(value.children)
+      || (value.id !== undefined && value.id !== null && String(value.id).trim().length > 0)
+    );
+  }
+
+  private captureAuspiceFullTreeData(): void {
+    if (!this.tree?.data) return;
+    this.auspiceFullTreeData = this.snapshotAuspiceTree(this.tree.data);
+  }
+
+  private snapshotAuspiceTree(source: any): AuspiceSourceTreeNode {
+    const snapshot: AuspiceSourceTreeNode = {
+      id: source?.id,
+      length: source?.length,
+    };
+    if (source?.data && typeof source.data === 'object' && !Array.isArray(source.data)) {
+      snapshot.data = { ...source.data };
+    }
+    const children = Array.isArray(source?.children) ? source.children : [];
+    if (children.length) {
+      snapshot.children = children.map(child => this.snapshotAuspiceTree(child));
+    }
+    return snapshot;
   }
 
   private getAuspiceSelection(category: AuspiceExportSelectionCategory): Set<string> {
@@ -1660,6 +1716,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       .style('top', `${topVal}px`);
     d3.select('#reroot').on('click', c => {
       tree.setData(d[0].data.reroot());
+      if (!this.isSubtreeView) this.captureAuspiceFullTreeData();
       this.hasTreeBeenModifiedFromOriginal = true;
       this.styleTree();
       this.hideContextMenu();
@@ -1667,6 +1724,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     });
     d3.select('#rotate').on('click', c => {
       tree.setData(d[0].data.rotate().getRoot());
+      if (!this.isSubtreeView) this.captureAuspiceFullTreeData();
       this.hasTreeBeenModifiedFromOriginal = true;
       this.styleTree();
       this.hideContextMenu();
@@ -1674,6 +1732,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     });
     d3.select('#flip').on('click', c => {
       tree.setData(d[0].data.flip().getRoot());
+      if (!this.isSubtreeView) this.captureAuspiceFullTreeData();
       this.hasTreeBeenModifiedFromOriginal = true;
       this.styleTree();
       this.hideContextMenu();
@@ -1698,12 +1757,17 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     const isBranchNode = !!(clickedNode && clickedNode.children && clickedNode.children.length > 0);
     if (!isBranchNode) return;
 
+    if (!this.isSubtreeView) {
+      this.captureAuspiceFullTreeData();
+    }
+
     const subtreeData = clickedNode.data?.clone ? clickedNode.data.clone() : clickedNode.data;
     // Normalize subtree root so weighted ruler starts at 0 for subtree view.
     if (subtreeData) {
       subtreeData.length = 0;
     }
     this.tree.setData(subtreeData);
+    this.isSubtreeView = true;
     this.hasTreeBeenModifiedFromOriginal = true;
     this.styleTree();
     this.openCenter();
@@ -1715,6 +1779,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
     const fullTreeData = this.originalTreeData.clone ? this.originalTreeData.clone() : this.originalTreeData;
     this.tree.setData(fullTreeData);
+    this.isSubtreeView = false;
+    this.captureAuspiceFullTreeData();
     this.hasTreeBeenModifiedFromOriginal = false;
     this.styleTree();
     this.openCenter();

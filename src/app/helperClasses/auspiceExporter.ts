@@ -6,6 +6,7 @@ import {
 
 export type AuspiceScalar = string | number | boolean;
 export type AuspiceColoringType = 'boolean' | 'continuous' | 'temporal' | 'categorical';
+export type AuspiceTreeScope = 'full' | 'visible';
 
 export interface AuspiceNodeAttribute {
   value: AuspiceScalar;
@@ -77,11 +78,14 @@ export interface AuspiceBootstrapMetadata {
 
 export interface AuspiceExportOptions {
   tree: AuspiceSourceTreeNode;
+  fullTree?: AuspiceSourceTreeNode;
+  attributeTree?: AuspiceSourceTreeNode;
   nodes?: any[];
   nodeFields?: string[];
   metadataFieldKeys?: string[];
   coloringFieldKeys?: string[];
   filterFieldKeys?: string[];
+  treeScope?: AuspiceTreeScope;
   title?: string;
   updated?: Date | string;
   colorBy?: string;
@@ -112,6 +116,14 @@ const EXCLUDED_FIELD_KEYS = new Set([
   '_ambiguity',
   'mutations',
   'data',
+  'length',
+  'depth',
+  'height',
+  'parent',
+  'children',
+  '_guid',
+  'representing',
+  'respresenting',
   'x',
   'y',
   'vx',
@@ -161,12 +173,21 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   }
 
   const nodes = Array.isArray(options.nodes) ? options.nodes : [];
-  const leafNames = collectLeafNamesAndValidate(options.tree);
   const nodeByName = indexNodesByName(nodes);
-  const availableExportFields = buildExportFields(options, nodes);
+  const exportTree = resolveExportTree(options);
+  const leafNames = collectLeafNamesAndValidate(exportTree);
+  const attributeTree = options.attributeTree ?? options.fullTree;
+  const attributeNodes = [
+    ...nodes,
+    ...collectTreeAttributeNodes(exportTree),
+    ...collectTreeAttributeNodes(attributeTree),
+  ];
+  const availableExportFields = buildExportFields(options, attributeNodes);
   const exportFields = selectExportFields(availableExportFields, options.metadataFieldKeys);
   const coordinateByLeaf = buildCoordinateIndex(options, leafNames, nodeByName);
   const usedNames = new Set(leafNames);
+  const attributeDataByClade = indexTreeDataByDescendantLeaves(attributeTree);
+  const exportCladeKeyByNode = indexDescendantLeafKeys(exportTree);
   const bootstrapUniverse = options.bootstrap?.labels?.length
     ? options.bootstrap.labels.map(value => String(value))
     : leafNames;
@@ -196,9 +217,10 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     nodeAttrs.div = divergence;
     const sourceName = String(source.id ?? '');
     const sessionNode = sourceName.trim() ? nodeByName.get(sourceName) : undefined;
+    const attributeData = attributeDataByClade.get(exportCladeKeyByNode.get(source) ?? '');
 
     exportFields.forEach(field => {
-      const rawValue = sessionNode?.[field.sourceKey];
+      const rawValue = getNodeAttributeValue(source, sessionNode, attributeData, field.sourceKey);
       if (isExportableScalar(rawValue)) {
         nodeAttrs[field.auspiceKey] = { value: rawValue };
       }
@@ -212,7 +234,9 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
 
     const labels: Record<string, string> = Object.create(null);
     if (!isLeaf) {
-      const originalLabel = String(source.id ?? '').trim();
+      const sourceLabel = String(source.id ?? '').trim();
+      const attributeLabel = String(attributeData?._id ?? attributeData?.id ?? '').trim();
+      const originalLabel = sourceLabel || attributeLabel;
       const support = getBootstrapSupport(source, options.bootstrap, bootstrapUniverse, isRoot);
       if (support !== null) {
         labels.bootstrap = formatBootstrapSupportLabel(
@@ -246,7 +270,7 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     return output;
   };
 
-  const tree = convertTree(options.tree, 0, true);
+  const tree = convertTree(exportTree, 0, true);
   const selectedColoringKeys = normalizeSelectedKeys(options.coloringFieldKeys);
   const colorings = exportFields
     .filter(field => selectedColoringKeys === null || selectedColoringKeys.has(field.auspiceKey))
@@ -322,12 +346,18 @@ export function getAuspiceExportFieldOptions(
   options: AuspiceExportOptions,
 ): AuspiceExportFieldOption[] {
   const nodes = Array.isArray(options.nodes) ? options.nodes : [];
-  const fields: AuspiceExportFieldOption[] = buildExportFields(options, nodes)
+  const exportTree = resolveExportTree(options);
+  const attributeNodes = [
+    ...nodes,
+    ...collectTreeAttributeNodes(exportTree),
+    ...collectTreeAttributeNodes(options.attributeTree ?? options.fullTree),
+  ];
+  const fields: AuspiceExportFieldOption[] = buildExportFields(options, attributeNodes)
     .map(field => ({ ...field.coloring }));
 
   if (options.tree) {
-    const leafNames = collectLeafNamesAndValidate(options.tree);
     const nodeByName = indexNodesByName(nodes);
+    const leafNames = collectLeafNamesAndValidate(exportTree);
     if (buildCoordinateIndex(options, leafNames, nodeByName).size) {
       fields.push({
         key: SYNTHETIC_LOCATION_KEY,
@@ -339,6 +369,96 @@ export function getAuspiceExportFieldOptions(
   }
 
   return fields;
+}
+
+function resolveExportTree(options: AuspiceExportOptions): AuspiceSourceTreeNode {
+  if (options.treeScope === 'full' && options.fullTree) return options.fullTree;
+  return options.tree;
+}
+
+function getTreeNodeData(source: AuspiceSourceTreeNode): Record<string, any> | null {
+  const data = source?.data;
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+}
+
+function collectTreeAttributeNodes(tree: AuspiceSourceTreeNode | undefined): any[] {
+  if (!tree) return [];
+  const attributeNodes: any[] = [];
+  const visit = (node: AuspiceSourceTreeNode): void => {
+    const data = getTreeNodeData(node);
+    if (data) attributeNodes.push(data);
+    (Array.isArray(node.children) ? node.children : []).forEach(visit);
+  };
+  visit(tree);
+  return attributeNodes;
+}
+
+function getNodeAttributeValue(
+  source: AuspiceSourceTreeNode,
+  sessionNode: any,
+  attributeData: Record<string, any> | undefined,
+  field: string,
+): unknown {
+  if (sessionNode && Object.prototype.hasOwnProperty.call(sessionNode, field)) {
+    return sessionNode[field];
+  }
+  const sourceData = getTreeNodeData(source);
+  if (sourceData && Object.prototype.hasOwnProperty.call(sourceData, field)) {
+    return sourceData[field];
+  }
+  return attributeData && Object.prototype.hasOwnProperty.call(attributeData, field)
+    ? attributeData[field]
+    : undefined;
+}
+
+function indexDescendantLeafKeys(
+  tree: AuspiceSourceTreeNode | undefined,
+): Map<AuspiceSourceTreeNode, string> {
+  const keys = new Map<AuspiceSourceTreeNode, string>();
+  if (!tree) return keys;
+
+  const visit = (node: AuspiceSourceTreeNode): string[] => {
+    const children = Array.isArray(node.children) ? node.children : [];
+    const leaves = children.length
+      ? children.flatMap(visit)
+      : [String(node.id ?? '')];
+    keys.set(node, createLeafSetKey(leaves));
+    return leaves;
+  };
+  visit(tree);
+  return keys;
+}
+
+function indexTreeDataByDescendantLeaves(
+  tree: AuspiceSourceTreeNode | undefined,
+): Map<string, Record<string, any>> {
+  const result = new Map<string, Record<string, any>>();
+  const ambiguousKeys = new Set<string>();
+  if (!tree) return result;
+
+  const keys = indexDescendantLeafKeys(tree);
+  const visit = (node: AuspiceSourceTreeNode): void => {
+    const key = keys.get(node) ?? '';
+    const data = getTreeNodeData(node);
+    if (key && data && !ambiguousKeys.has(key)) {
+      if (result.has(key)) {
+        result.delete(key);
+        ambiguousKeys.add(key);
+      } else {
+        result.set(key, data);
+      }
+    }
+    (Array.isArray(node.children) ? node.children : []).forEach(visit);
+  };
+  visit(tree);
+  return result;
+}
+
+function createLeafSetKey(leafNames: string[]): string {
+  return [...leafNames]
+    .sort()
+    .map(name => `${name.length}:${name}`)
+    .join('|');
 }
 
 function collectLeafNamesAndValidate(root: AuspiceSourceTreeNode): string[] {

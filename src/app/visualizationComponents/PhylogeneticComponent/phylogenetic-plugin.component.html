@@ -377,7 +377,7 @@
                 <input type="text" id="auspice-json-filename" class="form-control form-control-sm" placeholder="Auspice JSON Filename" [(ngModel)]="SelectedAuspiceFilenameVariable">
               </div>
               <p class="mb-0">
-                Downloads the current tree locally as an Auspice v2 JSON file; MicrobeTrace does not upload it. Open the downloaded file with
+                Downloads the selected tree scope locally as an Auspice v2 JSON file; MicrobeTrace does not upload it. Open the downloaded file with
                 <a href="https://auspice.us" target="_blank" rel="noopener noreferrer">auspice.us</a>
                 or <a href="https://docs.nextstrain.org/projects/auspice/en/stable/introduction/how-to-run.html" target="_blank" rel="noopener noreferrer">auspice view</a>.
               </p>
@@ -386,6 +386,34 @@
                 <p class="auspice-advanced-help">
                   Choose which fields are included as node metadata and which appear in Auspice's Color By and Filters menus. All eligible fields are selected by default.
                 </p>
+                <fieldset class="auspice-tree-scope" aria-describedby="auspice-tree-scope-help">
+                  <legend>Tree scope</legend>
+                  <div class="auspice-tree-scope-options">
+                    <label class="auspice-tree-scope-option" for="auspice-tree-scope-full">
+                      <input
+                        type="radio"
+                        id="auspice-tree-scope-full"
+                        name="auspice-tree-scope"
+                        value="full"
+                        [(ngModel)]="SelectedAuspiceTreeScope"
+                        (change)="onAuspiceTreeScopeChange()">
+                      <span>Full tree</span>
+                    </label>
+                    <label class="auspice-tree-scope-option" for="auspice-tree-scope-visible">
+                      <input
+                        type="radio"
+                        id="auspice-tree-scope-visible"
+                        name="auspice-tree-scope"
+                        value="visible"
+                        [(ngModel)]="SelectedAuspiceTreeScope"
+                        (change)="onAuspiceTreeScopeChange()">
+                      <span>Visible tree</span>
+                    </label>
+                  </div>
+                  <small id="auspice-tree-scope-help" class="auspice-tree-scope-help">
+                    Full tree exports the complete topology saved before entering a subtree view. Visible tree exports the topology currently shown, including a selected subtree. Filters do not prune either export; each node's visible value is retained as metadata.
+                  </small>
+                </fieldset>
                 <div class="auspice-option-grid">
                   <section class="auspice-option-menu" aria-labelledby="auspice-metadata-heading">
                     <div class="auspice-option-menu-header">
