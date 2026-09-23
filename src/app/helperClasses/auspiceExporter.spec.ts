@@ -268,15 +268,15 @@ describe('Auspice v2 exporter', () => {
     expect(leafA.node_attrs.group).toEqual({ value: 'alpha' });
     expect(leafA.node_attrs.note).toEqual({ value: 'first' });
     expect(leafA.node_attrs.score).toBeUndefined();
-    expect(leafA.node_attrs.microbetrace_location).toEqual({ value: 'A' });
+    expect(leafA.node_attrs.microbetrace_location).toEqual({ value: 'Location 1' });
   });
 
-  it('adds a partial map from resolved and configured coordinates', () => {
+  it('groups identical coordinates in a partial map', () => {
     const dataset = buildAuspiceV2Dataset({
       tree: fourTipTree(),
       nodes: [
         { _id: 'A', _lat: 13.4, _lon: 144.7 },
-        { _id: 'B', latitude: '18.5N', longitude: '66.1W' },
+        { _id: 'B', latitude: '13.4N', longitude: '144.7E' },
         { _id: 'C', lat_field: '34.1', lon_field: '-118.2' },
         { _id: 'D', latitude: 95, longitude: 200 },
       ],
@@ -290,9 +290,8 @@ describe('Auspice v2 exporter', () => {
       key: 'microbetrace_location',
       title: 'MicrobeTrace location',
       demes: {
-        A: { latitude: 13.4, longitude: 144.7 },
-        B: { latitude: 18.5, longitude: -66.1 },
-        C: { latitude: 34.1, longitude: -118.2 },
+        'Location 1': { latitude: 13.4, longitude: 144.7 },
+        'Location 2': { latitude: 34.1, longitude: -118.2 },
       },
     })]);
     expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
@@ -301,8 +300,62 @@ describe('Auspice v2 exporter', () => {
     }));
 
     const leaves = dataset.tree.children!.flatMap(branch => branch.children || []);
-    expect(leaves.find(leaf => leaf.name === 'A')!.node_attrs.microbetrace_location).toEqual({ value: 'A' });
+    expect(leaves.find(leaf => leaf.name === 'A')!.node_attrs.microbetrace_location)
+      .toEqual({ value: 'Location 1' });
+    expect(leaves.find(leaf => leaf.name === 'B')!.node_attrs.microbetrace_location)
+      .toEqual({ value: 'Location 1' });
+    expect(leaves.find(leaf => leaf.name === 'C')!.node_attrs.microbetrace_location)
+      .toEqual({ value: 'Location 2' });
     expect(leaves.find(leaf => leaf.name === 'D')!.node_attrs.microbetrace_location).toBeUndefined();
+  });
+
+  it('exports named country, state, and coordinate-grouped site resolutions', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: fourTipTree(),
+      nodes: [
+        { _id: 'A', country_name: 'United States', region: 'Georgia', clinic: 'Downtown', _lat: 33.75, _lon: -84.39 },
+        { _id: 'B', country_name: 'United States', region: 'Georgia', clinic: 'Secondary', _lat: 33.75, _lon: -84.39 },
+        { _id: 'C', country_name: 'United States', region: 'Alabama', clinic: 'Mobile', _lat: 30.69, _lon: -88.04 },
+        { _id: 'D', country_name: 'Canada', region: 'Ontario', clinic: 'Toronto' },
+      ],
+      geographyFields: [
+        { key: 'country', title: 'Country', field: 'country_name' },
+        { key: 'state', title: 'State', field: 'region' },
+        { key: 'site', title: 'Site', field: 'clinic' },
+      ],
+    });
+
+    expect(dataset.meta.panels).toEqual(['tree', 'map']);
+    expect(dataset.meta.display_defaults.geo_resolution).toBe('site');
+    expect(dataset.meta.geo_resolutions?.map(resolution => resolution.key))
+      .toEqual(['country', 'state', 'site']);
+    const country = dataset.meta.geo_resolutions!.find(resolution => resolution.key === 'country')!;
+    const state = dataset.meta.geo_resolutions!.find(resolution => resolution.key === 'state')!;
+    const site = dataset.meta.geo_resolutions!.find(resolution => resolution.key === 'site')!;
+    expect(Object.keys(country.demes)).toEqual(['United States']);
+    expect(country.demes['United States'].latitude).toBeCloseTo(32.74, 1);
+    expect(country.demes['United States'].longitude).toBeCloseTo(-85.63, 1);
+    expect(state.demes).toEqual({
+      Alabama: { latitude: 30.69, longitude: -88.04 },
+      Georgia: { latitude: 33.75, longitude: -84.39 },
+    });
+    expect(site.demes).toEqual({
+      Downtown: { latitude: 33.75, longitude: -84.39 },
+      Mobile: { latitude: 30.69, longitude: -88.04 },
+    });
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'country', type: 'categorical' }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'state', type: 'categorical' }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'site', type: 'categorical' }));
+
+    const leaves = dataset.tree.children!.flatMap(branch => branch.children || []);
+    const leafA = leaves.find(leaf => leaf.name === 'A')!;
+    const leafB = leaves.find(leaf => leaf.name === 'B')!;
+    const leafD = leaves.find(leaf => leaf.name === 'D')!;
+    expect(leafA.node_attrs.country).toEqual({ value: 'United States' });
+    expect(leafA.node_attrs.state).toEqual({ value: 'Georgia' });
+    expect(leafA.node_attrs.site).toEqual({ value: 'Downtown' });
+    expect(leafB.node_attrs.site).toEqual({ value: 'Downtown' });
+    expect(leafD.node_attrs.site).toBeUndefined();
   });
 
   it('exports stored bootstrap support as a default branch label', () => {
@@ -352,12 +405,16 @@ describe('Auspice v2 exporter', () => {
       title: 'Synthetic compatibility fixture',
       updated: '2026-09-22',
       nodes: [
-        { _id: 'A', cluster: 'one', score: 1, selected: true, visible: true, _lat: 33.7, _lon: -84.4 },
-        { _id: 'B', cluster: 'one', score: 2, selected: false, visible: true, _lat: 40.7, _lon: -74 },
+        { _id: 'A', cluster: 'one', score: 1, selected: true, visible: true, country: 'united_states', site_name: 'atlanta', _lat: 33.7, _lon: -84.4 },
+        { _id: 'B', cluster: 'one', score: 2, selected: false, visible: true, country: 'united_states', site_name: 'new_york', _lat: 40.7, _lon: -74 },
         { _id: 'C', cluster: 'two', score: 3, selected: false, visible: false },
         { _id: 'D', cluster: 'two', score: 4, selected: true, visible: true },
       ],
-      nodeFields: ['_id', 'cluster', 'score', 'selected', 'visible'],
+      nodeFields: ['_id', 'cluster', 'score', 'selected', 'visible', 'country', 'site_name'],
+      geographyFields: [
+        { key: 'country', title: 'Country', field: 'country' },
+        { key: 'site', title: 'Site', field: 'site_name' },
+      ],
       colorBy: 'cluster',
       bootstrap: {
         labels: ['A', 'B', 'C', 'D'],

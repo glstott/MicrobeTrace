@@ -210,6 +210,16 @@ export default class AuspiceHandler {
     });
   }
 
+  private getPreferredGeoResolution = (metadata) => {
+    const geoResolutions = this.getGeoResolutions(metadata);
+    const configuredKey = metadata?.display_defaults?.geo_resolution;
+    return geoResolutions.find(candidate => candidate.key === configuredKey)
+      || geoResolutions.find(candidate => candidate.key === 'location')
+      || geoResolutions.find(candidate => candidate.key === 'site')
+      || geoResolutions.find(candidate => candidate.key === 'microbetrace_location')
+      || geoResolutions[0];
+  }
+
   private buildMapData = (metadata) => {
     const mapData = {
       countries: this.emptyFeatureCollection(),
@@ -224,12 +234,11 @@ export default class AuspiceHandler {
     this.addResolutionFeatures(
       mapData.states.features,
       geoResolutions.find(resolution => resolution.key === 'division')
+        || geoResolutions.find(resolution => resolution.key === 'state')
     );
-    const microbeTraceResolution = geoResolutions.find(
-      resolution => resolution.key === 'microbetrace_location'
-    );
-    if (microbeTraceResolution) {
-      this.addResolutionFeatures(mapData.countries.features, microbeTraceResolution);
+    const preferredResolution = this.getPreferredGeoResolution(metadata);
+    if (preferredResolution && !['country', 'division', 'state'].includes(preferredResolution.key)) {
+      this.addResolutionFeatures(mapData.countries.features, preferredResolution);
     }
 
     return mapData;
@@ -237,10 +246,7 @@ export default class AuspiceHandler {
 
   public addLatLong = (nodes, metadata) => {
     const newNodes = [];
-    const geoResolutions = this.getGeoResolutions(metadata);
-    const resolution = geoResolutions.find(candidate => candidate.key === 'location')
-      || geoResolutions.find(candidate => candidate.key === 'microbetrace_location')
-      || geoResolutions[0];
+    const resolution = this.getPreferredGeoResolution(metadata);
     const preferredKey = resolution?.key;
 
     for (const node of nodes) {

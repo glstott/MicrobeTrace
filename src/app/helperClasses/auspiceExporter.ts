@@ -33,6 +33,12 @@ export interface AuspiceGeoResolution {
   demes: Record<string, AuspiceGeoCoordinates>;
 }
 
+export interface AuspiceGeographyField {
+  key: string;
+  title: string;
+  field: string;
+}
+
 export interface AuspiceTreeNode {
   name: string;
   node_attrs: Record<string, number | AuspiceNodeAttribute>;
@@ -92,6 +98,7 @@ export interface AuspiceExportOptions {
   temporalFields?: string[];
   latitudeField?: string;
   longitudeField?: string;
+  geographyFields?: AuspiceGeographyField[];
   bootstrap?: AuspiceBootstrapMetadata | null;
 }
 
@@ -99,6 +106,12 @@ interface ExportField {
   sourceKey: string;
   auspiceKey: string;
   coloring: AuspiceColoring;
+}
+
+interface BuiltGeography {
+  resolutions: AuspiceGeoResolution[];
+  traitsByLeaf: Map<string, Map<string, string>>;
+  defaultResolutionKey?: string;
 }
 
 const SYNTHETIC_LOCATION_KEY = 'microbetrace_location';
@@ -184,7 +197,7 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   ];
   const availableExportFields = buildExportFields(options, attributeNodes);
   const exportFields = selectExportFields(availableExportFields, options.metadataFieldKeys);
-  const coordinateByLeaf = buildCoordinateIndex(options, leafNames, nodeByName);
+  const geography = buildGeography(options, leafNames, nodeByName);
   const usedNames = new Set(leafNames);
   const attributeDataByClade = indexTreeDataByDescendantLeaves(attributeTree);
   const exportCladeKeyByNode = indexDescendantLeafKeys(exportTree);
@@ -227,9 +240,9 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     });
 
     if (isLeaf) {
-      if (coordinateByLeaf.has(name)) {
-        nodeAttrs[SYNTHETIC_LOCATION_KEY] = { value: name };
-      }
+      geography.traitsByLeaf.get(name)?.forEach((value, key) => {
+        nodeAttrs[key] = { value };
+      });
     }
 
     const labels: Record<string, string> = Object.create(null);
@@ -275,26 +288,17 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const colorings = exportFields
     .filter(field => selectedColoringKeys === null || selectedColoringKeys.has(field.auspiceKey))
     .map(field => field.coloring);
-  let geoResolutions: AuspiceGeoResolution[] | undefined;
-
-  if (coordinateByLeaf.size) {
-    const demes: Record<string, AuspiceGeoCoordinates> = Object.create(null);
-    coordinateByLeaf.forEach((coordinates, leafName) => {
-      demes[leafName] = coordinates;
-    });
-    geoResolutions = [{
-      key: SYNTHETIC_LOCATION_KEY,
-      title: 'MicrobeTrace location',
-      demes,
-    }];
-    if (selectedColoringKeys === null || selectedColoringKeys.has(SYNTHETIC_LOCATION_KEY)) {
+  const geoResolutions = geography.resolutions;
+  geoResolutions.forEach(resolution => {
+    if ((selectedColoringKeys === null || selectedColoringKeys.has(resolution.key))
+        && !colorings.some(coloring => coloring.key === resolution.key)) {
       colorings.push({
-        key: SYNTHETIC_LOCATION_KEY,
-        title: 'MicrobeTrace location',
+        key: resolution.key,
+        title: resolution.title || resolution.key,
         type: 'categorical',
       });
     }
-  }
+  });
 
   const fieldBySource = new Map(exportFields.map(field => [field.sourceKey, field]));
   const selectedColoring = fieldBySource.get(String(options.colorBy ?? ''));
@@ -307,14 +311,14 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   if (exportedBootstrapLabel) {
     displayDefaults.branch_label = 'bootstrap';
   }
-  if (geoResolutions) {
-    displayDefaults.geo_resolution = SYNTHETIC_LOCATION_KEY;
+  if (geography.defaultResolutionKey) {
+    displayDefaults.geo_resolution = geography.defaultResolutionKey;
   }
 
   const meta: AuspiceMeta = {
     title: String(options.title ?? '').trim() || DEFAULT_TITLE,
     updated: formatUpdatedDate(options.updated),
-    panels: coordinateByLeaf.size ? ['tree', 'map'] : ['tree'],
+    panels: geoResolutions.length ? ['tree', 'map'] : ['tree'],
     display_defaults: displayDefaults,
   };
   if (colorings.length) {
@@ -325,13 +329,15 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const filters = exportFields
     .map(field => field.auspiceKey)
     .filter(key => selectedFilterKeys.has(key));
-  if (coordinateByLeaf.size && selectedFilterKeys.has(SYNTHETIC_LOCATION_KEY)) {
-    filters.push(SYNTHETIC_LOCATION_KEY);
-  }
+  geoResolutions.forEach(resolution => {
+    if (selectedFilterKeys.has(resolution.key) && !filters.includes(resolution.key)) {
+      filters.push(resolution.key);
+    }
+  });
   if (filters.length) {
     meta.filters = filters;
   }
-  if (geoResolutions) {
+  if (geoResolutions.length) {
     meta.geo_resolutions = geoResolutions;
   }
 
@@ -358,14 +364,17 @@ export function getAuspiceExportFieldOptions(
   if (options.tree) {
     const nodeByName = indexNodesByName(nodes);
     const leafNames = collectLeafNamesAndValidate(exportTree);
-    if (buildCoordinateIndex(options, leafNames, nodeByName).size) {
+    const existingKeys = new Set(fields.map(field => field.key));
+    buildGeography(options, leafNames, nodeByName).resolutions.forEach(resolution => {
+      if (existingKeys.has(resolution.key)) return;
+      existingKeys.add(resolution.key);
       fields.push({
-        key: SYNTHETIC_LOCATION_KEY,
-        title: 'MicrobeTrace location',
+        key: resolution.key,
+        title: resolution.title || resolution.key,
         type: 'categorical',
         synthetic: true,
       });
-    }
+    });
   }
 
   return fields;
@@ -601,6 +610,192 @@ function inferColoringType(values: AuspiceScalar[], configuredTemporal: boolean)
   if (values.every(value => typeof value === 'boolean')) return 'boolean';
   if (values.every(value => typeof value === 'number')) return 'continuous';
   return 'categorical';
+}
+
+function buildGeography(
+  options: AuspiceExportOptions,
+  leafNames: string[],
+  nodeByName: Map<string, any>,
+): BuiltGeography {
+  const coordinateByLeaf = buildCoordinateIndex(options, leafNames, nodeByName);
+  const traitsByLeaf = new Map<string, Map<string, string>>();
+  if (!coordinateByLeaf.size) return { resolutions: [], traitsByLeaf };
+
+  const geographyFields = normalizeGeographyFields(options.geographyFields);
+  const siteField = geographyFields.find(definition => definition.key === 'site');
+  const namedFields = geographyFields.filter(definition => definition.key !== 'site');
+  const resolutions: AuspiceGeoResolution[] = [];
+
+  namedFields.forEach(definition => {
+    const groups = new Map<string, { coordinates: AuspiceGeoCoordinates[]; leaves: string[] }>();
+    coordinateByLeaf.forEach((coordinates, leafName) => {
+      const deme = readDemeName(nodeByName.get(leafName)?.[definition.field]);
+      if (!deme) return;
+      const group = groups.get(deme) || { coordinates: [], leaves: [] };
+      group.coordinates.push(coordinates);
+      group.leaves.push(leafName);
+      groups.set(deme, group);
+    });
+    if (!groups.size) return;
+
+    const demes: Record<string, AuspiceGeoCoordinates> = Object.create(null);
+    Array.from(groups.keys()).sort((left, right) => left.localeCompare(right)).forEach(deme => {
+      const group = groups.get(deme)!;
+      demes[deme] = geographicCentroid(group.coordinates);
+      group.leaves.forEach(leafName => setGeographyTrait(
+        traitsByLeaf,
+        leafName,
+        definition.key,
+        deme,
+      ));
+    });
+    resolutions.push({ key: definition.key, title: definition.title, demes });
+  });
+
+  const coordinateGroups = new Map<string, {
+    coordinates: AuspiceGeoCoordinates;
+    leaves: string[];
+    namesByPriority: Array<Set<string>>;
+  }>();
+  const pointNameFields = [
+    ...(siteField ? [siteField] : []),
+    ...[...namedFields].reverse(),
+  ];
+  coordinateByLeaf.forEach((coordinates, leafName) => {
+    const coordinateKey = createCoordinateKey(coordinates);
+    const group = coordinateGroups.get(coordinateKey) || {
+      coordinates,
+      leaves: [],
+      namesByPriority: pointNameFields.map(() => new Set<string>()),
+    };
+    group.leaves.push(leafName);
+    const node = nodeByName.get(leafName);
+    pointNameFields.some((definition, priority) => {
+      const candidate = readDemeName(node?.[definition.field]);
+      if (!candidate) return false;
+      group.namesByPriority[priority].add(candidate);
+      return true;
+    });
+    coordinateGroups.set(coordinateKey, group);
+  });
+
+  const pointKey = siteField ? 'site' : SYNTHETIC_LOCATION_KEY;
+  const pointTitle = siteField?.title || 'MicrobeTrace location';
+  const pointDemes: Record<string, AuspiceGeoCoordinates> = Object.create(null);
+  const usedDemeNames = new Set<string>();
+  Array.from(coordinateGroups.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([, group], index) => {
+      const preferredNames = group.namesByPriority.find(names => names.size > 0);
+      const preferredName = Array.from(preferredNames || [])
+        .sort((left, right) => left.localeCompare(right))[0];
+      const fallbackName = `${siteField ? 'Site' : 'Location'} ${index + 1}`;
+      const deme = allocateDemeName(preferredName || fallbackName, usedDemeNames);
+      pointDemes[deme] = group.coordinates;
+      group.leaves.forEach(leafName => setGeographyTrait(
+        traitsByLeaf,
+        leafName,
+        pointKey,
+        deme,
+      ));
+    });
+  resolutions.push({ key: pointKey, title: pointTitle, demes: pointDemes });
+
+  return {
+    resolutions,
+    traitsByLeaf,
+    defaultResolutionKey: pointKey,
+  };
+}
+
+function normalizeGeographyFields(
+  fields: AuspiceGeographyField[] | undefined,
+): AuspiceGeographyField[] {
+  const normalized: AuspiceGeographyField[] = [];
+  const usedKeys = new Set<string>();
+  const usedFields = new Set<string>();
+  (Array.isArray(fields) ? fields : []).forEach(definition => {
+    const field = String(definition?.field ?? '').trim();
+    const key = String(definition?.key ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    if (!field || field.toLowerCase() === 'none' || !key || key === 'div'
+        || usedKeys.has(key) || usedFields.has(field.toLowerCase())) {
+      return;
+    }
+    usedKeys.add(key);
+    usedFields.add(field.toLowerCase());
+    normalized.push({
+      key,
+      title: String(definition?.title ?? '').trim() || key,
+      field,
+    });
+  });
+  return normalized;
+}
+
+function readDemeName(value: unknown): string | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null;
+  if (typeof value !== 'string') return null;
+  const name = value.trim();
+  return name && name.toLowerCase() !== 'none' ? name : null;
+}
+
+function setGeographyTrait(
+  traitsByLeaf: Map<string, Map<string, string>>,
+  leafName: string,
+  key: string,
+  value: string,
+): void {
+  const traits = traitsByLeaf.get(leafName) || new Map<string, string>();
+  traits.set(key, value);
+  traitsByLeaf.set(leafName, traits);
+}
+
+function createCoordinateKey(coordinates: AuspiceGeoCoordinates): string {
+  const latitude = Object.is(coordinates.latitude, -0) ? 0 : coordinates.latitude;
+  const longitude = Object.is(coordinates.longitude, -0) ? 0 : coordinates.longitude;
+  return `${latitude}|${longitude}`;
+}
+
+function allocateDemeName(preferredName: string, usedNames: Set<string>): string {
+  let candidate = preferredName;
+  let suffix = 2;
+  while (usedNames.has(candidate)) candidate = `${preferredName} (${suffix++})`;
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function geographicCentroid(coordinates: AuspiceGeoCoordinates[]): AuspiceGeoCoordinates {
+  if (coordinates.length === 1) return { ...coordinates[0] };
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  coordinates.forEach(coordinate => {
+    const latitude = coordinate.latitude * Math.PI / 180;
+    const longitude = coordinate.longitude * Math.PI / 180;
+    const latitudeCosine = Math.cos(latitude);
+    x += latitudeCosine * Math.cos(longitude);
+    y += latitudeCosine * Math.sin(longitude);
+    z += Math.sin(latitude);
+  });
+  const horizontal = Math.sqrt(x * x + y * y);
+  if (horizontal < 1e-12 && Math.abs(z) < 1e-12) {
+    return {
+      latitude: roundCoordinate(coordinates.reduce((sum, value) => sum + value.latitude, 0) / coordinates.length),
+      longitude: roundCoordinate(coordinates.reduce((sum, value) => sum + value.longitude, 0) / coordinates.length),
+    };
+  }
+  return {
+    latitude: roundCoordinate(Math.atan2(z, horizontal) * 180 / Math.PI),
+    longitude: roundCoordinate(Math.atan2(y, x) * 180 / Math.PI),
+  };
+}
+
+function roundCoordinate(value: number): number {
+  return Number(value.toFixed(8));
 }
 
 function buildCoordinateIndex(

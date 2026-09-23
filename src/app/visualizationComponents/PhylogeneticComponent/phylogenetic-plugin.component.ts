@@ -46,6 +46,7 @@ import {
   AuspiceExportError,
   AuspiceExportFieldOption,
   AuspiceExportOptions,
+  AuspiceGeographyField,
   AuspiceSourceTreeNode,
   AuspiceTreeScope,
   buildAuspiceV2Dataset,
@@ -1591,6 +1592,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       temporalFields: this.getAuspiceTemporalFields(),
       latitudeField: widgets['map-field-lat'],
       longitudeField: widgets['map-field-lon'],
+      geographyFields: this.getAuspiceGeographyFields(),
       bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
     };
   }
@@ -1645,9 +1647,14 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     selection: Set<string>,
     availableKeys: Set<string>,
   ): Set<string> {
+    const syntheticKeys = new Set(
+      this.AuspiceColoringFieldOptions
+        .filter(field => field.synthetic)
+        .map(field => field.key),
+    );
     return new Set(Array.from(selection).filter(key => (
       availableKeys.has(key)
-      && (key === 'microbetrace_location' || this.SelectedAuspiceMetadataFieldKeys.has(key))
+      && (syntheticKeys.has(key) || this.SelectedAuspiceMetadataFieldKeys.has(key))
     )));
   }
 
@@ -1679,6 +1686,55 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return timelineFields.filter(field => (
       typeof field === 'string' && field.trim() && field !== 'None'
     ));
+  }
+
+  private getAuspiceGeographyFields(): AuspiceGeographyField[] {
+    const widgets = this.commonService.session.style.widgets;
+    const availableFields = Array.isArray(this.commonService.session.data?.nodeFields)
+      ? this.commonService.session.data.nodeFields.filter(field => typeof field === 'string')
+      : [];
+    const fieldByLowerName = new Map<string, string>();
+    availableFields.forEach(field => {
+      const normalized = field.trim().toLowerCase();
+      if (normalized && !fieldByLowerName.has(normalized)) fieldByLowerName.set(normalized, field);
+    });
+    const resolveField = (widgetKey: string, inferredNames: string[]): string | null => {
+      const configured = widgets[widgetKey];
+      if (typeof configured === 'string' && configured.trim() && configured !== 'None') {
+        return configured.trim();
+      }
+      for (const name of inferredNames) {
+        const match = fieldByLowerName.get(name);
+        if (match) return match;
+      }
+      return null;
+    };
+    const definitions: Array<{
+      key: string;
+      title: string;
+      widgetKey: string;
+      inferredNames: string[];
+    }> = [
+      { key: 'country', title: 'Country', widgetKey: 'map-field-country', inferredNames: ['country', 'country_name', 'nation'] },
+      { key: 'state', title: 'State', widgetKey: 'map-field-state', inferredNames: ['state', 'state_name', 'division', 'province'] },
+      { key: 'county', title: 'County', widgetKey: 'map-field-county', inferredNames: ['county', 'county_name'] },
+      { key: 'zipcode', title: 'ZIP code', widgetKey: 'map-field-zipcode', inferredNames: ['zipcode', 'zip_code', 'postal_code'] },
+      { key: 'tract', title: 'Census tract', widgetKey: 'map-field-tract', inferredNames: ['tract', 'census_tract'] },
+      {
+        key: 'site',
+        title: 'Site',
+        widgetKey: '',
+        inferredNames: [
+          'site', 'site_name', 'location', 'location_name', 'facility', 'facility_name',
+          'venue', 'venue_name', 'microbetrace_location',
+        ],
+      },
+    ];
+
+    return definitions.flatMap(definition => {
+      const field = resolveField(definition.widgetKey, definition.inferredNames);
+      return field ? [{ key: definition.key, title: definition.title, field }] : [];
+    });
   }
 
 

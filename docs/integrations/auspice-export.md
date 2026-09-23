@@ -25,7 +25,8 @@ The single JSON file follows the Auspice v2 `version`, `meta`, and `tree` struct
 - exact tip IDs and deterministic internal node names;
 - safe scalar node metadata, including retained metadata on uniquely identifiable internal nodes, plus tip identity, cluster, degree, selected/visible state, and valid latitude/longitude values when present;
 - the current node color-by field when that field is exportable;
-- current resolved tip coordinates as a `microbetrace_location` geography, without external geocoding;
+- current resolved tip coordinates without external geocoding, grouping tips at identical coordinates into one location and using meaningful site/location values as deme names when available;
+- separate country, state, county, ZIP code, census tract, and site resolutions when the corresponding configured or conventionally named fields are available; named administrative demes use the spherical centroid of their mapped tips;
 - stored bootstrap support when its split still matches a current branch; and
 - categorical, continuous, boolean, and supported date colorings and filters.
 
@@ -48,7 +49,7 @@ Export stops with an inline error instead of changing invalid data when a tip ID
 
 ## Round-trip limitations
 
-An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, retained scalar fields on identifiable internal nodes, and synthetic tip coordinates. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported Auspice dataset. Pixel-level styling, inferred ancestral geography, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
+An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, retained scalar fields on identifiable internal nodes, and tip coordinates from the default geographic resolution. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported Auspice dataset. Pixel-level styling, inferred ancestral geography, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
 
 Auspice displays sibling arrays in reverse traversal order compared with MicrobeTrace. The JSON therefore stores sibling arrays in the opposite order so that the visible tree orientation—including branch rotations—matches when the file is opened in Auspice. MicrobeTrace applies the same convention when an Auspice file is imported.
 

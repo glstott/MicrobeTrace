@@ -230,18 +230,24 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
           expect(node, `session node for ${leafId}`).to.exist;
           node.auspice_group = index % 2 ? 'group_b' : 'group_a';
           node.auspice_date = `2026-09-${String((index % 20) + 1).padStart(2, '0')}`;
+          node.auspice_country = 'United States';
+          node.auspice_state = index < 2 ? 'Georgia' : 'Alabama';
+          node.site = index < 2 ? 'Atlanta clinic' : 'Mobile clinic';
           node.seq = 'ACGTACGT';
-          if (index < 2) {
-            node._lat = 33.7 + index;
-            node._lon = -84.4 - index;
+          if (index < 3) {
+            node._lat = index < 2 ? 33.7 : 30.69;
+            node._lon = index < 2 ? -84.4 : -88.04;
           }
         });
         session.data.nodeFields = Array.from(new Set([
           ...(session.data.nodeFields || []),
-          'auspice_group', 'auspice_date', 'seq', '_lat', '_lon',
+          'auspice_group', 'auspice_date', 'auspice_country', 'auspice_state',
+          'site', 'seq', '_lat', '_lon',
         ]));
         session.style.widgets['node-color-variable'] = 'auspice_group';
         session.style.widgets['timeline-date-field'] = 'auspice_date';
+        session.style.widgets['map-field-country'] = 'auspice_country';
+        session.style.widgets['map-field-state'] = 'auspice_state';
         session.data.phylogeneticBootstrap = {
           labels: expectedLeafIds,
           supportBySplitKey: { [split!.key]: 96.5 },
@@ -264,7 +270,7 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         expect(dataset.meta.panels).to.deep.equal(['tree', 'map']);
         expect(dataset.meta.display_defaults.distance_measure).to.equal('div');
         expect(dataset.meta.display_defaults.color_by).to.equal('auspice_group');
-        expect(dataset.meta.display_defaults.geo_resolution).to.equal('microbetrace_location');
+        expect(dataset.meta.display_defaults.geo_resolution).to.equal('site');
         expect(dataset.meta.display_defaults.branch_label).to.equal('bootstrap');
         expect(dataset.meta.updated).to.match(/^\d{4}-\d{2}-\d{2}$/);
         expect(dataset.meta.colorings).to.deep.include({
@@ -274,8 +280,13 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
           key: 'auspice_date', title: 'auspice_date', type: 'temporal',
         });
         expect(dataset.meta.filters).to.include.members(['auspice_group', 'auspice_date']);
-        expect(dataset.meta.geo_resolutions[0].key).to.equal('microbetrace_location');
-        expect(Object.keys(dataset.meta.geo_resolutions[0].demes)).to.have.length(2);
+        expect(dataset.meta.geo_resolutions.map((resolution: any) => resolution.key))
+          .to.deep.equal(['country', 'state', 'site']);
+        expect(Object.keys(dataset.meta.geo_resolutions[0].demes)).to.deep.equal(['United States']);
+        expect(Object.keys(dataset.meta.geo_resolutions[1].demes)).to.have.length(2);
+        expect(Object.keys(dataset.meta.geo_resolutions[2].demes)).to.deep.equal([
+          'Mobile clinic', 'Atlanta clinic',
+        ]);
         expect(auspiceDisplayTopology(dataset.tree)).to.deep.equal(expectedTopology);
         expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(expectedLeafIds);
         expect(new Set(flattenAuspiceDisplayLeaves(dataset.tree)).size).to.equal(expectedLeafIds.length);
@@ -427,11 +438,13 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
           .to.deep.equal(['auspice_group']);
         expect(dataset.meta.filters).to.deep.equal(['auspice_group']);
         expect(dataset.meta.display_defaults.color_by).to.equal('auspice_group');
+        const geographyKeys = (dataset.meta.geo_resolutions || [])
+          .map((resolution: any) => resolution.key);
 
         const visit = (node: any): void => {
           const attributeKeys = Object.keys(node.node_attrs);
           expect(attributeKeys.every(key => (
-            ['div', 'auspice_group', 'microbetrace_location'].includes(key)
+            ['div', 'auspice_group', ...geographyKeys].includes(key)
           ))).to.equal(true);
           expect(node.node_attrs.auspice_private_note).to.equal(undefined);
           if (!(node.children || []).length) {
