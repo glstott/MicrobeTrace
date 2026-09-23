@@ -27,7 +27,9 @@ export default class AuspiceHandler {
       const rootNode = this.makeNode(tree);
       this.nodeList.push(rootNode);
       const newTree = new patristic.Branch(rootNode);
-      for (const child of tree.children) {
+      // Auspice displays serialized children in reverse order. Mirror that
+      // traversal so the imported MicrobeTrace tree has the same orientation.
+      for (const child of [...tree.children].reverse()) {
         const node = this.recurseChildren(child);
         newTree.addChild(node);
       }
@@ -82,7 +84,7 @@ export default class AuspiceHandler {
 
     function recurse(node, parentX) {
       if (node.hasOwnProperty('children')) {
-        const childSubtrees = node.children.map((child) => {
+        const childSubtrees = [...node.children].reverse().map((child) => {
           const subtree = recurse(child, getXVal(node));
           return subtree;
         });
@@ -223,6 +225,12 @@ export default class AuspiceHandler {
       mapData.states.features,
       geoResolutions.find(resolution => resolution.key === 'division')
     );
+    const microbeTraceResolution = geoResolutions.find(
+      resolution => resolution.key === 'microbetrace_location'
+    );
+    if (microbeTraceResolution) {
+      this.addResolutionFeatures(mapData.countries.features, microbeTraceResolution);
+    }
 
     return mapData;
   }
@@ -230,11 +238,15 @@ export default class AuspiceHandler {
   public addLatLong = (nodes, metadata) => {
     const newNodes = [];
     const geoResolutions = this.getGeoResolutions(metadata);
-    const preferredKey = 'location';
+    const resolution = geoResolutions.find(candidate => candidate.key === 'location')
+      || geoResolutions.find(candidate => candidate.key === 'microbetrace_location')
+      || geoResolutions[0];
+    const preferredKey = resolution?.key;
 
     for (const node of nodes) {
-      const resolution = geoResolutions.find(x => x.key === preferredKey);
-      const coordinates = this.getDemeCoordinates(resolution, node[preferredKey]);
+      const coordinates = preferredKey
+        ? this.getDemeCoordinates(resolution, node[preferredKey])
+        : null;
       if (coordinates) {
         node.latitude = coordinates.latitude;
         node.longitude = coordinates.longitude;

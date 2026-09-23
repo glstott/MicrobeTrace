@@ -42,6 +42,11 @@ import type {
   PhylogeneticBootstrapProgress,
 } from '@app/workers/phylogenetic-bootstrap.types';
 import { createGlobalSettingsDialogRequest, GlobalSettingsDialogRequest } from '@app/helperClasses/globalSettingsDialogRequest';
+import {
+  AuspiceExportError,
+  buildAuspiceV2Dataset,
+  ensureAuspiceJsonFilename,
+} from '@app/helperClasses/auspiceExporter';
 
 /**
  * @title PhylogeneticComponent
@@ -170,6 +175,9 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
   SelectedTreeImageFilenameVariable = 'default_tree';
   SelectedNewickStringFilenameVariable = 'default_tree.nwk';
+  SelectedAuspiceFilenameVariable = 'microbetrace-auspice.json';
+  AuspiceExportErrorMessage = '';
+  private auspiceFilenameSourceName = '';
 
   NetworkExportFileTypeList: object = [
     { label: 'png', value: 'png' },
@@ -795,6 +803,12 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
 
   openExport() {
+    const sourceName = this.getAuspiceSourceName();
+    if (sourceName !== this.auspiceFilenameSourceName) {
+      this.SelectedAuspiceFilenameVariable = `${sourceName}-auspice.json`;
+      this.auspiceFilenameSourceName = sourceName;
+    }
+    this.AuspiceExportErrorMessage = '';
     this.ShowPhylogeneticExportPane = true;
 
     this.isExportClosed = false;
@@ -1408,6 +1422,74 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     const thisTree = this.commonService.visuals.phylogenetic.tree;
     const newickBlob = new Blob([thisTree.data.toNewick(false)], { type: 'text/plain;charset=utf-8' });
     saveAs(newickBlob, this.SelectedNewickStringFilenameVariable);
+  }
+
+  saveAuspiceJson(): void {
+    this.AuspiceExportErrorMessage = '';
+
+    try {
+      const widgets = this.commonService.session.style.widgets;
+      const dataset = buildAuspiceV2Dataset({
+        tree: this.tree?.data,
+        nodes: this.commonService.session.data?.nodes,
+        nodeFields: this.commonService.session.data?.nodeFields,
+        title: this.getAuspiceExportTitle(),
+        updated: new Date(),
+        colorBy: widgets['node-color-variable'],
+        temporalFields: this.getAuspiceTemporalFields(),
+        latitudeField: widgets['map-field-lat'],
+        longitudeField: widgets['map-field-lon'],
+        bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
+      });
+      const filename = ensureAuspiceJsonFilename(
+        this.SelectedAuspiceFilenameVariable,
+        `${this.getAuspiceSourceName()}-auspice.json`,
+      );
+      this.SelectedAuspiceFilenameVariable = filename;
+      const auspiceBlob = new Blob(
+        [JSON.stringify(dataset, null, 2)],
+        { type: 'application/json;charset=utf-8' },
+      );
+      saveAs(auspiceBlob, filename);
+      this.ShowPhylogeneticExportPane = false;
+    } catch (error) {
+      if (!(error instanceof AuspiceExportError)) {
+        console.error('Unable to export the current tree as Auspice JSON.', error);
+      }
+      this.AuspiceExportErrorMessage = error instanceof Error
+        ? error.message
+        : 'Unable to export the current tree as Auspice JSON.';
+    }
+  }
+
+  private getAuspiceSourceName(): string {
+    const files = Array.isArray(this.commonService.session.files)
+      ? this.commonService.session.files
+      : [];
+    const source = files.find(file => (
+      ['auspice', 'newick', 'fasta', 'matrix', 'node', 'link', 'network'].includes(file?.format)
+      || ['auspice', 'newick', 'fasta', 'matrix', 'node', 'link', 'network'].includes(file?.datatype)
+    )) || files[0];
+    const sourceName = String(source?.name ?? '').trim().replace(/\.[^.]+$/, '');
+    return sourceName || 'microbetrace-tree';
+  }
+
+  private getAuspiceExportTitle(): string {
+    const partnerDatasetName = String(
+      (this.commonService.session.meta as any)?.partnerEmbed?.datasetName ?? '',
+    ).trim();
+    return partnerDatasetName || this.getAuspiceSourceName();
+  }
+
+  private getAuspiceTemporalFields(): string[] {
+    const widgets = this.commonService.session.style.widgets;
+    const timelineFields = [
+      widgets['timeline-date-field'],
+      ...(Array.isArray(widgets['epiCurve-date-fields']) ? widgets['epiCurve-date-fields'] : []),
+    ];
+    return timelineFields.filter(field => (
+      typeof field === 'string' && field.trim() && field !== 'None'
+    ));
   }
 
 

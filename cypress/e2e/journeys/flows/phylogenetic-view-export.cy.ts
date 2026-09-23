@@ -3,7 +3,10 @@
 import { getProfile } from '../datasets/profile';
 import {
   assertPhyloTreeReady,
+  goToPhyloTreeView,
+  launchAndWaitForProcessing,
   launchProfileToPhyloTree,
+  visitAppAndAcceptEula,
 } from '../../../support/journey-helpers';
 
 const SELECTORS = {
@@ -16,6 +19,57 @@ const SELECTORS = {
 type PhyloImageFileType = 'png' | 'jpeg' | 'svg';
 
 const normalizeNewickText = (value: string): string => value.replace(/\r\n/g, '\n').trim();
+
+const orderedTopology = (node: any, nameKey: 'id' | 'name'): any => {
+  const children = Array.isArray(node?.children) ? node.children : [];
+  return children.length
+    ? children.map(child => orderedTopology(child, nameKey))
+    : String(node?.[nameKey] ?? '');
+};
+
+const auspiceDisplayTopology = (node: any): any => {
+  const children = Array.isArray(node?.children) ? node.children : [];
+  return children.length
+    ? [...children].reverse().map(auspiceDisplayTopology)
+    : String(node?.name ?? '');
+};
+
+const flattenAuspiceDisplayLeaves = (node: any): string[] => {
+  const children = Array.isArray(node?.children) ? node.children : [];
+  return children.length
+    ? [...children].reverse().flatMap(flattenAuspiceDisplayLeaves)
+    : [String(node?.name ?? '')];
+};
+
+const findBootstrapSplit = (tree: any, allLeafIds: string[]): { key: string; leafIds: string[] } | null => {
+  const collectLeaves = (node: any): string[] => {
+    const children = Array.isArray(node?.children) ? node.children : [];
+    return children.length ? children.flatMap(collectLeaves) : [String(node?.id ?? '')];
+  };
+  const candidates: string[][] = [];
+  const visit = (node: any, isRoot: boolean): void => {
+    const children = Array.isArray(node?.children) ? node.children : [];
+    if (!children.length) return;
+    const leaves = collectLeaves(node).sort();
+    if (!isRoot && leaves.length >= 2 && leaves.length <= allLeafIds.length - 2) {
+      candidates.push(leaves);
+    }
+    children.forEach(child => visit(child, false));
+  };
+  visit(tree, true);
+  if (!candidates.length) return null;
+
+  const selected = candidates[0];
+  const selectedSet = new Set(selected);
+  const complement = [...allLeafIds].sort().filter(id => !selectedSet.has(id));
+  const selectedKey = selected.join('\u001f');
+  const complementKey = complement.join('\u001f');
+  const canonical = complement.length < selected.length
+    || (complement.length === selected.length && complementKey < selectedKey)
+    ? complement
+    : selected;
+  return { key: canonical.join('\u001f'), leafIds: selected };
+};
 
 const setExportFileType = (fileType: PhyloImageFileType): void => {
   cy.get('#network-export-filetype').click({ force: true });
@@ -151,6 +205,115 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         cy.readFile(exportPath, 'utf8', { timeout: 30000 }).should((savedText) => {
           expect(normalizeNewickText(savedText), 'saved Newick export').to.equal(expectedString);
         });
+      });
+    });
+
+    it('exports a schema-shaped Auspice dataset and re-imports it into MicrobeTrace', () => {
+      const exportFileBase = `cypress_tree_auspice_${Date.now()}`;
+      const exportFileName = `${exportFileBase}.json`;
+      const exportPath = `cypress/downloads/${exportFileName}`;
+      let expectedLeafIds: string[] = [];
+      let expectedTopology: any;
+
+      cy.window().then((win: any) => {
+        const session = win.commonService.session;
+        const treeData = win.commonService.visuals.phylogenetic.tree.data;
+        expectedLeafIds = treeData.getLeaves().map((leaf: any) => String(leaf.id));
+        expectedTopology = orderedTopology(treeData, 'id');
+        const split = findBootstrapSplit(treeData, expectedLeafIds);
+        expect(split, 'current tree contains an exportable bootstrap split').to.exist;
+
+        expectedLeafIds.forEach((leafId, index) => {
+          const node = session.data.nodes.find((candidate: any) => (
+            String(candidate?._id ?? candidate?.id ?? '') === leafId
+          ));
+          expect(node, `session node for ${leafId}`).to.exist;
+          node.auspice_group = index % 2 ? 'group_b' : 'group_a';
+          node.auspice_date = `2026-09-${String((index % 20) + 1).padStart(2, '0')}`;
+          node.seq = 'ACGTACGT';
+          if (index < 2) {
+            node._lat = 33.7 + index;
+            node._lon = -84.4 - index;
+          }
+        });
+        session.data.nodeFields = Array.from(new Set([
+          ...(session.data.nodeFields || []),
+          'auspice_group', 'auspice_date', 'seq', '_lat', '_lon',
+        ]));
+        session.style.widgets['node-color-variable'] = 'auspice_group';
+        session.style.widgets['timeline-date-field'] = 'auspice_date';
+        session.data.phylogeneticBootstrap = {
+          labels: expectedLeafIds,
+          supportBySplitKey: { [split!.key]: 96.5 },
+          decimalLength: 1,
+        };
+      });
+
+      cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
+      cy.get('#auspice-json-filename')
+        .should('have.value', 'SARSCoV2_Simulated_Sequences_NJ_tree_snp-auspice.json')
+        .clear({ force: true })
+        .type(exportFileBase, { delay: 0, force: true });
+      cy.get('#export-auspice-json').click({ force: true });
+
+      cy.readFile(exportPath, null, { timeout: 30000 }).then((savedContents) => {
+        const savedText = Cypress.Buffer.from(savedContents).toString('utf8');
+        expect(savedText, 'readable indentation').to.contain('\n  "meta":');
+        const dataset = JSON.parse(savedText);
+        expect(dataset.version).to.equal('v2');
+        expect(dataset.meta.panels).to.deep.equal(['tree', 'map']);
+        expect(dataset.meta.display_defaults.distance_measure).to.equal('div');
+        expect(dataset.meta.display_defaults.color_by).to.equal('auspice_group');
+        expect(dataset.meta.display_defaults.geo_resolution).to.equal('microbetrace_location');
+        expect(dataset.meta.display_defaults.branch_label).to.equal('bootstrap');
+        expect(dataset.meta.updated).to.match(/^\d{4}-\d{2}-\d{2}$/);
+        expect(dataset.meta.colorings).to.deep.include({
+          key: 'auspice_group', title: 'auspice_group', type: 'categorical',
+        });
+        expect(dataset.meta.colorings).to.deep.include({
+          key: 'auspice_date', title: 'auspice_date', type: 'temporal',
+        });
+        expect(dataset.meta.filters).to.include.members(['auspice_group', 'auspice_date']);
+        expect(dataset.meta.geo_resolutions[0].key).to.equal('microbetrace_location');
+        expect(Object.keys(dataset.meta.geo_resolutions[0].demes)).to.have.length(2);
+        expect(auspiceDisplayTopology(dataset.tree)).to.deep.equal(expectedTopology);
+        expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(expectedLeafIds);
+        expect(new Set(flattenAuspiceDisplayLeaves(dataset.tree)).size).to.equal(expectedLeafIds.length);
+        expect(JSON.stringify(dataset)).not.to.contain('ACGTACGT');
+
+        const internalNames = new Set<string>();
+        let bootstrapLabels = 0;
+        const assertTree = (node: any, parentDiv = 0, isRoot = true): void => {
+          expect(node.node_attrs.div).to.be.a('number').and.be.at.least(parentDiv);
+          if (isRoot) expect(node.node_attrs.div).to.equal(0);
+          const children = Array.isArray(node.children) ? node.children : [];
+          if (children.length) {
+            expect(node.name).to.match(/^NODE_\d{7}$/);
+            expect(internalNames.has(node.name), `unique internal name ${node.name}`).to.equal(false);
+            internalNames.add(node.name);
+            if (node.branch_attrs?.labels?.bootstrap === '96.5') bootstrapLabels += 1;
+            children.forEach((child: any) => assertTree(child, node.node_attrs.div, false));
+          }
+        };
+        assertTree(dataset.tree);
+        expect(bootstrapLabels, 'matched bootstrap branch label').to.be.greaterThan(0);
+      });
+
+      visitAppAndAcceptEula();
+      cy.get('#fileDropRef', { timeout: 15000 }).selectFile(exportPath, { force: true });
+      launchAndWaitForProcessing(60000);
+      goToPhyloTreeView();
+      assertPhyloTreeReady();
+      cy.window().then((win: any) => {
+        const importedLeaves = win.commonService.visuals.phylogenetic.tree.data
+          .getLeaves()
+          .map((leaf: any) => String(leaf.id));
+        expect(importedLeaves).to.deep.equal(expectedLeafIds);
+        const mappedNode = win.commonService.session.data.nodes.find((node: any) => (
+          String(node?._id ?? node?.id ?? '') === expectedLeafIds[0]
+        ));
+        expect(mappedNode.latitude).to.be.a('number');
+        expect(mappedNode.longitude).to.be.a('number');
       });
     });
   });

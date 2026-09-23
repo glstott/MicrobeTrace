@@ -368,6 +368,31 @@
           </div>
         </div>
       </tab>
+      <tab heading="{{'Auspice JSON' | localize}}" customClass="m-tabs__item">
+        <div class="modal-dialog" role="document">
+          <div class="modal-content">
+            <div class="modal-body" style='min-width: 500px; height: 100%;'>
+              <div class="form-group">
+                <label for="auspice-json-filename">Filename</label>
+                <input type="text" id="auspice-json-filename" class="form-control form-control-sm" placeholder="Auspice JSON Filename" [(ngModel)]="SelectedAuspiceFilenameVariable">
+              </div>
+              <p class="mb-0">
+                Downloads the current tree locally as an Auspice v2 JSON file; MicrobeTrace does not upload it. Open the downloaded file with
+                <a href="https://auspice.us" target="_blank" rel="noopener noreferrer">auspice.us</a>
+                or <a href="https://docs.nextstrain.org/projects/auspice/en/stable/introduction/how-to-run.html" target="_blank" rel="noopener noreferrer">auspice view</a>.
+              </p>
+              @if (AuspiceExportErrorMessage) {
+                <div id="auspice-export-error" class="alert alert-danger mt-3 mb-0" role="alert" aria-live="assertive">
+                  {{ AuspiceExportErrorMessage }}
+                </div>
+              }
+            </div>
+            <div class="modal-footer">
+              <button type="button" id="export-auspice-json" class="btn btn-primary" (click)="saveAuspiceJson()">Save Auspice JSON</button>
+            </div>
+          </div>
+        </div>
+      </tab>
     </tabset>
   </p-dialog>
   }<!-- /.modal -->
