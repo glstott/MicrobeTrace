@@ -86,10 +86,16 @@ const contractMode =
       });
 
       openGlobalFilteringTab();
-      cy.get(byTestId(testIds.filterMinimumClusterSize))
-        .clear()
-        .type(String(minimumClusterSize!.to))
-        .blur();
+      const minimumClusterSizeSelector = byTestId(testIds.filterMinimumClusterSize);
+      const expectedMinimumClusterSize = String(minimumClusterSize!.to);
+
+      cy.get(minimumClusterSizeSelector).clear();
+      cy.get(minimumClusterSizeSelector)
+        .should('be.visible')
+        .and('have.value', '')
+        .type(expectedMinimumClusterSize);
+      cy.get(minimumClusterSizeSelector)
+        .should('have.value', expectedMinimumClusterSize);
       cy.window()
         .its('commonService.session.style.widgets.cluster-minimum-size')
         .should('equal', minimumClusterSize!.to);
@@ -226,6 +232,30 @@ const contractMode =
     () => {
       launchProfileToTwoD(newickProfile!);
       assertAfterLaunchCounts(newickProfile!, 'intended');
+    },
+  );
+
+  (contractMode && newickProfile ? it : it.skip)(
+    `${newickProfile?.title ?? 'Unknown profile'} computes nearest-neighbor links from the Newick tree`,
+    () => {
+      launchProfileToTwoD(newickProfile!);
+      assertAfterLaunchCounts(newickProfile!, 'intended');
+
+      openGlobalFilteringTab();
+      setFilteringPruneWith('Nearest Neighbor');
+      cy.closeGlobalSettings();
+      waitForProcessingDialogToClear();
+
+      cy.window().then((win: any) => {
+        const links = win.commonService.session.data.links as any[];
+        const visibleNnLinks = links.filter((link) => link.visible && link.nn);
+        const patristicNn = win.commonService.session.meta?.performance?.patristic?.nearestNeighbor;
+        const maxInitialVisibleLinks = newickProfile!.expectations.afterLaunch?.visibleLinks ?? links.length;
+
+        expect(patristicNn?.selectedLinks, 'patristic nearest-neighbor selected links').to.be.greaterThan(0);
+        expect(visibleNnLinks.length, 'visible Newick nearest-neighbor links').to.be.greaterThan(0);
+        expect(visibleNnLinks.length, 'visible Newick nearest-neighbor links stay pruned').to.be.at.most(maxInitialVisibleLinks);
+      });
     },
   );
 });

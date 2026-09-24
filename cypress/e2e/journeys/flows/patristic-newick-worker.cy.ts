@@ -20,8 +20,19 @@ const TN93_NEWICK_FILE = 'AngularTesting_seqs_TN93_BS.nwk';
 const SYNTHETIC_SNP_FILE = 'PatristicSynthetic_snp_gt1.nwk';
 const DUPLICATE_TIP_FILE = 'PatristicDuplicateTips.nwk';
 const NEGATIVE_BRANCH_FILE = 'PatristicNegativeBranch.nwk';
+const NEGATIVE_TERMINAL_BRANCH_FILE = 'PatristicNegativeTerminalBranch.nwk';
 
 const tn93Profile = getProfile('load-twod-newick-tn93-angular-testing');
+
+const highThresholdGuardrailProfile: DatasetProfile = {
+  ...tn93Profile,
+  id: 'patristic-guardrail-initial-fallback',
+  title: 'TN93 Newick renders a bounded backbone when initial threshold exceeds guardrail',
+  preLaunch: {
+    ...tn93Profile.preLaunch,
+    threshold: 0.02,
+  },
+};
 
 const syntheticSnpProfile: DatasetProfile = {
   id: 'patristic-synthetic-snp-gt1',
@@ -66,6 +77,24 @@ const negativeBranchProfile: DatasetProfile = {
   files: [
     {
       name: NEGATIVE_BRANCH_FILE,
+      datatype: 'newick',
+    },
+  ],
+  preLaunch: {
+    metric: 'tn93',
+    threshold: 0.015,
+    defaultView: '2D Network',
+  },
+  expectations: {},
+};
+
+const negativeTerminalBranchProfile: DatasetProfile = {
+  id: 'patristic-negative-terminal-branch-normalization',
+  title: 'Negative terminal Newick branches are normalized for NJ round trips',
+  tags: ['newick', 'patristic-worker'],
+  files: [
+    {
+      name: NEGATIVE_TERMINAL_BRANCH_FILE,
       datatype: 'newick',
     },
   ],
@@ -191,6 +220,44 @@ describe('Journey Flow - Patristic Newick worker safeguards', () => {
     });
   });
 
+  it('renders a nearest-neighbor backbone when the initial Newick threshold exceeds the browser guardrail', () => {
+    visitAppAndAcceptEula();
+    cy.loadFiles(highThresholdGuardrailProfile.files);
+    applyPreLaunchFileSettings(highThresholdGuardrailProfile);
+    ensurePreLaunchProfileSynced(highThresholdGuardrailProfile);
+
+    cy.window().then((win: any) => {
+      win.commonService.session.meta.guardrails = {
+        newickVisibleLinkWarningThreshold: 20,
+        newickVisibleLinkHardLimit: 20,
+      };
+    });
+
+    launchAndWaitForProcessing(60000);
+    ensureTwoDNetworkView();
+
+    cy.get('#network-guardrail-warning', { timeout: 30000 })
+      .should('be.visible')
+      .and('contain.text', 'exceeded the 20 visible-link browser guardrail')
+      .and('contain.text', 'nearest-neighbor tree backbone');
+
+    cy.window().should((win: any) => {
+      const visibleEdges = win.cytoscapeInstance.edges(':visible');
+      const warning = win.commonService.session.warnings.find((entry: any) => (
+        entry?.type === 'newick-visible-link-guardrail'
+      ));
+      const fallback = win.commonService.session.meta.performance.patristic.edgeGeneration.fallback;
+
+      expect(visibleEdges.length, 'fallback visible Newick edge count').to.be.greaterThan(0);
+      expect(visibleEdges.length, 'fallback visible Newick edge count').to.be.at.most(20);
+      expect(warning?.hardLimitHit, 'hard limit hit').to.equal(true);
+      expect(warning?.fallbackApplied, 'fallback warning marker').to.equal(true);
+      expect(fallback?.type, 'fallback telemetry type').to.equal('nearest-neighbor-backbone');
+      expect(fallback?.totalLinks, 'fallback telemetry link count').to.be.greaterThan(0);
+      expect(warning?.fallbackLinkCount, 'fallback warning link count').to.equal(fallback.totalLinks);
+    });
+  });
+
   it('preserves raised-threshold Newick state through a session save and reload', () => {
     const sessionFileBase = `cypress_patristic_newick_roundtrip_${Date.now()}`;
     const sessionFilePath = `${Cypress.config('downloadsFolder')}/${sessionFileBase}.microbetrace`;
@@ -269,6 +336,23 @@ describe('Journey Flow - Patristic Newick worker safeguards', () => {
     cy.window().should((win: any) => {
       expect(win.commonService.session.network.isFullyLoaded, 'network should not finish loading').to.not.equal(true);
       expect(win.commonService.session.data.links || [], 'links after duplicate-tip rejection').to.have.length(0);
+    });
+  });
+
+  it('normalizes negative terminal branches from neighbor-joining exports', () => {
+    visitAppAndAcceptEula();
+    cy.loadFiles(negativeTerminalBranchProfile.files);
+
+    cy.get('#launch', { timeout: 15000 }).should('not.be.disabled');
+    cy.get('#launch').click({ force: true });
+    waitForProcessingDialogToClear(30000);
+
+    cy.window().should((win: any) => {
+      const storedNewick = String(win.commonService.session.data.newickString || '');
+      expect(win.commonService.session.network.isFullyLoaded, 'network should finish loading').to.equal(true);
+      expect(win.commonService.session.data.nodes || [], 'imported leaf nodes').to.have.length(3);
+      expect(storedNewick, 'normalized terminal branch remains present').to.contain('A');
+      expect(storedNewick, 'no negative branch lengths remain').not.to.match(/:-(?:\d|\.)/);
     });
   });
 

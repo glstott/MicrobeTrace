@@ -6,6 +6,7 @@ export type DefaultView =
   | '2D Network'
   | 'Transmission Chain View'
   | 'Table'
+  | 'Network Statistics'
   | 'Map'
   | 'Phylogenetic Tree'
   | 'Alignment View';

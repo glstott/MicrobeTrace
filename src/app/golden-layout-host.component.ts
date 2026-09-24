@@ -1,4 +1,4 @@
-import { ApplicationRef, Component, ComponentRef, ElementRef, EmbeddedViewRef, EventEmitter, OnDestroy, Output, ViewChild, ViewContainerRef } from '@angular/core';
+import { ApplicationRef, Component, ComponentRef, ElementRef, EmbeddedViewRef, EventEmitter, OnDestroy, Output, ViewChild, ViewContainerRef, ChangeDetectionStrategy } from '@angular/core';
 import {
   ComponentContainer, GoldenLayout,
   ItemConfig,
@@ -12,6 +12,7 @@ import { MapComponent } from './visualizationComponents/MapComponent/map-plugin.
 import { PhylogeneticComponent } from './visualizationComponents/PhylogeneticComponent/phylogenetic-plugin.component';
 import { TimelineComponent } from './visualizationComponents/TimelineComponent/timeline-component.component';
 import { TableComponent } from './visualizationComponents/TableComponent/table-plugin-component';
+import { NetworkStatisticsComponent } from './visualizationComponents/NetworkStatisticsComponent/network-statistics-plugin.component';
 import { TwoDComponent } from './visualizationComponents/TwoDComponent/twoD-plugin.component';
 import { AlignmentViewComponent } from './visualizationComponents/AlignmentViewComponent/alignment-view-plugin-component';
 import { CrosstabComponent } from './visualizationComponents/CrosstabComponent/crosstab-plugin.component';
@@ -36,6 +37,7 @@ import { KeyTablesComponent } from './visualizationComponents/KeyTablesComponent
     }
     `,
     ],
+    changeDetection: ChangeDetectionStrategy.Eager,
     standalone: false
 })
 export class GoldenLayoutHostComponent implements OnDestroy {
@@ -72,6 +74,7 @@ export class GoldenLayoutHostComponent implements OnDestroy {
     this.goldenLayoutComponentService.registerComponentType(TwoDComponent.componentTypeName, TwoDComponent);
     this.goldenLayoutComponentService.registerComponentType(TwoDComponent.transmissionChainComponentTypeName, TwoDComponent);
     this.goldenLayoutComponentService.registerComponentType(TableComponent.componentTypeName, TableComponent);
+    this.goldenLayoutComponentService.registerComponentType(NetworkStatisticsComponent.componentTypeName, NetworkStatisticsComponent);
     this.goldenLayoutComponentService.registerComponentType(MapComponent.componentTypeName, MapComponent);
     this.goldenLayoutComponentService.registerComponentType(PhylogeneticComponent.componentTypeName, PhylogeneticComponent);
     this.goldenLayoutComponentService.registerComponentType(TimelineComponent.componentTypeName, TimelineComponent);
@@ -87,7 +90,7 @@ export class GoldenLayoutHostComponent implements OnDestroy {
   }
 
   ngOnDestroy() {
-    this._goldenLayout.destroy();
+    this._goldenLayout?.destroy();
   }
 
   initialise() {

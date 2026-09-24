@@ -25,6 +25,7 @@ type WinWithMT = Window & {
 };
 
 type JourneyVisitOptions = {
+  dismissWelcomeOverlay?: boolean;
   extraQuery?: Record<string, string | number | boolean>;
   skipDemoSession?: boolean;
   skipEula?: boolean;
@@ -79,6 +80,7 @@ export function acceptEulaIfPresent(): void {
 
 export function visitAppAndAcceptEula(options: JourneyVisitOptions = {}): void {
   const resolvedOptions: JourneyVisitOptions = {
+    dismissWelcomeOverlay: false,
     skipDemoSession: true,
     skipEula: true,
     ...options,
@@ -89,6 +91,16 @@ export function visitAppAndAcceptEula(options: JourneyVisitOptions = {}): void {
 
   if (!resolvedOptions.skipEula) {
     acceptEulaIfPresent();
+  }
+
+  if (!resolvedOptions.skipDemoSession && !resolvedOptions.dismissWelcomeOverlay) {
+    return;
+  }
+
+  if (!resolvedOptions.skipDemoSession) {
+    cy.window({ timeout: 120000 })
+      .its('commonService.session.network.isFullyLoaded')
+      .should('equal', true);
   }
 
   cy.get('body').then(($body) => {
@@ -375,11 +387,11 @@ function hexToRgbString(hex: string): string {
           .scrollIntoView()
           .should('exist')
           .within(() => {
-            cy.get('#polygon-color-table-toggle').contains('Show').click({ force: true });
+            cy.get('#polygon-color-table-toggle').contains('Dock').click({ force: true });
           });
   
         cy.window().its('commonService.session.style.widgets.polygon-color-table-visible')
-          .should('equal', 'Show');
+          .should('equal', 'Dock');
   
         // Optional: change some group colors if specified
         if (g.changeGroupColors?.groups?.length) {
@@ -518,7 +530,7 @@ export function expandAccordionTabByHeader(containerAlias: string, headerText: s
     const expected = profile.expectations.grouping?.expectedGroups;
     if (!expected) return;
   
-    cy.window().then((win: unknown) => {
+    cy.window().should((win: unknown) => {
       const w = win as WinWithMT;
       const cyInstance = w.cytoscapeInstance as Core;
   
@@ -528,7 +540,15 @@ export function expandAccordionTabByHeader(containerAlias: string, headerText: s
   
       // Parent count should match number of expected groups (regardless of id format)
       const parentCount = cyInstance.nodes('.parent').length;
-      expect(parentCount, 'parent group count').to.equal(expectedGroupKeys.length);
+      const groupingDiagnostics = cyInstance.nodes()
+        .filter((node) => !node.hasClass('parent'))
+        .map((node) => (
+          `${node.id()}:cluster=${String(node.data('cluster'))}`
+          + `:parent=${node.parent().id() || 'none'}`
+          + `:hidden=${node.hasClass('hidden')}`
+        ))
+        .join(', ');
+      expect(parentCount, `parent group count; ${groupingDiagnostics}`).to.equal(expectedGroupKeys.length);
   
       expectedGroupKeys.forEach((groupKey) => {
         const parent = resolveParentGroupNode(cyInstance, groupKey);
@@ -1007,8 +1027,8 @@ export function ensureAlignmentView(): void {
   });
 }
 
-export function launchProfileToTwoD(profile: DatasetProfile): void {
-  visitAppAndAcceptEula();
+export function launchProfileToTwoD(profile: DatasetProfile, visitOptions: JourneyVisitOptions = {}): void {
+  visitAppAndAcceptEula(visitOptions);
   cy.loadFiles(profile.files);
   applyPreLaunchFileSettings(profile);
   ensurePreLaunchProfileSynced(profile);
@@ -1090,14 +1110,22 @@ export function waitForProcessingDialogToClear(timeout = 30000): void {
 
 export function openGlobalFilteringTab(): void {
   cy.openGlobalSettings();
-  cy.contains('#global-settings-modal .nav-link', 'Filtering').click({ force: true });
-  cy.get('#global-settings-modal #filtering-config', { timeout: 15000 }).should('exist');
+  cy.contains('.p-dialog-title:visible', 'Global Settings')
+    .closest('.p-dialog')
+    .within(() => {
+      cy.contains('.nav-link', 'Filtering').click({ force: true });
+      cy.get('#filtering-config', { timeout: 15000 }).should('exist');
+    });
 }
 
 export function openGlobalStylingTab(): void {
   cy.openGlobalSettings();
-  cy.contains('#global-settings-modal .nav-link', 'Styling').click({ force: true });
-  cy.get('#global-settings-modal #style-config', { timeout: 15000 }).should('exist');
+  cy.contains('.p-dialog-title:visible', 'Global Settings')
+    .closest('.p-dialog')
+    .within(() => {
+      cy.contains('.nav-link', 'Styling').click({ force: true });
+      cy.get('#style-config', { timeout: 15000 }).should('exist');
+    });
 }
 
 export function setFilteringPruneWith(value: PruneWith): void {
@@ -1137,10 +1165,11 @@ export function setFilteringEpsilonExponent(exponent: number): void {
 }
 
 export function setGlobalDistanceMetric(metric: DistanceMetric): void {
-  cy.get('#global-settings-modal')
+  cy.contains('.p-dialog-title', 'Global Settings', { timeout: 15000 })
+    .parents('.p-dialog')
     .find('#default-distance-metric')
-    .should('be.visible')
-    .select(metric);
+    .should('exist')
+    .select(metric, { force: true });
 
   cy.window()
     .its('commonService.session.style.widgets.default-distance-metric')
@@ -1150,7 +1179,11 @@ export function setGlobalDistanceMetric(metric: DistanceMetric): void {
 export function setTN93DistanceDisplayFormat(format: 'decimal' | 'percentage'): void {
   const buttonLabel = format === 'percentage' ? 'Percentage' : 'Decimal';
 
-  cy.get('#tn93-distance-display-format')
+  cy.contains('.p-dialog-title', 'Global Settings', { timeout: 15000 })
+    .parents('.p-dialog')
+    .find('#tn93-distance-display-format')
+    .scrollIntoView()
+    .should('be.visible')
     .contains('span', buttonLabel)
     .click({ force: true });
 
@@ -1163,6 +1196,7 @@ export function setGlobalLinkThreshold(threshold: number | string): void {
   const nextThreshold = String(threshold);
 
   cy.get('#link-threshold')
+    .scrollIntoView()
     .should('be.visible')
     .then(($input) => {
       const input = $input.get(0) as HTMLInputElement;
@@ -1216,6 +1250,46 @@ export function setTimelineDate(date: string | Date): void {
     .its('commonService.session.state.timeEnd')
     .should((value) => {
       expect(new Date(value as string | number | Date).getTime()).to.equal(targetDate.getTime());
+    });
+}
+
+function setTimelineRangeInput(selector: string, value: string): void {
+  cy.get(selector, { timeout: 15000 })
+    .should('be.visible')
+    .then(($input) => {
+      const input = $input.get(0) as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+  cy.get(selector).should('have.value', value);
+}
+
+export function setTimelineRange(start: string | Date, end: string | Date): void {
+  const parsedStart = start instanceof Date ? moment(start) : moment(String(start));
+  const parsedEnd = end instanceof Date ? moment(end) : moment(String(end));
+  expect(parsedStart.isValid(), `valid timeline range start for ${String(start)}`).to.equal(true);
+  expect(parsedEnd.isValid(), `valid timeline range end for ${String(end)}`).to.equal(true);
+
+  const startInput = parsedStart.format('YYYY-MM-DD');
+  const endInput = parsedEnd.format('YYYY-MM-DD');
+  const startDate = parsedStart.toDate();
+  const endDate = parsedEnd.toDate();
+
+  cy.openGlobalSettings();
+  cy.contains('.nav-link:visible', 'Timeline').click({ force: true });
+  cy.get('#timeline-config').should('exist');
+  setTimelineRangeInput('#timeline-range-start', startInput);
+  setTimelineRangeInput('#timeline-range-end', endInput);
+  cy.closeGlobalSettings();
+
+  cy.window()
+    .its('commonService.session.state')
+    .should((state) => {
+      expect(new Date(state.timeStart as string | number | Date).getTime()).to.equal(startDate.getTime());
+      expect(new Date(state.timeTarget as string | number | Date).getTime()).to.equal(endDate.getTime());
+      expect(new Date(state.timeEnd as string | number | Date).getTime()).to.equal(endDate.getTime());
     });
 }
 
@@ -1492,7 +1566,7 @@ export function applyStyleFromProfile(profile: DatasetProfile): void {
   if (!style) return;
 
   cy.openGlobalSettings();
-  cy.contains('#global-settings-modal .nav-link', 'Styling').click();
+  cy.contains('.nav-link:visible', 'Styling').click({ force: true });
   cy.get('#apply-style').should('exist');
   cy.attach_files('#apply-style', [style.styleFile], ['application/json']);
 

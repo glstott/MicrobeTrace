@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Inject, Injector, OnDestroy, OnInit, Renderer2, ViewChild } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Inject, Injector, OnDestroy, OnInit, Renderer2, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { EventManager } from '@angular/platform-browser';
 import { BaseComponentDirective } from '@app/base-component.directive';
 import { CommonService } from '@app/contactTraceCommonServices/common.service';
@@ -13,14 +13,15 @@ import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 //import pdfMake from 'pdfmake/build/pdfmake.js';
 //import pdfFonts from 'pdfmake/build/vfs_fonts.js';
-import { GoogleTagManagerService } from 'angular-google-tag-manager';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
+import { sanitizeExportRows } from '@app/contactTraceCommonServices/export-sanitization';
 import { Subject, takeUntil } from 'rxjs';
 
 @Component({
     selector: 'AggregateComponent',
     templateUrl: './aggregate.component.html',
     styleUrls: ['./aggregate.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
     standalone: false
 })
 export class AggregateComponent extends BaseComponentDirective implements OnInit, AfterViewInit, MicobeTraceNextPluginEvents, OnDestroy {
@@ -76,8 +77,7 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     @Inject(BaseComponentDirective.GoldenLayoutContainerInjectionToken) private container: ComponentContainer, 
     elRef: ElementRef,
     private cdref: ChangeDetectorRef,
-    private store: CommonStoreService,
-    private gtmService: GoogleTagManagerService) {
+    private store: CommonStoreService) {
 
       super(elRef.nativeElement);
 
@@ -89,12 +89,6 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
   }
 
   ngOnInit(): void {
-
-    this.gtmService.pushTag({
-            event: "page_view",
-            page_location: "/aggregate",
-            page_title: "Aggregate View"
-        });
 
     this.SelectedDataFields.forEach((field, index) => {
       this.SelectedDataTables.push({label: '', data: [], tableColumns: []})
@@ -312,7 +306,12 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
 
   updateNodeColors() {}
   updateLinkColor() {}
-  updateVisualization() {}
+  updateVisualization() {
+    this.refreshTables();
+  }
+  refreshDistanceDisplayFormat() {
+    this.refreshTables();
+  }
   applyStyleFileSettings() {}
   openRefreshScreen() {}
   onRecallSession() {}
@@ -338,10 +337,10 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     if (this.SelectedAggregateExportFileType == 'csv.zip') {
       let zip = new JSZip();
       this.SelectedDataTables.forEach(table => {
-        let tmpData = table.data.map(item => {
+        let tmpData = sanitizeExportRows(table.data.map(item => {
           let colGroupName = table.label.split('-').slice(1).join('-')
           return { [colGroupName]: item.groupName, 'count': item.count, 'percent': item.percent+'%'}
-        })
+        }))
         
         zip.file(table.label + '.csv', Papa.unparse(tmpData))
         console.log(Papa.unparse(tmpData));
@@ -350,10 +349,10 @@ export class AggregateComponent extends BaseComponentDirective implements OnInit
     } else if (this.SelectedAggregateExportFileType == 'xlsx') {
       let wb = XLSX.utils.book_new();
       this.SelectedDataTables.forEach(table => {
-        let tmpData = table.data.map(item => {
+        let tmpData = sanitizeExportRows(table.data.map(item => {
           let colGroupName = table.label.split('-').slice(1).join('-');
           return { [colGroupName]: item.groupName, 'count': item.count, 'percent': item.percent+'%'}
-        })
+        }))
 
         let ws = XLSX.utils.json_to_sheet(tmpData);
         XLSX.utils.book_append_sheet(wb, ws, table.label)
