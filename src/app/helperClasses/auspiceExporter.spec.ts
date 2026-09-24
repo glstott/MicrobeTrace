@@ -142,6 +142,57 @@ describe('Auspice v2 exporter', () => {
     expect(JSON.stringify(dataset)).not.toContain('ACGT');
   });
 
+  it('preserves categorical scales and legend labels and supports ordinal colorings', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        { _id: 'A', group: 'alpha', rank: 1, severity: 'low' },
+        { _id: 'B', group: 'beta', rank: 2, severity: 'high' },
+      ],
+      nodeFields: ['group', 'rank', 'severity'],
+      coloringStyles: {
+        group: {
+          scale: [
+            ['beta', '#445566'],
+            ['alpha', '#112233'],
+            ['unused', '#778899'],
+            ['alpha', 'not-a-color'],
+          ],
+          legend: [
+            { value: 'alpha', display: 'Alpha display' },
+            { value: 'beta', display: 'Beta display' },
+            { value: 'unused', display: 'Unused display' },
+          ],
+        },
+        rank: {
+          scale: [[2, '#abcdef'], [1, '#fedcba']],
+          legend: [{ value: 1, display: 'First' }, { value: 2, display: 'Second' }],
+        },
+        severity: { type: 'ordinal' },
+      },
+    });
+
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'group',
+      type: 'categorical',
+      scale: [['beta', '#445566'], ['alpha', '#112233']],
+      legend: [
+        { value: 'alpha', display: 'Alpha display' },
+        { value: 'beta', display: 'Beta display' },
+      ],
+    }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'rank',
+      type: 'ordinal',
+      scale: [[2, '#abcdef'], [1, '#fedcba']],
+      legend: [{ value: 1, display: 'First' }, { value: 2, display: 'Second' }],
+    }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'severity',
+      type: 'ordinal',
+    }));
+  });
+
   it('preserves safe scalar metadata on identifiable internal nodes without inferring it', () => {
     const dataset = buildAuspiceV2Dataset({
       tree: fourTipTree(),
@@ -150,6 +201,9 @@ describe('Auspice v2 exporter', () => {
         { _id: 'left-clade', clade: 'left-state', score: 2, selected: false, seq: 'CCCC' },
         { _id: '', clade: 'must-not-be-attached' },
         { _id: 'A', clade: 'tip-state' },
+        { _id: 'B' },
+        { _id: 'C' },
+        { _id: 'D' },
       ],
       nodeFields: ['clade', 'score', 'selected', 'seq'],
     });
@@ -219,20 +273,99 @@ describe('Auspice v2 exporter', () => {
     expect(dataset.tree.node_attrs.confidence).toEqual({ value: 0.98 });
   });
 
-  it('does not attach metadata when a session node identifier is ambiguous', () => {
+  it('preserves internal-node attributes when rerooting replaces a clade with its complement', () => {
+    const attributeTree = {
+      id: 'original-root',
+      length: 0,
+      children: [
+        { id: 'A', length: 0.1 },
+        { id: 'B', length: 0.1 },
+        {
+          id: 'cd-ancestor',
+          length: 0.2,
+          data: {
+            id: 'cd-ancestor',
+            lineage: 'shared-branch-ancestor',
+            confidence: 0.96,
+          },
+          children: [
+            { id: 'C', length: 0.1 },
+            { id: 'D', length: 0.1 },
+          ],
+        },
+      ],
+    };
+    const rerootedTree = {
+      id: 'rerooted',
+      length: 0,
+      children: [
+        { id: 'C', length: 0.1 },
+        {
+          id: '',
+          length: 0.1,
+          children: [
+            { id: 'D', length: 0.1 },
+            {
+              id: '',
+              length: 0.2,
+              children: [
+                { id: 'A', length: 0.1 },
+                { id: 'B', length: 0.1 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
     const dataset = buildAuspiceV2Dataset({
+      tree: rerootedTree,
+      attributeTree,
+      nodeFields: ['lineage', 'confidence'],
+    });
+    const descendantNames = (node: any): string[] => (
+      Array.isArray(node.children) && node.children.length
+        ? node.children.flatMap(descendantNames)
+        : [node.name]
+    );
+    const findClade = (node: any, expected: string[]): any => {
+      const actual = descendantNames(node).sort();
+      if (actual.join('|') === [...expected].sort().join('|')) return node;
+      for (const child of node.children || []) {
+        const match = findClade(child, expected);
+        if (match) return match;
+      }
+      return undefined;
+    };
+    const complementClade = findClade(dataset.tree, ['A', 'B']);
+
+    expect(complementClade).toBeDefined();
+    expect(complementClade.node_attrs.lineage).toEqual({ value: 'shared-branch-ancestor' });
+    expect(complementClade.node_attrs.confidence).toEqual({ value: 0.96 });
+    expect(complementClade.branch_attrs?.labels?.microbetrace).toBe('cd-ancestor');
+  });
+
+  it('rejects ambiguous duplicate session node identifiers', () => {
+    expect(() => buildAuspiceV2Dataset({
       tree: fourTipTree(),
       nodes: [
         { _id: 'left-clade', clade: 'first' },
         { id: 'left-clade', clade: 'second' },
       ],
       nodeFields: ['clade'],
-    });
-    const left = dataset.tree.children!.find(child => (
-      child.branch_attrs?.labels?.microbetrace === 'left-clade'
-    ))!;
+    })).toThrowError(
+      AuspiceExportError,
+      /duplicate node IDs.*"left-clade".*Make these node IDs unique/,
+    );
+  });
 
-    expect(left.node_attrs.clade).toBeUndefined();
+  it('rejects tree leaf names that do not exactly match a session node identifier', () => {
+    expect(() => buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [{ _id: 'A' }, { _id: 'b' }],
+    })).toThrowError(
+      AuspiceExportError,
+      /tip IDs with no matching session node: "B".*exactly match.*ID or _id/,
+    );
   });
 
   it('independently selects exported metadata, colorings, and filters', () => {
@@ -309,6 +442,56 @@ describe('Auspice v2 exporter', () => {
     expect(leaves.find(leaf => leaf.name === 'D')!.node_attrs.microbetrace_location).toBeUndefined();
   });
 
+  it('rejects partially parsed and axis-incompatible coordinate strings', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        { _id: 'A', _lat: '34abc', _lon: '-118.2' },
+        { _id: 'B', _lat: '34.1 N', _lon: '118.2 W' },
+      ],
+    });
+
+    expect(dataset.meta.geo_resolutions?.[0].demes).toEqual({
+      'Location 1': { latitude: 34.1, longitude: -118.2 },
+    });
+    const leafA = dataset.tree.children!.find(leaf => leaf.name === 'A')!;
+    const leafB = dataset.tree.children!.find(leaf => leaf.name === 'B')!;
+    expect(leafA.node_attrs.microbetrace_location).toBeUndefined();
+    expect(leafB.node_attrs.microbetrace_location).toEqual({ value: 'Location 1' });
+
+    const axisDataset = buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        { _id: 'A', _lat: '34.1 E', _lon: '118.2 N' },
+        { _id: 'B' },
+      ],
+    });
+    expect(axisDataset.meta.panels).toEqual(['tree']);
+    expect(axisDataset.meta.geo_resolutions).toBeUndefined();
+  });
+
+  it('uses real calendar dates, including supported unknown components, for temporal inference', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        {
+          _id: 'A', real_date: '2024-02-29', impossible_date: '2023-02-29',
+          partial_date: '2026-02-XX', invalid_partial_date: '2026-XX-15',
+        },
+        {
+          _id: 'B', real_date: '2024-12-31', impossible_date: '2024-04-31',
+          partial_date: '2026-XX-XX', invalid_partial_date: '2026-01-15',
+        },
+      ],
+      temporalFields: ['real_date', 'impossible_date', 'partial_date', 'invalid_partial_date'],
+    });
+
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'real_date', type: 'temporal' }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'partial_date', type: 'temporal' }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'impossible_date', type: 'categorical' }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({ key: 'invalid_partial_date', type: 'categorical' }));
+  });
+
   it('exports named country, state, and coordinate-grouped site resolutions', () => {
     const dataset = buildAuspiceV2Dataset({
       tree: fourTipTree(),
@@ -356,6 +539,54 @@ describe('Auspice v2 exporter', () => {
     expect(leafA.node_attrs.site).toEqual({ value: 'Downtown' });
     expect(leafB.node_attrs.site).toEqual({ value: 'Downtown' });
     expect(leafD.node_attrs.site).toBeUndefined();
+  });
+
+  it('remaps geography keys that collide with metadata from a different source field', () => {
+    const options = {
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        {
+          _id: 'A', country: 'metadata-a', mapped_country: 'United States',
+          _lat: 33.75, _lon: -84.39,
+        },
+        {
+          _id: 'B', country: 'metadata-b', mapped_country: 'Canada',
+          _lat: 43.65, _lon: -79.38,
+        },
+      ],
+      nodeFields: ['country', 'mapped_country'],
+      geographyFields: [
+        { key: 'country', title: 'Mapped country', field: 'mapped_country' },
+      ],
+    };
+    const fieldOptions = getAuspiceExportFieldOptions(options);
+    const dataset = buildAuspiceV2Dataset({
+      ...options,
+      metadataFieldKeys: ['mapped_country'],
+      coloringFieldKeys: ['microbetrace_country'],
+      filterFieldKeys: ['microbetrace_country'],
+    });
+
+    const countryMetadataOption = fieldOptions.find(field => field.key === 'country');
+    expect(countryMetadataOption).toBeDefined();
+    expect(countryMetadataOption?.synthetic).toBeUndefined();
+    expect(fieldOptions).toContain(jasmine.objectContaining({
+      key: 'microbetrace_country',
+      title: 'Mapped country',
+      synthetic: true,
+    }));
+    expect(dataset.meta.geo_resolutions?.map(resolution => resolution.key))
+      .toEqual(['microbetrace_country', 'microbetrace_location']);
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'microbetrace_country',
+      title: 'Mapped country',
+    }));
+    expect(dataset.meta.filters).toEqual(['microbetrace_country']);
+
+    const leafA = dataset.tree.children!.find(leaf => leaf.name === 'A')!;
+    expect(leafA.node_attrs.country).toBeUndefined();
+    expect(leafA.node_attrs.mapped_country).toEqual({ value: 'United States' });
+    expect(leafA.node_attrs.microbetrace_country).toEqual({ value: 'United States' });
   });
 
   it('exports stored bootstrap support as a default branch label', () => {
@@ -415,6 +646,15 @@ describe('Auspice v2 exporter', () => {
         { key: 'country', title: 'Country', field: 'country' },
         { key: 'site', title: 'Site', field: 'site_name' },
       ],
+      coloringStyles: {
+        cluster: {
+          scale: [['one', '#112233'], ['two', '#445566']],
+          legend: [{ value: 'one', display: 'Cluster one' }],
+        },
+        score: {
+          scale: [[1, '#111111'], [2, '#222222'], [3, '#333333'], [4, '#444444']],
+        },
+      },
       colorBy: 'cluster',
       bootstrap: {
         labels: ['A', 'B', 'C', 'D'],

@@ -229,6 +229,7 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
           ));
           expect(node, `session node for ${leafId}`).to.exist;
           node.auspice_group = index % 2 ? 'group_b' : 'group_a';
+          node.auspice_rank = (index % 3) + 1;
           node.auspice_date = `2026-09-${String((index % 20) + 1).padStart(2, '0')}`;
           node.auspice_country = 'United States';
           node.auspice_state = index < 2 ? 'Georgia' : 'Alabama';
@@ -241,10 +242,26 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         });
         session.data.nodeFields = Array.from(new Set([
           ...(session.data.nodeFields || []),
-          'auspice_group', 'auspice_date', 'auspice_country', 'auspice_state',
+          'auspice_group', 'auspice_rank', 'auspice_date', 'auspice_country', 'auspice_state',
           'site', 'seq', '_lat', '_lon',
         ]));
         session.style.widgets['node-color-variable'] = 'auspice_group';
+        session.style.nodeColorsTableKeys.auspice_group = ['group_a', 'group_b'];
+        session.style.nodeColorsTable.auspice_group = ['#123456', '#abcdef'];
+        session.style.nodeColorsTableHistory.auspice_group = {
+          group_a: '#123456',
+          group_b: '#abcdef',
+        };
+        session.style.nodeColorsTableKeys.auspice_rank = ['1', '2', '3'];
+        session.style.nodeColorsTable.auspice_rank = ['#111111', '#555555', '#999999'];
+        session.style.nodeColorsTableHistory.auspice_rank = {
+          1: '#111111',
+          2: '#555555',
+          3: '#999999',
+        };
+        session.style.nodeValueNames.group_a = 'Group A label';
+        session.style.nodeValueNames.group_b = 'Group B label';
+        session.style.nodeValueNames['1'] = 'First rank';
         session.style.widgets['timeline-date-field'] = 'auspice_date';
         session.style.widgets['map-field-country'] = 'auspice_country';
         session.style.widgets['map-field-state'] = 'auspice_state';
@@ -275,6 +292,16 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         expect(dataset.meta.updated).to.match(/^\d{4}-\d{2}-\d{2}$/);
         expect(dataset.meta.colorings).to.deep.include({
           key: 'auspice_group', title: 'auspice_group', type: 'categorical',
+          scale: [['group_a', '#123456'], ['group_b', '#abcdef']],
+          legend: [
+            { value: 'group_a', display: 'Group A label' },
+            { value: 'group_b', display: 'Group B label' },
+          ],
+        });
+        expect(dataset.meta.colorings).to.deep.include({
+          key: 'auspice_rank', title: 'auspice_rank', type: 'ordinal',
+          scale: [[1, '#111111'], [2, '#555555'], [3, '#999999']],
+          legend: [{ value: 1, display: 'First rank' }, { value: 2 }, { value: 3 }],
         });
         expect(dataset.meta.colorings).to.deep.include({
           key: 'auspice_date', title: 'auspice_date', type: 'temporal',
@@ -336,7 +363,7 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       let fullLeafIds: string[] = [];
       let visibleLeafIds: string[] = [];
 
-      cy.get('.p-dialog:visible button.p-dialog-header-close').click({ force: true });
+      cy.get('.p-dialog:visible button.p-dialog-close-button').click({ force: true });
       cy.window().then((win: any) => {
         const phylogenetic = win.commonService.visuals.phylogenetic;
         fullLeafIds = phylogenetic.tree.data.getLeaves().map((leaf: any) => String(leaf.id));
@@ -361,19 +388,19 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       cy.get('#export-auspice-json').click({ force: true });
 
       cy.readFile(fullExportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
-        const dataset = JSON.parse(savedText);
+        const dataset = typeof savedText === 'string' ? JSON.parse(savedText) : savedText;
         expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(fullLeafIds);
       });
 
       cy.get(SELECTORS.exportBtn).click();
       cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
       cy.get('#auspice-advanced-options').find('summary').click();
-      cy.get('#auspice-tree-scope-visible').check();
+      cy.get('#auspice-tree-scope-visible').check({ force: true });
       cy.get('#auspice-json-filename').clear({ force: true }).type(visibleExportBase, { delay: 0, force: true });
       cy.get('#export-auspice-json').click({ force: true });
 
       cy.readFile(visibleExportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
-        const dataset = JSON.parse(savedText);
+        const dataset = typeof savedText === 'string' ? JSON.parse(savedText) : savedText;
         expect(flattenAuspiceDisplayLeaves(dataset.tree)).to.deep.equal(visibleLeafIds);
         expect(dataset.tree.node_attrs.div).to.equal(0);
       });
@@ -398,10 +425,8 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       });
 
       cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
-      cy.get('#auspice-advanced-options')
-        .should('not.have.attr', 'open')
-        .find('summary')
-        .click();
+      cy.get('#auspice-advanced-options').should('not.have.attr', 'open');
+      cy.get('#auspice-advanced-options').find('summary').click();
 
       cy.get('#auspice-tree-scope-full').should('be.checked');
       cy.get('#auspice-tree-scope-visible').should('not.be.checked');
@@ -418,8 +443,11 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       cy.get('#auspice-filter-auspice_group').should('not.be.checked').and('be.disabled');
       ['#auspice-coloring-fields', '#auspice-filter-fields'].forEach((selector) => {
         cy.get(selector).then(($menu) => {
-          cy.wrap($menu.find('input[type="checkbox"]:checked:not(:disabled)'))
-            .each(($checkbox) => cy.wrap($checkbox).uncheck({ force: true }));
+          const selectedCheckboxes = $menu.find('input[type="checkbox"]:checked:not(:disabled)');
+          if (selectedCheckboxes.length) {
+            cy.wrap(selectedCheckboxes)
+              .each(($checkbox) => cy.wrap($checkbox).uncheck({ force: true }));
+          }
         });
       });
 
@@ -433,7 +461,7 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
       cy.get('#export-auspice-json').click({ force: true });
 
       cy.readFile(exportPath, 'utf8', { timeout: 30000 }).then((savedText) => {
-        const dataset = JSON.parse(savedText);
+        const dataset = typeof savedText === 'string' ? JSON.parse(savedText) : savedText;
         expect(dataset.meta.colorings.map((coloring: any) => coloring.key))
           .to.deep.equal(['auspice_group']);
         expect(dataset.meta.filters).to.deep.equal(['auspice_group']);

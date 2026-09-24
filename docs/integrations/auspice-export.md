@@ -27,14 +27,15 @@ The single JSON file follows the Auspice v2 `version`, `meta`, and `tree` struct
 - the current node color-by field when that field is exportable;
 - current resolved tip coordinates without external geocoding, grouping tips at identical coordinates into one location and using meaningful site/location values as deme names when available;
 - separate country, state, county, ZIP code, census tract, and site resolutions when the corresponding configured or conventionally named fields are available; named administrative demes use the spherical centroid of their mapped tips;
+- saved MicrobeTrace categorical value colors as Auspice coloring scales, plus custom key-table legend labels when available;
 - stored bootstrap support when its split still matches a current branch; and
-- categorical, continuous, boolean, and supported date colorings and filters.
+- categorical, ordinal, continuous, boolean, and supported date colorings and filters. Numeric fields with a saved discrete MicrobeTrace palette are exported as ordinal rather than as an interpolated continuous scale.
 
 The title uses a partner-provided dataset name when one is available. Otherwise it uses the source filename without its extension. Auspice chooses the palette and visual presentation.
 
 ## Divergence-only behavior and exclusions
 
-MicrobeTrace exports branch distance as cumulative `div` values with root divergence set to zero. It does not claim the tree is time-scaled and does not emit `num_date`, because MicrobeTrace does not infer dates for internal ancestors. Date-like tip fields can still appear as temporal colorings.
+MicrobeTrace exports branch distance as cumulative `div` values with root divergence set to zero. It does not claim the tree is time-scaled and does not emit `num_date`, because MicrobeTrace does not infer dates for internal ancestors. Date-like tip fields can still appear as temporal colorings when every value is a real calendar date or a supported partial date such as `2026-02-XX` or `2026-XX-XX`; impossible dates remain categorical metadata.
 
 The export deliberately omits:
 
@@ -45,7 +46,7 @@ The export deliberately omits:
 - branch mutations, root sequences, genome annotations, entropy, and frequency data; and
 - original Auspice metadata that MicrobeTrace no longer retains with the same meaning.
 
-Export stops with an inline error instead of changing invalid data when a tip ID is missing or duplicated, or when a branch length is negative or non-finite.
+Export stops with an inline error instead of changing invalid data when a tip ID is missing or duplicated, a session-node ID identifies multiple nodes, a tree tip has no exact session-node match, or a branch length is negative or non-finite. Coordinate strings must be entirely numeric with an optional compatible compass suffix; partially numeric values such as `34abc`, invalid compass axes, and out-of-range coordinates are left unmapped.
 
 ## Round-trip limitations
 

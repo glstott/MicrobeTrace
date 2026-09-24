@@ -46,6 +46,7 @@ import {
   AuspiceExportError,
   AuspiceExportFieldOption,
   AuspiceExportOptions,
+  AuspiceColoringStyle,
   AuspiceGeographyField,
   AuspiceSourceTreeNode,
   AuspiceTreeScope,
@@ -1590,6 +1591,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       updated: new Date(),
       colorBy: widgets['node-color-variable'],
       temporalFields: this.getAuspiceTemporalFields(),
+      coloringStyles: this.getAuspiceColoringStyles(),
       latitudeField: widgets['map-field-lat'],
       longitudeField: widgets['map-field-lon'],
       geographyFields: this.getAuspiceGeographyFields(),
@@ -1686,6 +1688,83 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return timelineFields.filter(field => (
       typeof field === 'string' && field.trim() && field !== 'None'
     ));
+  }
+
+  private getAuspiceColoringStyles(): Record<string, AuspiceColoringStyle> {
+    const sessionStyle: any = this.commonService.session.style || {};
+    const nodes = Array.isArray(this.commonService.session.data?.nodes)
+      ? this.commonService.session.data.nodes
+      : [];
+    const fields = new Set<string>(
+      (Array.isArray(this.commonService.session.data?.nodeFields)
+        ? this.commonService.session.data.nodeFields
+        : [])
+        .filter(field => typeof field === 'string' && field.trim()),
+    );
+    nodes.forEach(node => Object.keys(node || {}).forEach(field => fields.add(field)));
+
+    const colorTables = sessionStyle.nodeColorsTable;
+    const colorTableKeys = sessionStyle.nodeColorsTableKeys;
+    const colorHistory = sessionStyle.nodeColorsTableHistory;
+    const colorAssignments = sessionStyle.nodeColorAssignments;
+    const valueNames = sessionStyle.nodeValueNames;
+    const isRecord = (value: unknown): value is Record<string, any> => (
+      !!value && typeof value === 'object' && !Array.isArray(value)
+    );
+    const styles: Record<string, AuspiceColoringStyle> = Object.create(null);
+
+    fields.forEach(field => {
+      const valuesByKey = new Map<string, string | number>();
+      nodes.forEach(node => {
+        const value = node?.[field];
+        if ((typeof value === 'string' && value.trim())
+            || (typeof value === 'number' && Number.isFinite(value))) {
+          const key = String(value);
+          if (!valuesByKey.has(key)) valuesByKey.set(key, value);
+        }
+      });
+      if (!valuesByKey.size) return;
+
+      const keys = Array.isArray(colorTableKeys?.[field]) ? colorTableKeys[field] : [];
+      const colors = Array.isArray(colorTables?.[field]) ? colorTables[field] : [];
+      const history = isRecord(colorHistory?.[field]) ? colorHistory[field] : {};
+      const assignments = isRecord(colorAssignments?.[field]) ? colorAssignments[field] : {};
+      const orderedKeys = Array.from(new Set([
+        ...keys.map(value => String(value)),
+        ...Object.keys(history),
+        ...Object.keys(assignments),
+      ]));
+      const scale = orderedKeys.flatMap(valueKey => {
+        const value = valuesByKey.get(valueKey);
+        if (value === undefined) return [];
+        const tableIndex = keys.findIndex(candidate => String(candidate) === valueKey);
+        const color = assignments[valueKey]
+          ?? history[valueKey]
+          ?? (tableIndex >= 0 ? colors[tableIndex] : undefined);
+        return typeof color === 'string' ? [[value, color] as [string | number, string]] : [];
+      });
+      const hasLegendLabels = isRecord(valueNames) && Array.from(valuesByKey.keys()).some(valueKey => (
+        Object.prototype.hasOwnProperty.call(valueNames, valueKey)
+        && (typeof valueNames[valueKey] === 'string' || typeof valueNames[valueKey] === 'number')
+      ));
+      const legend = hasLegendLabels
+        ? Array.from(valuesByKey.entries()).map(([valueKey, value]) => {
+          const display = valueNames[valueKey];
+          return typeof display === 'string' || typeof display === 'number'
+            ? { value, display }
+            : { value };
+        })
+        : [];
+
+      if (scale.length || legend.length) {
+        styles[field] = {
+          ...(scale.length ? { scale } : {}),
+          ...(legend.length ? { legend } : {}),
+        };
+      }
+    });
+
+    return styles;
   }
 
   private getAuspiceGeographyFields(): AuspiceGeographyField[] {

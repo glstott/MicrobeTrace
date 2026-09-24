@@ -128,7 +128,10 @@ const auspiceDisplayTopology = (node: any): any => {
     : String(node?.name ?? '');
 };
 
-const exportAndAssertCurrentAuspiceTopology = (label: string): void => {
+const exportAndAssertCurrentAuspiceTopology = (
+  label: string,
+  treeScope: 'full' | 'visible' = 'full',
+): void => {
   cy.window().then((win: WinWithMT) => {
     const expectedTopology = orderedTopology(
       win.commonService.visuals.phylogenetic.tree.data,
@@ -139,6 +142,10 @@ const exportAndAssertCurrentAuspiceTopology = (label: string): void => {
 
     cy.get(SELECTORS.exportButton).click({ force: true });
     cy.contains('.p-dialog:visible .nav-link', /^Auspice JSON$/).click({ force: true });
+    if (treeScope === 'visible') {
+      cy.get('#auspice-advanced-options').find('summary').click();
+      cy.get('#auspice-tree-scope-visible').check({ force: true });
+    }
     cy.get('#auspice-json-filename')
       .clear({ force: true })
       .type(filenameBase, { delay: 0, force: true });
@@ -230,7 +237,7 @@ describe('Journey Flow - Phylogenetic Tree context menu mutations on uploaded da
 
     assertTreeDiffersFromInitialNewick();
     assertRestoreButtonState(true);
-    exportAndAssertCurrentAuspiceTopology('subtree');
+    exportAndAssertCurrentAuspiceTopology('subtree', 'visible');
 
     cy.get('@initialLeafCount').then((initialLeafCount) => {
       cy.window().then((win: WinWithMT) => {

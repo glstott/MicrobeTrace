@@ -5,7 +5,8 @@ import {
 } from '@app/workers/phylogenetic-bootstrap-utils';
 
 export type AuspiceScalar = string | number | boolean;
-export type AuspiceColoringType = 'boolean' | 'continuous' | 'temporal' | 'categorical';
+export type AuspiceColoringType = 'boolean' | 'continuous' | 'temporal' | 'ordinal' | 'categorical';
+export type AuspiceScaleValue = string | number;
 export type AuspiceTreeScope = 'full' | 'visible';
 
 export interface AuspiceNodeAttribute {
@@ -16,6 +17,19 @@ export interface AuspiceColoring {
   key: string;
   title: string;
   type: AuspiceColoringType;
+  scale?: Array<[AuspiceScaleValue, string]>;
+  legend?: AuspiceLegendEntry[];
+}
+
+export interface AuspiceLegendEntry {
+  value: AuspiceScaleValue;
+  display?: AuspiceScaleValue;
+}
+
+export interface AuspiceColoringStyle {
+  type?: AuspiceColoringType;
+  scale?: Array<[AuspiceScaleValue, string]>;
+  legend?: AuspiceLegendEntry[];
 }
 
 export interface AuspiceExportFieldOption extends AuspiceColoring {
@@ -96,6 +110,7 @@ export interface AuspiceExportOptions {
   updated?: Date | string;
   colorBy?: string;
   temporalFields?: string[];
+  coloringStyles?: Record<string, AuspiceColoringStyle>;
   latitudeField?: string;
   longitudeField?: string;
   geographyFields?: AuspiceGeographyField[];
@@ -114,10 +129,29 @@ interface BuiltGeography {
   defaultResolutionKey?: string;
 }
 
+interface NormalizedGeographyField extends AuspiceGeographyField {
+  requestedKey: string;
+}
+
+interface TreeAttributeIndex {
+  byDescendantLeaves: Map<string, Record<string, any>>;
+  bySplit: Map<string, Record<string, any>>;
+  leafUniverse: string[];
+}
+
 const SYNTHETIC_LOCATION_KEY = 'microbetrace_location';
 const DEFAULT_TITLE = 'MicrobeTrace Auspice export';
 const INTERNAL_NODE_PREFIX = 'NODE_';
-const ISO_DATE_PATTERN = /^\d{4}-(?:(?:0[1-9]|1[0-2])|XX)-(?:(?:0[1-9]|[12]\d|3[01])|XX)$/i;
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2}|XX)-(\d{2}|XX)$/i;
+const COORDINATE_PATTERN = /^([+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?)(?:\s*([NSEW]))?$/i;
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const COLORING_TYPES = new Set<AuspiceColoringType>([
+  'boolean',
+  'continuous',
+  'temporal',
+  'ordinal',
+  'categorical',
+]);
 
 const EXCLUDED_FIELD_KEYS = new Set([
   'seq',
@@ -189,6 +223,7 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const nodeByName = indexNodesByName(nodes);
   const exportTree = resolveExportTree(options);
   const leafNames = collectLeafNamesAndValidate(exportTree);
+  validateLeafNameCompatibility(leafNames, nodeByName, nodes.length > 0);
   const attributeTree = options.attributeTree ?? options.fullTree;
   const attributeNodes = [
     ...nodes,
@@ -197,10 +232,10 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   ];
   const availableExportFields = buildExportFields(options, attributeNodes);
   const exportFields = selectExportFields(availableExportFields, options.metadataFieldKeys);
-  const geography = buildGeography(options, leafNames, nodeByName);
+  const geography = buildGeography(options, leafNames, nodeByName, availableExportFields);
   const usedNames = new Set(leafNames);
-  const attributeDataByClade = indexTreeDataByDescendantLeaves(attributeTree);
-  const exportCladeKeyByNode = indexDescendantLeafKeys(exportTree);
+  const attributeData = indexTreeAttributeData(attributeTree);
+  const exportLeavesByNode = indexDescendantLeaves(exportTree);
   const bootstrapUniverse = options.bootstrap?.labels?.length
     ? options.bootstrap.labels.map(value => String(value))
     : leafNames;
@@ -230,10 +265,20 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     nodeAttrs.div = divergence;
     const sourceName = String(source.id ?? '');
     const sessionNode = sourceName.trim() ? nodeByName.get(sourceName) : undefined;
-    const attributeData = attributeDataByClade.get(exportCladeKeyByNode.get(source) ?? '');
+    const matchingAttributeData = getMatchingTreeAttributeData(
+      source,
+      isRoot,
+      exportLeavesByNode,
+      attributeData,
+    );
 
     exportFields.forEach(field => {
-      const rawValue = getNodeAttributeValue(source, sessionNode, attributeData, field.sourceKey);
+      const rawValue = getNodeAttributeValue(
+        source,
+        sessionNode,
+        matchingAttributeData,
+        field.sourceKey,
+      );
       if (isExportableScalar(rawValue)) {
         nodeAttrs[field.auspiceKey] = { value: rawValue };
       }
@@ -248,7 +293,9 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     const labels: Record<string, string> = Object.create(null);
     if (!isLeaf) {
       const sourceLabel = String(source.id ?? '').trim();
-      const attributeLabel = String(attributeData?._id ?? attributeData?.id ?? '').trim();
+      const attributeLabel = String(
+        matchingAttributeData?._id ?? matchingAttributeData?.id ?? '',
+      ).trim();
       const originalLabel = sourceLabel || attributeLabel;
       const support = getBootstrapSupport(source, options.bootstrap, bootstrapUniverse, isRoot);
       if (support !== null) {
@@ -358,14 +405,16 @@ export function getAuspiceExportFieldOptions(
     ...collectTreeAttributeNodes(exportTree),
     ...collectTreeAttributeNodes(options.attributeTree ?? options.fullTree),
   ];
-  const fields: AuspiceExportFieldOption[] = buildExportFields(options, attributeNodes)
+  const exportFields = buildExportFields(options, attributeNodes);
+  const fields: AuspiceExportFieldOption[] = exportFields
     .map(field => ({ ...field.coloring }));
 
   if (options.tree) {
     const nodeByName = indexNodesByName(nodes);
     const leafNames = collectLeafNamesAndValidate(exportTree);
+    validateLeafNameCompatibility(leafNames, nodeByName, nodes.length > 0);
     const existingKeys = new Set(fields.map(field => field.key));
-    buildGeography(options, leafNames, nodeByName).resolutions.forEach(resolution => {
+    buildGeography(options, leafNames, nodeByName, exportFields).resolutions.forEach(resolution => {
       if (existingKeys.has(resolution.key)) return;
       existingKeys.add(resolution.key);
       fields.push({
@@ -420,47 +469,86 @@ function getNodeAttributeValue(
     : undefined;
 }
 
-function indexDescendantLeafKeys(
+function indexDescendantLeaves(
   tree: AuspiceSourceTreeNode | undefined,
-): Map<AuspiceSourceTreeNode, string> {
-  const keys = new Map<AuspiceSourceTreeNode, string>();
-  if (!tree) return keys;
+): Map<AuspiceSourceTreeNode, string[]> {
+  const leavesByNode = new Map<AuspiceSourceTreeNode, string[]>();
+  if (!tree) return leavesByNode;
 
   const visit = (node: AuspiceSourceTreeNode): string[] => {
     const children = Array.isArray(node.children) ? node.children : [];
     const leaves = children.length
       ? children.flatMap(visit)
       : [String(node.id ?? '')];
-    keys.set(node, createLeafSetKey(leaves));
+    leavesByNode.set(node, leaves);
     return leaves;
   };
   visit(tree);
-  return keys;
+  return leavesByNode;
 }
 
-function indexTreeDataByDescendantLeaves(
+function indexTreeAttributeData(
   tree: AuspiceSourceTreeNode | undefined,
-): Map<string, Record<string, any>> {
-  const result = new Map<string, Record<string, any>>();
-  const ambiguousKeys = new Set<string>();
-  if (!tree) return result;
+): TreeAttributeIndex {
+  const byDescendantLeaves = new Map<string, Record<string, any>>();
+  const bySplit = new Map<string, Record<string, any>>();
+  const ambiguousDescendantKeys = new Set<string>();
+  const ambiguousSplitKeys = new Set<string>();
+  if (!tree) return { byDescendantLeaves, bySplit, leafUniverse: [] };
 
-  const keys = indexDescendantLeafKeys(tree);
-  const visit = (node: AuspiceSourceTreeNode): void => {
-    const key = keys.get(node) ?? '';
+  const leavesByNode = indexDescendantLeaves(tree);
+  const leafUniverse = leavesByNode.get(tree) ?? [];
+  const visit = (node: AuspiceSourceTreeNode, isRoot: boolean): void => {
+    const leaves = leavesByNode.get(node) ?? [];
+    const descendantKey = createLeafSetKey(leaves);
     const data = getTreeNodeData(node);
-    if (key && data && !ambiguousKeys.has(key)) {
-      if (result.has(key)) {
-        result.delete(key);
-        ambiguousKeys.add(key);
-      } else {
-        result.set(key, data);
+    if (descendantKey && data) {
+      addUniqueTreeAttributeData(
+        byDescendantLeaves,
+        ambiguousDescendantKeys,
+        descendantKey,
+        data,
+      );
+      if (!isRoot) {
+        const splitKey = canonicalSplitKey(leaves, leafUniverse);
+        if (splitKey) {
+          addUniqueTreeAttributeData(bySplit, ambiguousSplitKeys, splitKey, data);
+        }
       }
     }
-    (Array.isArray(node.children) ? node.children : []).forEach(visit);
+    (Array.isArray(node.children) ? node.children : []).forEach(child => visit(child, false));
   };
-  visit(tree);
-  return result;
+  visit(tree, true);
+  return { byDescendantLeaves, bySplit, leafUniverse };
+}
+
+function addUniqueTreeAttributeData(
+  index: Map<string, Record<string, any>>,
+  ambiguousKeys: Set<string>,
+  key: string,
+  data: Record<string, any>,
+): void {
+  if (ambiguousKeys.has(key)) return;
+  if (index.has(key)) {
+    index.delete(key);
+    ambiguousKeys.add(key);
+    return;
+  }
+  index.set(key, data);
+}
+
+function getMatchingTreeAttributeData(
+  node: AuspiceSourceTreeNode,
+  isRoot: boolean,
+  leavesByNode: Map<AuspiceSourceTreeNode, string[]>,
+  attributeIndex: TreeAttributeIndex,
+): Record<string, any> | undefined {
+  const leaves = leavesByNode.get(node) ?? [];
+  const exactMatch = attributeIndex.byDescendantLeaves.get(createLeafSetKey(leaves));
+  if (exactMatch || isRoot) return exactMatch;
+
+  const splitKey = canonicalSplitKey(leaves, attributeIndex.leafUniverse);
+  return splitKey ? attributeIndex.bySplit.get(splitKey) : undefined;
 }
 
 function createLeafSetKey(leafNames: string[]): string {
@@ -517,7 +605,36 @@ function indexNodesByName(nodes: any[]): Map<string, any> {
       index.set(key, node);
     });
   });
+  if (ambiguousNames.size) {
+    const identifiers = formatIdentifierList(Array.from(ambiguousNames));
+    throw new AuspiceExportError(
+      `Session data contains duplicate node IDs that identify more than one node: ${identifiers}. `
+      + 'Make these node IDs unique before exporting to Auspice.',
+    );
+  }
   return index;
+}
+
+function validateLeafNameCompatibility(
+  leafNames: string[],
+  nodeByName: Map<string, any>,
+  hasSessionNodes: boolean,
+): void {
+  if (!hasSessionNodes) return;
+  const unmatchedLeaves = leafNames.filter(name => !nodeByName.has(name));
+  if (!unmatchedLeaves.length) return;
+  const identifiers = formatIdentifierList(unmatchedLeaves);
+  throw new AuspiceExportError(
+    `The exported tree contains tip IDs with no matching session node: ${identifiers}. `
+    + 'Ensure tree leaf names exactly match the session node ID or _id values.',
+  );
+}
+
+function formatIdentifierList(values: string[]): string {
+  const sorted = [...values].sort((left, right) => left.localeCompare(right));
+  const displayed = sorted.slice(0, 5).map(value => `"${value}"`).join(', ');
+  const remaining = sorted.length - 5;
+  return remaining > 0 ? `${displayed}, and ${remaining} more` : displayed;
 }
 
 function buildExportFields(options: AuspiceExportOptions, nodes: any[]): ExportField[] {
@@ -543,16 +660,116 @@ function buildExportFields(options: AuspiceExportOptions, nodes: any[]): ExportF
     if (!values.length) return [];
 
     const auspiceKey = allocateAuspiceKey(sourceKey, usedAuspiceKeys);
+    const inferredType = inferColoringType(values, temporalFields.has(sourceKey.toLowerCase()));
     return [{
       sourceKey,
       auspiceKey,
-      coloring: {
-        key: auspiceKey,
-        title: sourceKey,
-        type: inferColoringType(values, temporalFields.has(sourceKey.toLowerCase())),
-      },
+      coloring: buildColoring(
+        auspiceKey,
+        sourceKey,
+        inferredType,
+        values,
+        getColoringStyle(options.coloringStyles, sourceKey),
+      ),
     }];
   });
+}
+
+function getColoringStyle(
+  styles: Record<string, AuspiceColoringStyle> | undefined,
+  sourceKey: string,
+): AuspiceColoringStyle | undefined {
+  if (!styles || typeof styles !== 'object' || Array.isArray(styles)) return undefined;
+  return Object.prototype.hasOwnProperty.call(styles, sourceKey) ? styles[sourceKey] : undefined;
+}
+
+function buildColoring(
+  key: string,
+  title: string,
+  inferredType: AuspiceColoringType,
+  values: AuspiceScalar[],
+  style?: AuspiceColoringStyle,
+): AuspiceColoring {
+  const configuredType = style?.type && COLORING_TYPES.has(style.type) ? style.type : undefined;
+  const normalizedScale = normalizeColorScale(style?.scale, values);
+  let type = configuredType || inferredType;
+  if (!configuredType && inferredType === 'continuous' && normalizedScale.length) {
+    type = 'ordinal';
+  }
+
+  const coloring: AuspiceColoring = { key, title, type };
+  if ((type === 'categorical' || type === 'ordinal') && normalizedScale.length) {
+    coloring.scale = normalizedScale;
+  }
+  if (type === 'categorical' || type === 'ordinal') {
+    const legend = normalizeColorLegend(style?.legend, values);
+    if (legend.length) coloring.legend = legend;
+  }
+  return coloring;
+}
+
+function normalizeColorScale(
+  scale: Array<[AuspiceScaleValue, string]> | undefined,
+  values: AuspiceScalar[],
+): Array<[AuspiceScaleValue, string]> {
+  if (!Array.isArray(scale)) return [];
+  const availableValues = getAvailableScaleValues(values);
+  const usedValues = new Set<string>();
+  const normalized: Array<[AuspiceScaleValue, string]> = [];
+  scale.forEach(entry => {
+    if (!Array.isArray(entry) || entry.length < 2) return;
+    const value = resolveScaleValue(entry[0], availableValues);
+    const color = typeof entry[1] === 'string' ? entry[1].trim() : '';
+    if (value === null || !HEX_COLOR_PATTERN.test(color)) return;
+    const valueKey = `${typeof value}:${String(value)}`;
+    if (usedValues.has(valueKey)) return;
+    usedValues.add(valueKey);
+    normalized.push([value, color]);
+  });
+  return normalized;
+}
+
+function normalizeColorLegend(
+  legend: AuspiceLegendEntry[] | undefined,
+  values: AuspiceScalar[],
+): AuspiceLegendEntry[] {
+  if (!Array.isArray(legend)) return [];
+  const availableValues = getAvailableScaleValues(values);
+  const usedValues = new Set<string>();
+  const normalized: AuspiceLegendEntry[] = [];
+  legend.forEach(entry => {
+    if (!entry || typeof entry !== 'object') return;
+    const value = resolveScaleValue(entry.value, availableValues);
+    if (value === null) return;
+    const valueKey = `${typeof value}:${String(value)}`;
+    if (usedValues.has(valueKey)) return;
+    const display = entry.display;
+    if (display !== undefined && typeof display !== 'string' && typeof display !== 'number') return;
+    usedValues.add(valueKey);
+    normalized.push(display === undefined ? { value } : { value, display });
+  });
+  return normalized;
+}
+
+function getAvailableScaleValues(values: AuspiceScalar[]): AuspiceScaleValue[] {
+  const seen = new Set<string>();
+  return values.flatMap(value => {
+    if (typeof value !== 'string' && typeof value !== 'number') return [];
+    const key = `${typeof value}:${String(value)}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [value];
+  });
+}
+
+function resolveScaleValue(
+  candidate: unknown,
+  availableValues: AuspiceScaleValue[],
+): AuspiceScaleValue | null {
+  if (typeof candidate !== 'string' && typeof candidate !== 'number') return null;
+  const exact = availableValues.find(value => typeof value === typeof candidate && value === candidate);
+  if (exact !== undefined) return exact;
+  return availableValues.find(value => String(value) === String(candidate)) ?? null;
 }
 
 function selectExportFields(fields: ExportField[], selectedKeys?: string[]): ExportField[] {
@@ -601,9 +818,9 @@ function isExportableScalar(value: unknown): value is AuspiceScalar {
 
 function inferColoringType(values: AuspiceScalar[], configuredTemporal: boolean): AuspiceColoringType {
   const temporalValues = values.every(value => (
-    typeof value === 'number' || (typeof value === 'string' && ISO_DATE_PATTERN.test(value.trim()))
+    typeof value === 'number' || (typeof value === 'string' && isSupportedCalendarDate(value))
   ));
-  if ((configuredTemporal || values.every(value => typeof value === 'string' && ISO_DATE_PATTERN.test(value.trim())))
+  if ((configuredTemporal || values.every(value => typeof value === 'string' && isSupportedCalendarDate(value)))
       && temporalValues) {
     return 'temporal';
   }
@@ -612,18 +829,53 @@ function inferColoringType(values: AuspiceScalar[], configuredTemporal: boolean)
   return 'categorical';
 }
 
+function isSupportedCalendarDate(value: string): boolean {
+  const match = ISO_DATE_PATTERN.exec(value.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const monthToken = match[2].toUpperCase();
+  const dayToken = match[3].toUpperCase();
+  if (monthToken === 'XX') return dayToken === 'XX';
+
+  const month = Number(monthToken);
+  if (!Number.isInteger(month) || month < 1 || month > 12) return false;
+  if (dayToken === 'XX') return true;
+
+  const day = Number(dayToken);
+  const daysInMonth = [
+    31,
+    isGregorianLeapYear(year) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+  return Number.isInteger(day) && day >= 1 && day <= daysInMonth;
+}
+
+function isGregorianLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
 function buildGeography(
   options: AuspiceExportOptions,
   leafNames: string[],
   nodeByName: Map<string, any>,
+  exportFields: ExportField[],
 ): BuiltGeography {
   const coordinateByLeaf = buildCoordinateIndex(options, leafNames, nodeByName);
   const traitsByLeaf = new Map<string, Map<string, string>>();
   if (!coordinateByLeaf.size) return { resolutions: [], traitsByLeaf };
 
-  const geographyFields = normalizeGeographyFields(options.geographyFields);
-  const siteField = geographyFields.find(definition => definition.key === 'site');
-  const namedFields = geographyFields.filter(definition => definition.key !== 'site');
+  const geographyFields = normalizeGeographyFields(options.geographyFields, exportFields);
+  const siteField = geographyFields.find(definition => definition.requestedKey === 'site');
+  const namedFields = geographyFields.filter(definition => definition.requestedKey !== 'site');
   const resolutions: AuspiceGeoResolution[] = [];
 
   namedFields.forEach(definition => {
@@ -679,7 +931,7 @@ function buildGeography(
     coordinateGroups.set(coordinateKey, group);
   });
 
-  const pointKey = siteField ? 'site' : SYNTHETIC_LOCATION_KEY;
+  const pointKey = siteField?.key || SYNTHETIC_LOCATION_KEY;
   const pointTitle = siteField?.title || 'MicrobeTrace location';
   const pointDemes: Record<string, AuspiceGeoCoordinates> = Object.create(null);
   const usedDemeNames = new Set<string>();
@@ -710,26 +962,41 @@ function buildGeography(
 
 function normalizeGeographyFields(
   fields: AuspiceGeographyField[] | undefined,
-): AuspiceGeographyField[] {
-  const normalized: AuspiceGeographyField[] = [];
-  const usedKeys = new Set<string>();
+  exportFields: ExportField[],
+): NormalizedGeographyField[] {
+  const normalized: NormalizedGeographyField[] = [];
+  const usedAuspiceKeys = new Set([
+    'div',
+    SYNTHETIC_LOCATION_KEY,
+    ...exportFields.map(field => field.auspiceKey),
+  ]);
+  const exportFieldBySource = new Map(exportFields.map(field => [field.sourceKey, field]));
+  const usedRequestedKeys = new Set<string>();
   const usedFields = new Set<string>();
   (Array.isArray(fields) ? fields : []).forEach(definition => {
     const field = String(definition?.field ?? '').trim();
-    const key = String(definition?.key ?? '')
+    const requestedKey = String(definition?.key ?? '')
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9_]+/g, '_')
       .replace(/^_+|_+$/g, '');
-    if (!field || field.toLowerCase() === 'none' || !key || key === 'div'
-        || usedKeys.has(key) || usedFields.has(field.toLowerCase())) {
+    if (!field || field.toLowerCase() === 'none' || !requestedKey
+        || usedRequestedKeys.has(requestedKey) || usedFields.has(field.toLowerCase())) {
       return;
     }
-    usedKeys.add(key);
+    const matchingExportField = exportFieldBySource.get(field);
+    const canShareMetadataKey = matchingExportField?.auspiceKey === requestedKey
+      && matchingExportField.coloring.type === 'categorical';
+    const key = canShareMetadataKey
+      ? requestedKey
+      : allocateAuspiceKey(requestedKey, usedAuspiceKeys);
+    usedRequestedKeys.add(requestedKey);
+    usedAuspiceKeys.add(key);
     usedFields.add(field.toLowerCase());
     normalized.push({
       key,
-      title: String(definition?.title ?? '').trim() || key,
+      requestedKey,
+      title: String(definition?.title ?? '').trim() || requestedKey,
       field,
     });
   });
@@ -843,10 +1110,21 @@ function parseCoordinate(value: unknown, negativeHemisphere: 'S' | 'W'): number 
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
 
   const text = String(value).trim().toUpperCase();
-  const parsed = Number.parseFloat(text);
+  const match = COORDINATE_PATTERN.exec(text);
+  if (!match) return null;
+  const parsed = Number(match[1]);
   if (!Number.isFinite(parsed)) return null;
-  if (text.includes(negativeHemisphere)) return -Math.abs(parsed);
-  if (text.includes(negativeHemisphere === 'S' ? 'N' : 'E')) return Math.abs(parsed);
+  const hemisphere = match[2]?.toUpperCase();
+  if (!hemisphere) return parsed;
+
+  const positiveHemisphere = negativeHemisphere === 'S' ? 'N' : 'E';
+  if (hemisphere !== negativeHemisphere && hemisphere !== positiveHemisphere) return null;
+  if ((match[1].startsWith('-') && hemisphere === positiveHemisphere)
+      || (match[1].startsWith('+') && hemisphere === negativeHemisphere)) {
+    return null;
+  }
+  if (hemisphere === negativeHemisphere) return -Math.abs(parsed);
+  if (hemisphere === positiveHemisphere) return Math.abs(parsed);
   return parsed;
 }
 
