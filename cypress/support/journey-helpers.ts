@@ -685,8 +685,23 @@ export function goTo2DNetworkView(): void {
 }
 
 export function goToTransmissionChainView(): void {
-  cy.get(byTestId(testIds.appViewMenuButton), { timeout: 15000 }).click({ force: true });
-  cy.get(byTestId(testIds.appViewMenuTransmissionChain), { timeout: 15000 }).click({ force: true });
+  const ensureTabExists = (attemptsRemaining: number): void => {
+    cy.get('body', { timeout: 15000 }).then(($body) => {
+      const existingTab = $body.find('.lm_tab[title="Transmission Chain View"]');
+      if (existingTab.length) return;
+
+      expect(attemptsRemaining, 'attempts remaining to open Transmission Chain View').to.be.greaterThan(0);
+      cy.get(byTestId(testIds.appViewMenuButton)).click({ force: true });
+      cy.get(byTestId(testIds.appViewMenuTransmissionChain)).click({ force: true });
+      cy.wait(250, { log: false });
+      ensureTabExists(attemptsRemaining - 1);
+    });
+  };
+
+  ensureTabExists(3);
+
+  cy.get('.lm_tab[title="Transmission Chain View"]', { timeout: 15000 })
+    .trigger('click', { button: 0 });
 
   assertTransmissionChainReady();
 }

@@ -9,6 +9,7 @@ import {
 import { byTestId, testIds } from '../../support/selectors';
 
 const dateField = 'Date of symptom onset Date';
+const yAxisField = 'State';
 
 const getTransmissionCy = () =>
   cy.window({ log: false })
@@ -101,6 +102,30 @@ const selectDateField = (): void => {
   cy.get('.timeline-axis-overlay:not(.hidden)', { timeout: 20000 }).should('exist');
 };
 
+const selectYAxisField = (): void => {
+  cy.get('@dialogContainer').contains('.nav-link', 'Layout').click({ force: true });
+  cy.get('@dialogContainer').find('#transmission-chain-y-axis-field', { timeout: 10000 }).click({ force: true });
+  cy.get('.p-select-overlay:visible', { timeout: 10000 }).last().then(($overlay) => {
+    const scrollable = $overlay
+      .find('.p-select-list-container, .p-virtualscroller, .p-select-items-wrapper')
+      .filter((_index, element) => element.scrollHeight > element.clientHeight)
+      .first();
+
+    if (scrollable.length) {
+      scrollable.get(0).scrollTop = scrollable.get(0).scrollHeight * 0.3;
+      scrollable.get(0).dispatchEvent(new Event('scroll', { bubbles: true }));
+    }
+  });
+  cy.get('.p-select-overlay:visible', { timeout: 10000 })
+    .last()
+    .find('.p-select-option')
+    .filter((_index, option) => String(option.textContent || '').trim() === yAxisField)
+    .should('have.length', 1)
+    .click({ force: true });
+  cy.window().its('commonService.session.style.widgets.transmission-chain-y-axis-field').should('equal', yAxisField);
+  cy.get('.timeline-y-axis', { timeout: 20000 }).should('exist');
+};
+
 const openDisplayPanel = (): void => {
   cy.get('@dialogContainer').contains('.nav-link', 'Network').click({ force: true });
   cy.get('@dialogContainer').then(($dialog) => {
@@ -174,7 +199,7 @@ const getFirstVisibleOrigin = (): Cypress.Chainable<string> =>
 
 describe('Transmission Chain View', () => {
   beforeEach(() => {
-    visitAppAndAcceptEula({ skipDemoSession: false });
+    visitAppAndAcceptEula({ skipDemoSession: false, dismissWelcomeOverlay: true });
     goToTransmissionChainView();
     openSettings();
   });
@@ -183,6 +208,7 @@ describe('Transmission Chain View', () => {
     cy.get('.lm_tab.lm_active', { timeout: 20000 }).should('contain.text', 'Transmission Chain View');
     cy.get('@dialogContainer').contains('.nav-link', 'Layout').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-date-field').should('exist');
+    cy.get('@dialogContainer').find('#transmission-chain-y-axis-field').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-link-origins').should('exist');
     cy.get('@dialogContainer').find('#transmission-chain-link-origins input[type="checkbox"]').should('have.length.greaterThan', 0);
     cy.get('@dialogContainer').find('#transmission-chain-vertical-spacing').should('exist');
@@ -203,6 +229,8 @@ describe('Transmission Chain View', () => {
     });
     cy.window().its('commonService.visuals.twoD').should('exist');
     cy.window().its('commonService.visuals.transmissionChain').should('exist');
+    cy.get('#transmission-chain-cy').should('have.class', 'cytoscape-viewport');
+    cy.get('#cy').should('have.class', 'cytoscape-viewport');
   });
 
   it('arranges dated nodes from left to right and renders the timeline axis', () => {
@@ -233,6 +261,39 @@ describe('Transmission Chain View', () => {
 
     getTransmissionCy().should((cyInstance) => {
       expectSeparatedClusterBands(cyInstance);
+    });
+  });
+
+  it('uses a selected node field for labeled Y-axis bands', () => {
+    selectDateField();
+    selectYAxisField();
+
+    getTransmissionCy().should((cyInstance) => {
+      const bands = new Map<string, { minY: number; maxY: number }>();
+      leafNodes(cyInstance).forEach((node) => {
+        const label = String(node.data(yAxisField) ?? '').trim() || `(No ${yAxisField})`;
+        const y = node.position('y');
+        const band = bands.get(label) ?? { minY: y, maxY: y };
+        band.minY = Math.min(band.minY, y);
+        band.maxY = Math.max(band.maxY, y);
+        bands.set(label, band);
+      });
+
+      const orderedBands = Array.from(bands.entries()).sort((a, b) => a[1].minY - b[1].minY);
+      expect(orderedBands.length, 'Y-axis bands').to.be.greaterThan(1);
+      for (let index = 1; index < orderedBands.length; index++) {
+        expect(
+          orderedBands[index][1].minY,
+          `${orderedBands[index][0]} starts below ${orderedBands[index - 1][0]}`,
+        ).to.be.greaterThan(orderedBands[index - 1][1].maxY);
+      }
+    });
+
+    cy.get('.timeline-y-axis-title').should('contain.text', yAxisField);
+    cy.get('.timeline-y-axis-group').should('have.length.greaterThan', 1);
+    cy.get('.timeline-y-axis-label').then(($labels) => {
+      const labels = [...$labels].map((label) => label.textContent?.trim()).filter(Boolean);
+      expect(labels, 'rendered Y-axis labels').to.include('Texas');
     });
   });
 
@@ -445,7 +506,7 @@ describe('Transmission Chain example fixture layout', () => {
 
 describe('Transmission Chain legacy migration', () => {
   it('migrates legacy 2D timeline sessions to Transmission Chain View', () => {
-    visitAppAndAcceptEula({ skipDemoSession: false });
+    visitAppAndAcceptEula({ skipDemoSession: false, dismissWelcomeOverlay: true });
 
     cy.window().then((win: any) => {
       const legacySession = JSON.parse(JSON.stringify(win.commonService.session));
@@ -463,6 +524,7 @@ describe('Transmission Chain legacy migration', () => {
       expect(legacySession.style.widgets['default-view']).to.equal('Transmission Chain View');
       expect(legacySession.style.widgets['network-layout-mode']).to.equal('Force Directed');
       expect(legacySession.style.widgets['transmission-chain-date-field']).to.equal(dateField);
+      expect(legacySession.style.widgets['transmission-chain-y-axis-field']).to.equal('None');
       expect(legacySession.style.widgets['transmission-chain-vertical-spacing']).to.equal(180);
       expect(legacySession.layout.content[0].type).to.equal('Transmission Chain View');
     });

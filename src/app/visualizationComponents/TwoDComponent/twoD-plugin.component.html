@@ -27,7 +27,7 @@
     <!-- <div #cy id="cy" style="width: 100%; height: 100%;"></div> -->
 
     <div #exportContainer class="cytoscape-container" style="position: relative;">
-      <div #cy [id]="cyElementId" style="width: 100%; height: 100%; position: relative;"></div>
+      <div #cy [id]="cyElementId" class="cytoscape-viewport" style="width: 100%; height: 100%; position: relative;"></div>
       <div class="grid-overlay" [class.hidden]="!widgets['network-gridlines-show']"></div>
       <svg #timelineAxisOverlay class="timeline-axis-overlay hidden" aria-hidden="true"></svg>
 
@@ -323,6 +323,12 @@
       <div class="col-3"><label for="transmission-chain-date-field">Date Field</label></div>
       <div class="col-9">
         <p-select id="transmission-chain-date-field" [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedNetworkTimelineDateFieldVariable" (ngModelChange)="onNetworkTimelineDateFieldChange($event)"></p-select>
+      </div>
+    </div>
+    <div class="form-group row" title="Choose a node field, such as Facility, to create labeled vertical bands. Select None to retain automatic cluster and connected-component grouping.">
+      <div class="col-3"><label for="transmission-chain-y-axis-field">Y-Axis Field</label></div>
+      <div class="col-9">
+        <p-select id="transmission-chain-y-axis-field" [options]="FieldList" appendTo="body" class="width-percent-100" [(ngModel)]="SelectedTransmissionChainYAxisFieldVariable" (ngModelChange)="onTransmissionChainYAxisFieldChange($event)"></p-select>
       </div>
     </div>
     <div class="form-group row" title="Choose which link lists are used to render and arrange the transmission chain.">

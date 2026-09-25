@@ -575,6 +575,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             'network-timeline-date-field': 'None',
             'network-timeline-vertical-spacing': 100,
             'transmission-chain-date-field': 'None',
+            'transmission-chain-y-axis-field': 'None',
             'transmission-chain-link-origins': null,
             'transmission-chain-line-style': 'Stepped',
             'transmission-chain-vertical-spacing': 100,
@@ -1440,6 +1441,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             widgets['transmission-chain-date-field'] && widgets['transmission-chain-date-field'] !== 'None'
                 ? widgets['transmission-chain-date-field']
                 : widgets['network-timeline-date-field'] || 'None';
+
+        if (!widgets['transmission-chain-y-axis-field']) {
+            widgets['transmission-chain-y-axis-field'] = 'None';
+        }
 
         const legacySpacing = Number(widgets['network-timeline-vertical-spacing']);
         widgets['transmission-chain-vertical-spacing'] = Number.isFinite(legacySpacing)

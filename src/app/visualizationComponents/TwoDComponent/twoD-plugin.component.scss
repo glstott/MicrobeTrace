@@ -134,16 +134,13 @@
   font-weight: 700;
 }
 
-#cy {
-  position: relative;
-  width: 100%;
-  height: 100%;
+.cytoscape-viewport {
   top: 0;
   left: 0;
   z-index: var(--twod-network-layer);
 }
 
-:host ::ng-deep #cy > div {
+:host ::ng-deep .cytoscape-viewport > div {
   z-index: var(--twod-network-layer) !important;
 }
 

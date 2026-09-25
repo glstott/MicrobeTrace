@@ -70,6 +70,14 @@ interface TimelineLayoutTick {
     label: string;
 }
 
+interface TimelineYAxisGroup {
+    key: string;
+    label: string;
+    minY: number;
+    maxY: number;
+    centerY: number;
+}
+
 interface TimelineLayoutMetadata {
     active: boolean;
     field: string;
@@ -81,6 +89,8 @@ interface TimelineLayoutMetadata {
     singleDateDomain: boolean;
     noDateX: number | null;
     hasNoDateNodes: boolean;
+    yAxisField: string;
+    yAxisGroups: TimelineYAxisGroup[];
 }
 
 type PolygonColorTableDisplayMode = 'Show' | 'Dock' | 'Hide';
@@ -765,6 +775,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     SelectedNetworkLayoutModeVariable: NetworkLayoutMode = 'Force Directed';
     SelectedNetworkTimelineDateFieldVariable: string = 'None';
     SelectedNetworkTimelineVerticalSpacingVariable: number = 100;
+    SelectedTransmissionChainYAxisFieldVariable: string = 'None';
     TransmissionChainLinkOriginOptions: SelectItem[] = [];
     TransmissionChainLineStyleOptions: SelectItem[] = [
         { label: 'Stepped', value: 'Stepped' },
@@ -835,7 +846,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         rangeEnd: 0,
         singleDateDomain: false,
         noDateX: null,
-        hasNoDateNodes: false
+        hasNoDateNodes: false,
+        yAxisField: 'None',
+        yAxisGroups: []
     };
     private timelineAxisUpdateTimeout: any;
     private timelineAxisResizeObserver: ResizeObserver | null = null;
@@ -936,6 +949,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         if (!this.widgets['transmission-chain-date-field']) {
             this.widgets['transmission-chain-date-field'] = 'None';
         }
+        if (!this.widgets['transmission-chain-y-axis-field']) {
+            this.widgets['transmission-chain-y-axis-field'] = 'None';
+        }
         if (this.widgets['transmission-chain-link-origins'] === undefined) {
             this.widgets['transmission-chain-link-origins'] = null;
         }
@@ -971,6 +987,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             return String(this.widgets['transmission-chain-date-field'] || 'None');
         }
         return String(this.widgets['network-timeline-date-field'] || 'None');
+    }
+
+    private getTransmissionChainYAxisField(): string {
+        this.ensureTimelineLayoutWidgetDefaults();
+        return this.isTransmissionChainView
+            ? String(this.widgets['transmission-chain-y-axis-field'] || 'None')
+            : 'None';
     }
 
     public isTimelineLayoutSelected(): boolean {
@@ -2293,10 +2316,64 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             : String(rawCluster).trim();
     }
 
+    private getTransmissionChainYAxisValue(node: any): string {
+        const field = this.getTransmissionChainYAxisField();
+        if (field === 'None') {
+            return '';
+        }
+
+        const rawValue = node?.[field];
+        const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+        const normalizedValues = values
+            .map(value => value === undefined || value === null ? '' : String(value).trim())
+            .filter(Boolean);
+
+        return normalizedValues.length > 0
+            ? normalizedValues.join(', ')
+            : `(No ${field.replace(/_/g, ' ')})`;
+    }
+
     private getTransmissionChainClusterKey(node: any, connectedComponentKey: string): string {
+        const yAxisField = this.getTransmissionChainYAxisField();
+        if (yAxisField !== 'None') {
+            return `y-axis:${this.getTransmissionChainYAxisValue(node)}`;
+        }
+
         const cluster = this.getTransmissionChainDisplayClusterValue(node);
 
         return cluster ? `cluster:${cluster}` : connectedComponentKey;
+    }
+
+    private getTransmissionChainYAxisGroups(nodes: any[]): TimelineYAxisGroup[] {
+        const yAxisField = this.getTransmissionChainYAxisField();
+        if (!this.isTransmissionChainView || yAxisField === 'None') {
+            return [];
+        }
+
+        const groups = new Map<string, { label: string; yValues: number[] }>();
+        nodes.forEach(node => {
+            const label = this.getTransmissionChainYAxisValue(node);
+            const key = `y-axis:${label}`;
+            const y = Number(node?.y);
+            if (!Number.isFinite(y)) {
+                return;
+            }
+
+            if (!groups.has(key)) {
+                groups.set(key, { label, yValues: [] });
+            }
+            groups.get(key)?.yValues.push(y);
+        });
+
+        return Array.from(groups.entries())
+            .map(([key, group]) => ({
+                key,
+                label: group.label,
+                minY: Math.min(...group.yValues),
+                maxY: Math.max(...group.yValues),
+                centerY: d3.mean(group.yValues) || 0
+            }))
+            .sort((a, b) => a.centerY - b.centerY);
     }
 
     private getTransmissionChainConnectedComponentKeys(
@@ -2474,7 +2551,14 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         const groupGap = Math.max(laneGap * 1.65, (maxNodeSize * 2.7) + 36) * spacingScale;
         let nextGroupTop = 0;
 
+        const yAxisField = this.getTransmissionChainYAxisField();
         const orderedGroups = Array.from(groups.values()).sort((a, b) => {
+            if (yAxisField !== 'None') {
+                const aLabel = this.getTransmissionChainYAxisValue(a.nodes[0]);
+                const bLabel = this.getTransmissionChainYAxisValue(b.nodes[0]);
+                return aLabel.localeCompare(bLabel, undefined, { numeric: true, sensitivity: 'base' });
+            }
+
             const aMinX = Math.min(...a.nodes.map(node => Number(node.timelineX) || 0));
             const bMinX = Math.min(...b.nodes.map(node => Number(node.timelineX) || 0));
             if (Math.abs(aMinX - bMinX) > 0.001) return aMinX - bMinX;
@@ -2520,7 +2604,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             rangeEnd: 0,
             singleDateDomain: false,
             noDateX: null,
-            hasNoDateNodes: false
+            hasNoDateNodes: false,
+            yAxisField: 'None',
+            yAxisGroups: []
         };
         this.updateTimelineStatisticsOffset();
         this.updateTimelineAxisOverlay();
@@ -2659,7 +2745,9 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             rangeEnd,
             singleDateDomain: !!singleDateDomain,
             noDateX,
-            hasNoDateNodes
+            hasNoDateNodes,
+            yAxisField: this.getTransmissionChainYAxisField(),
+            yAxisGroups: this.getTransmissionChainYAxisGroups(nodes)
         };
 
         return { nodes, links };
@@ -2921,6 +3009,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         const pan = this.cy.pan();
         const zoom = this.cy.zoom();
         const renderedX = (modelX: number): number => (modelX * zoom) + pan.x;
+        const renderedY = (modelY: number): number => (modelY * zoom) + pan.y;
         const axisY = Math.max(24, height - 48);
         const axisLabelY = Math.min(height - 12, axisY + 18);
         this.updateTimelineStatisticsOffset(screenTop + axisLabelY - 18);
@@ -2940,6 +3029,74 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             .map(tick => ({ ...tick, renderedX: renderedX(tick.x) }))
             .filter(tick => tick.renderedX >= -80 && tick.renderedX <= width + 80);
         const visibleTicks = this.filterTimelineAxisLabelCollisions(visibleTickCandidates, noDateAxisX);
+
+        if (
+            this.isTransmissionChainView &&
+            this.timelineLayoutMetadata.yAxisField !== 'None' &&
+            this.timelineLayoutMetadata.yAxisGroups.length > 0
+        ) {
+            const visibleGroups = this.timelineLayoutMetadata.yAxisGroups
+                .map(group => {
+                    const groupRenderedY = renderedY(group.centerY);
+                    return {
+                        ...group,
+                        renderedY: groupRenderedY,
+                        labelX: groupRenderedY < 64 ? 228 : 30
+                    };
+                })
+                .filter(group => group.renderedY >= -40 && group.renderedY <= axisY + 40);
+            const yAxisLayer = overlaySelection.append('g')
+                .attr('class', 'timeline-y-axis');
+
+            yAxisLayer.append('text')
+                .attr('class', 'timeline-y-axis-title')
+                .attr('x', 14)
+                .attr('y', height / 2)
+                .attr('transform', `rotate(-90 14 ${height / 2})`)
+                .attr('fill', '#333333')
+                .attr('font-size', 13)
+                .attr('font-weight', 700)
+                .attr('text-anchor', 'middle')
+                .attr('paint-order', 'stroke')
+                .attr('stroke', '#ffffff')
+                .attr('stroke-width', 4)
+                .attr('stroke-linejoin', 'round')
+                .text(this.timelineLayoutMetadata.yAxisField.replace(/_/g, ' '));
+
+            const yAxisGroups = yAxisLayer.selectAll('g.timeline-y-axis-group')
+                .data(visibleGroups)
+                .enter()
+                .append('g')
+                .attr('class', 'timeline-y-axis-group')
+                .attr('data-y-axis-value', group => group.label);
+
+            yAxisGroups.append('line')
+                .attr('class', 'timeline-y-axis-gridline')
+                .attr('x1', 28)
+                .attr('x2', width)
+                .attr('y1', group => group.renderedY)
+                .attr('y2', group => group.renderedY)
+                .attr('stroke', '#464646')
+                .attr('stroke-opacity', 0.16)
+                .attr('stroke-width', 1)
+                .attr('stroke-dasharray', '3 5')
+                .attr('fill', 'none');
+
+            const yAxisLabels = yAxisGroups.append('text')
+                .attr('class', 'timeline-y-axis-label')
+                .attr('x', group => group.labelX)
+                .attr('y', group => group.renderedY - 6)
+                .attr('fill', '#333333')
+                .attr('font-size', 13)
+                .attr('font-weight', 600)
+                .attr('text-anchor', 'start')
+                .attr('paint-order', 'stroke')
+                .attr('stroke', '#ffffff')
+                .attr('stroke-width', 4)
+                .attr('stroke-linejoin', 'round')
+                .attr('aria-label', group => group.label)
+                .text(group => group.label.length > 32 ? `${group.label.slice(0, 29)}...` : group.label);
+        }
 
         overlaySelection.append('line')
             .attr('class', 'timeline-axis-baseline')
@@ -7766,6 +7923,16 @@ private updateArrowStyles(): void {
         }
     }
 
+    onTransmissionChainYAxisFieldChange(field: string): void {
+        const nextField = String(field || 'None');
+        this.widgets['transmission-chain-y-axis-field'] = nextField;
+        this.SelectedTransmissionChainYAxisFieldVariable = nextField;
+
+        if (this.isTimelineLayoutActive()) {
+            this.updateLayout();
+        }
+    }
+
     private getStableFanoutSign(id: string): number {
         let hash = 0;
         for (let index = 0; index < id.length; index++) {
@@ -8727,6 +8894,7 @@ scaleLinkWidth() {
         //Network|Layout
         this.SelectedNetworkLayoutModeVariable = this.getNetworkLayoutMode();
         this.SelectedNetworkTimelineDateFieldVariable = this.getNetworkTimelineDateField();
+        this.SelectedTransmissionChainYAxisFieldVariable = this.getTransmissionChainYAxisField();
         this.SelectedNetworkTimelineVerticalSpacingVariable = Number(this.widgets[
             this.isTransmissionChainView
                 ? 'transmission-chain-vertical-spacing'
