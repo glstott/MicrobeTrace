@@ -53,6 +53,14 @@ export interface AuspiceGeographyField {
   field: string;
 }
 
+export interface AuspiceMapLookupData {
+  countries?: { features?: any[] };
+  states?: { features?: any[] };
+  counties?: { features?: any[] };
+  zipcodes?: any[];
+  tracts?: any[];
+}
+
 export interface AuspiceTreeNode {
   name: string;
   node_attrs: Record<string, number | AuspiceNodeAttribute>;
@@ -116,6 +124,11 @@ export interface AuspiceExportOptions {
   geographyFields?: AuspiceGeographyField[];
   bootstrap?: AuspiceBootstrapMetadata | null;
 }
+
+export type AuspiceCoordinateResolutionOptions = Pick<
+  AuspiceExportOptions,
+  'nodes' | 'latitudeField' | 'longitudeField' | 'geographyFields'
+>;
 
 interface ExportField {
   sourceKey: string;
@@ -233,6 +246,7 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   const availableExportFields = buildExportFields(options, attributeNodes);
   const exportFields = selectExportFields(availableExportFields, options.metadataFieldKeys);
   const geography = buildGeography(options, leafNames, nodeByName, availableExportFields);
+  const geographyKeys = new Set(geography.resolutions.map(resolution => resolution.key));
   const usedNames = new Set(leafNames);
   const attributeData = indexTreeAttributeData(attributeTree);
   const exportLeavesByNode = indexDescendantLeaves(exportTree);
@@ -273,6 +287,11 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
     );
 
     exportFields.forEach(field => {
+      // A trait used as a geographic resolution must only be present when its
+      // value has a matching deme. Geography is added below for mapped tips;
+      // skipping it here prevents unmapped tips and internal nodes from
+      // retaining ordinary metadata values which Auspice cannot place.
+      if (geographyKeys.has(field.auspiceKey)) return;
       const rawValue = getNodeAttributeValue(
         source,
         sessionNode,
@@ -360,6 +379,13 @@ export function buildAuspiceV2Dataset(options: AuspiceExportOptions): AuspiceV2D
   }
   if (geography.defaultResolutionKey) {
     displayDefaults.geo_resolution = geography.defaultResolutionKey;
+  }
+  if (!displayDefaults.color_by && colorings.length) {
+    displayDefaults.color_by = colorings.some(coloring => (
+      coloring.key === geography.defaultResolutionKey
+    ))
+      ? geography.defaultResolutionKey
+      : colorings[0].key;
   }
 
   const meta: AuspiceMeta = {
@@ -975,11 +1001,7 @@ function normalizeGeographyFields(
   const usedFields = new Set<string>();
   (Array.isArray(fields) ? fields : []).forEach(definition => {
     const field = String(definition?.field ?? '').trim();
-    const requestedKey = String(definition?.key ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9_]+/g, '_')
-      .replace(/^_+|_+$/g, '');
+    const requestedKey = normalizeGeographyKey(definition?.key);
     if (!field || field.toLowerCase() === 'none' || !requestedKey
         || usedRequestedKeys.has(requestedKey) || usedFields.has(field.toLowerCase())) {
       return;
@@ -1001,6 +1023,14 @@ function normalizeGeographyFields(
     });
   });
   return normalized;
+}
+
+function normalizeGeographyKey(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 function readDemeName(value: unknown): string | null {
@@ -1063,6 +1093,187 @@ function geographicCentroid(coordinates: AuspiceGeoCoordinates[]): AuspiceGeoCoo
 
 function roundCoordinate(value: number): number {
   return Number(value.toFixed(8));
+}
+
+/**
+ * Resolves export-only coordinate copies from MicrobeTrace's bundled map
+ * lookup data. Existing node coordinates and configured latitude/longitude
+ * fields take precedence; administrative lookups are only fallbacks.
+ */
+export function resolveAuspiceExportNodeCoordinates(
+  options: AuspiceCoordinateResolutionOptions,
+  mapData: AuspiceMapLookupData,
+): any[] {
+  const nodes = Array.isArray(options.nodes) ? options.nodes : [];
+  const geographyFields = (Array.isArray(options.geographyFields) ? options.geographyFields : [])
+    .map(definition => ({
+      ...definition,
+      key: normalizeGeographyKey(definition?.key),
+      field: String(definition?.field ?? '').trim(),
+    }))
+    .filter(definition => definition.key && definition.field)
+    .sort((left, right) => geographyLookupPriority(left.key) - geographyLookupPriority(right.key));
+  const stateField = geographyFields.find(definition => (
+    definition.key === 'state' || definition.key === 'division'
+  ))?.field;
+
+  return nodes.map(node => {
+    const resolvedNode = { ...node };
+    const directCoordinates = resolveCoordinates(
+      node,
+      options.latitudeField,
+      options.longitudeField,
+    );
+    if (directCoordinates) {
+      resolvedNode._lat = directCoordinates.latitude;
+      resolvedNode._lon = directCoordinates.longitude;
+      return resolvedNode;
+    }
+
+    let lookupCoordinates: AuspiceGeoCoordinates | null = null;
+    geographyFields.forEach(definition => {
+      const candidate = resolveMapLookupCoordinates(
+        node,
+        definition,
+        stateField,
+        mapData,
+      );
+      if (candidate) lookupCoordinates = candidate;
+    });
+    if (lookupCoordinates) {
+      resolvedNode._lat = lookupCoordinates.latitude;
+      resolvedNode._lon = lookupCoordinates.longitude;
+    }
+    return resolvedNode;
+  });
+}
+
+function geographyLookupPriority(key: string): number {
+  return {
+    country: 1,
+    state: 2,
+    division: 2,
+    county: 3,
+    zipcode: 4,
+    tract: 5,
+  }[key] ?? 0;
+}
+
+function resolveMapLookupCoordinates(
+  node: any,
+  definition: Pick<AuspiceGeographyField, 'key' | 'field'>,
+  stateField: string | undefined,
+  mapData: AuspiceMapLookupData,
+): AuspiceGeoCoordinates | null {
+  const value = node?.[definition.field];
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+
+  if (definition.key === 'country') {
+    return coordinatesFromMapFeature(findMapFeature(
+      mapData.countries?.features,
+      expandCountryLookupValues(value),
+      ['id', 'name'],
+    ));
+  }
+  if (definition.key === 'state' || definition.key === 'division') {
+    return coordinatesFromMapFeature(findMapFeature(
+      mapData.states?.features,
+      [value],
+      ['id', 'name', 'usps'],
+    ));
+  }
+  if (definition.key === 'county') {
+    return coordinatesFromMapFeature(findCountyFeature(
+      mapData.counties?.features,
+      value,
+      stateField ? node?.[stateField] : undefined,
+      mapData.states?.features,
+    ));
+  }
+  if (definition.key === 'zipcode') {
+    return coordinatesFromLookupRow(findIdentifierRow(mapData.zipcodes, 'zipcode', value));
+  }
+  if (definition.key === 'tract') {
+    return coordinatesFromLookupRow(findIdentifierRow(mapData.tracts, 'tract', value));
+  }
+  return null;
+}
+
+function normalizeMapLookupValue(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeNumericMapIdentifier(value: unknown): string {
+  const normalized = normalizeMapLookupValue(value);
+  return /^\d+$/.test(normalized) ? normalized.replace(/^0+(?=\d)/, '') : normalized;
+}
+
+function expandCountryLookupValues(value: unknown): unknown[] {
+  const values: unknown[] = [value];
+  if (['us', 'usa', 'united states'].includes(normalizeMapLookupValue(value))) {
+    values.push('United States of America', 'USA', 'United States', 'US');
+  }
+  return values;
+}
+
+function findMapFeature(
+  features: any[] | undefined,
+  values: unknown[],
+  propertyNames: string[],
+): any | null {
+  const normalizedValues = values
+    .map(normalizeMapLookupValue)
+    .filter(value => value !== '');
+  if (!Array.isArray(features) || !normalizedValues.length) return null;
+
+  return features.find(feature => {
+    const properties = feature?.properties || {};
+    return propertyNames.some(propertyName => {
+      const featureValue = propertyName === 'id' ? feature?.id : properties[propertyName];
+      return normalizedValues.includes(normalizeMapLookupValue(featureValue));
+    });
+  }) ?? null;
+}
+
+function findCountyFeature(
+  features: any[] | undefined,
+  countyValue: unknown,
+  stateValue: unknown,
+  stateFeatures: any[] | undefined,
+): any | null {
+  if (!Array.isArray(features)) return null;
+  const identifier = normalizeNumericMapIdentifier(countyValue);
+  const fipsMatch = features.find(feature => (
+    normalizeNumericMapIdentifier(feature?.properties?.fips) === identifier
+  ));
+  if (fipsMatch) return fipsMatch;
+
+  const countyName = normalizeMapLookupValue(countyValue).replace(/\s+county$/, '');
+  let candidates = features.filter(feature => (
+    normalizeMapLookupValue(feature?.properties?.name).replace(/\s+county$/, '') === countyName
+  ));
+  if (stateValue !== undefined && stateValue !== null && String(stateValue).trim()) {
+    const stateFeature = findMapFeature(stateFeatures, [stateValue], ['id', 'name', 'usps']);
+    const stateCode = normalizeMapLookupValue(stateFeature?.properties?.usps || stateValue);
+    candidates = candidates.filter(feature => (
+      normalizeMapLookupValue(feature?.properties?.state) === stateCode
+    ));
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function findIdentifierRow(rows: any[] | undefined, field: string, value: unknown): any | null {
+  if (!Array.isArray(rows)) return null;
+  const identifier = normalizeNumericMapIdentifier(value);
+  return rows.find(row => normalizeNumericMapIdentifier(row?.[field]) === identifier) ?? null;
+}
+
+function coordinatesFromMapFeature(feature: any): AuspiceGeoCoordinates | null {
+  return coordinatesFromLookupRow(feature?.properties);
+}
+
+function coordinatesFromLookupRow(row: any): AuspiceGeoCoordinates | null {
+  return resolveCoordinates(row, undefined, undefined);
 }
 
 function buildCoordinateIndex(

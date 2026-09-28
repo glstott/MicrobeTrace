@@ -177,7 +177,9 @@ export default class AuspiceHandler {
     const latitude = Number(coordinates.latitude);
     const longitude = Number(coordinates.longitude);
 
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+        || latitude < -90 || latitude > 90
+        || longitude < -180 || longitude > 180) {
       return null;
     }
 
@@ -211,12 +213,18 @@ export default class AuspiceHandler {
   }
 
   private getPreferredGeoResolution = (metadata) => {
-    const geoResolutions = this.getGeoResolutions(metadata);
+    const geoResolutions = this.getGeoResolutions(metadata).filter(resolution => (
+      resolution?.key
+      && resolution?.demes
+      && Object.keys(resolution.demes).some(deme => (
+        this.getDemeCoordinates(resolution, deme) !== null
+      ))
+    ));
     const configuredKey = metadata?.display_defaults?.geo_resolution;
     return geoResolutions.find(candidate => candidate.key === configuredKey)
-      || geoResolutions.find(candidate => candidate.key === 'location')
       || geoResolutions.find(candidate => candidate.key === 'site')
       || geoResolutions.find(candidate => candidate.key === 'microbetrace_location')
+      || geoResolutions.find(candidate => candidate.key === 'location')
       || geoResolutions[0];
   }
 

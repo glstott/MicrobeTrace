@@ -115,6 +115,8 @@ describe('Journey Flow - Computed Phylogenetic Tree export on uploaded non-Newic
         const dataset = JSON.parse(savedText);
         expect(dataset.version, `Auspice version for ${profile.id}`).to.equal('v2');
         expect(dataset.meta.display_defaults.distance_measure).to.equal('div');
+        expect(dataset.meta.panels, `Auspice panels for ${profile.id}`).to.deep.equal(['tree']);
+        expect(dataset.meta.geo_resolutions, `Auspice geography for ${profile.id}`).to.equal(undefined);
         expect(savedText, `raw sequence fields for ${profile.id}`).not.to.match(/"(?:seq|sequence|_seq|_seqint)"\s*:/i);
 
         const assertTree = (node: any, parentDiv = 0): string[] => {

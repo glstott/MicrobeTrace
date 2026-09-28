@@ -116,4 +116,51 @@ describe('AuspiceHandler MicrobeTrace geography', () => {
     expect(result.mapData.states.features).toContain(jasmine.objectContaining({ id: 'georgia' }));
     expect(result.mapData.countries.features).toContain(jasmine.objectContaining({ id: 'atlanta_clinic' }));
   });
+
+  it('falls back to the first usable precise resolution when the configured resolution is invalid', () => {
+    const handler = new AuspiceHandler({} as any);
+    const result: any = handler.run({
+      version: 'v2',
+      meta: {
+        panels: ['tree', 'map'],
+        display_defaults: { geo_resolution: 'country' },
+        geo_resolutions: [
+          {
+            key: 'location',
+            demes: { legacy: { latitude: 1, longitude: 2 } },
+          },
+          {
+            key: 'country',
+            demes: { usa: { latitude: 999, longitude: -98.6 } },
+          },
+          {
+            key: 'site',
+            demes: { atlanta_clinic: { latitude: 33.75, longitude: -84.39 } },
+          },
+        ],
+      },
+      tree: {
+        name: 'NODE_0000000',
+        node_attrs: { div: 0 },
+        children: [
+          {
+            name: 'A',
+            node_attrs: {
+              div: 0.1,
+              location: { value: 'legacy' },
+              country: { value: 'usa' },
+              site: { value: 'atlanta_clinic' },
+            },
+          },
+          { name: 'B', node_attrs: { div: 0.2 } },
+        ],
+      },
+    });
+
+    const mappedNode = result.nodes.find(node => node.id === 'A');
+    expect(mappedNode.latitude).toBe(33.75);
+    expect(mappedNode.longitude).toBe(-84.39);
+    expect(result.mapData.countries.features).toContain(jasmine.objectContaining({ id: 'atlanta_clinic' }));
+    expect(result.mapData.countries.features).not.toContain(jasmine.objectContaining({ id: 'usa' }));
+  });
 });

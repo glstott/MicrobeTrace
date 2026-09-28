@@ -10,6 +10,7 @@ import {
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
   getAuspiceExportFieldOptions,
+  resolveAuspiceExportNodeCoordinates,
 } from './auspiceExporter';
 
 describe('Auspice v2 exporter', () => {
@@ -442,6 +443,50 @@ describe('Auspice v2 exporter', () => {
     expect(leaves.find(leaf => leaf.name === 'D')!.node_attrs.microbetrace_location).toBeUndefined();
   });
 
+  it('resolves export-only coordinates from bundled ZIP and state lookups', () => {
+    const sourceNodes = [
+      { _id: 'A', state_name: 'Georgia', postal_code: '30301' },
+      { _id: 'B', state_name: 'Alabama', postal_code: 'missing' },
+      { _id: 'C', state_name: 'Georgia', postal_code: '30301', latitude: 10, longitude: 20 },
+    ];
+    const nodes = resolveAuspiceExportNodeCoordinates({
+      nodes: sourceNodes,
+      geographyFields: [
+        { key: 'state', title: 'State', field: 'state_name' },
+        { key: 'zipcode', title: 'ZIP code', field: 'postal_code' },
+      ],
+    }, {
+      states: {
+        features: [
+          { properties: { name: 'Georgia', usps: 'GA', _lat: 32.7, _lon: -83.3 } },
+          { properties: { name: 'Alabama', usps: 'AL', _lat: 32.8, _lon: -86.8 } },
+        ],
+      },
+      zipcodes: [
+        { zipcode: '30301', _lat: 33.844371, _lon: -84.47405 },
+      ],
+    });
+
+    expect(nodes[0]).toEqual(jasmine.objectContaining({ _lat: 33.844371, _lon: -84.47405 }));
+    expect(nodes[1]).toEqual(jasmine.objectContaining({ _lat: 32.8, _lon: -86.8 }));
+    expect(nodes[2]).toEqual(jasmine.objectContaining({ _lat: 10, _lon: 20 }));
+    expect(sourceNodes.every(node => node['_lat'] === undefined && node['_lon'] === undefined)).toBeTrue();
+
+    const dataset = buildAuspiceV2Dataset({
+      tree: { children: nodes.map(node => ({ id: node._id, length: 0.1 })) },
+      nodes,
+      nodeFields: ['state_name', 'postal_code'],
+      geographyFields: [
+        { key: 'state', title: 'State', field: 'state_name' },
+        { key: 'zipcode', title: 'ZIP code', field: 'postal_code' },
+      ],
+    });
+    expect(dataset.meta.panels).toEqual(['tree', 'map']);
+    expect(dataset.meta.geo_resolutions?.map(resolution => resolution.key))
+      .toEqual(['state', 'zipcode', 'microbetrace_location']);
+    expect(dataset.meta.display_defaults.color_by).toBe('microbetrace_location');
+  });
+
   it('rejects partially parsed and axis-incompatible coordinate strings', () => {
     const dataset = buildAuspiceV2Dataset({
       tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
@@ -539,6 +584,29 @@ describe('Auspice v2 exporter', () => {
     expect(leafA.node_attrs.site).toEqual({ value: 'Downtown' });
     expect(leafB.node_attrs.site).toEqual({ value: 'Downtown' });
     expect(leafD.node_attrs.site).toBeUndefined();
+  });
+
+  it('omits shared geographic trait values which have no matching deme', () => {
+    const dataset = buildAuspiceV2Dataset({
+      tree: { children: [{ id: 'A', length: 0.1 }, { id: 'B', length: 0.2 }] },
+      nodes: [
+        { _id: 'A', country: 'United States', _lat: 33.75, _lon: -84.39 },
+        { _id: 'B', country: 'Canada' },
+      ],
+      nodeFields: ['country'],
+      geographyFields: [{ key: 'country', title: 'Country', field: 'country' }],
+    });
+
+    expect(dataset.meta.geo_resolutions?.[0]).toEqual(jasmine.objectContaining({
+      key: 'country',
+      demes: {
+        'United States': { latitude: 33.75, longitude: -84.39 },
+      },
+    }));
+    const leafA = dataset.tree.children!.find(leaf => leaf.name === 'A')!;
+    const leafB = dataset.tree.children!.find(leaf => leaf.name === 'B')!;
+    expect(leafA.node_attrs.country).toEqual({ value: 'United States' });
+    expect(leafB.node_attrs.country).toBeUndefined();
   });
 
   it('remaps geography keys that collide with metadata from a different source field', () => {

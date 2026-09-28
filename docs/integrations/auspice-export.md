@@ -25,7 +25,7 @@ The single JSON file follows the Auspice v2 `version`, `meta`, and `tree` struct
 - exact tip IDs and deterministic internal node names;
 - safe scalar node metadata, including retained metadata on uniquely identifiable internal nodes, plus tip identity, cluster, degree, selected/visible state, and valid latitude/longitude values when present;
 - the current node color-by field when that field is exportable;
-- current resolved tip coordinates without external geocoding, grouping tips at identical coordinates into one location and using meaningful site/location values as deme names when available;
+- current resolved tip coordinates without external geocoding; when exact coordinates are absent, export also resolves configured country, state, county, ZIP code, and census-tract values against MicrobeTrace's bundled map data, then groups tips at identical coordinates into one location and uses meaningful site/location values as deme names when available;
 - separate country, state, county, ZIP code, census tract, and site resolutions when the corresponding configured or conventionally named fields are available; named administrative demes use the spherical centroid of their mapped tips;
 - saved MicrobeTrace categorical value colors as Auspice coloring scales, plus custom key-table legend labels when available;
 - stored bootstrap support when its split still matches a current branch; and

@@ -4683,6 +4683,14 @@ align(params): Promise<any> {
                         //     });
                     }
                     break;
+                case "tracts":
+                    if (format == "csv") {
+                        path = 'assets/common/data/tracts.csv';
+                        const response = await firstValueFrom(this.http.get(path, { responseType: 'text' }));
+                        this.temp.mapData[name] = Papa.parse(response, { header: true }).data;
+                        return this.temp.mapData[name];
+                    }
+                    break;
                 case "countries":
                     if (format == "json") {
                         path = 'assets/common/data/countries.json';

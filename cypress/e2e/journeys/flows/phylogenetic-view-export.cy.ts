@@ -233,17 +233,18 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
           node.auspice_date = `2026-09-${String((index % 20) + 1).padStart(2, '0')}`;
           node.auspice_country = 'United States';
           node.auspice_state = index < 2 ? 'Georgia' : 'Alabama';
+          node.auspice_zip = index < 2 ? '30301' : '36602';
           node.site = index < 2 ? 'Atlanta clinic' : 'Mobile clinic';
           node.seq = 'ACGTACGT';
-          if (index < 3) {
-            node._lat = index < 2 ? 33.7 : 30.69;
-            node._lon = index < 2 ? -84.4 : -88.04;
-          }
+          delete node._lat;
+          delete node._lon;
+          delete node.latitude;
+          delete node.longitude;
         });
         session.data.nodeFields = Array.from(new Set([
           ...(session.data.nodeFields || []),
           'auspice_group', 'auspice_rank', 'auspice_date', 'auspice_country', 'auspice_state',
-          'site', 'seq', '_lat', '_lon',
+          'auspice_zip', 'site', 'seq',
         ]));
         session.style.widgets['node-color-variable'] = 'auspice_group';
         session.style.nodeColorsTableKeys.auspice_group = ['group_a', 'group_b'];
@@ -265,6 +266,7 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         session.style.widgets['timeline-date-field'] = 'auspice_date';
         session.style.widgets['map-field-country'] = 'auspice_country';
         session.style.widgets['map-field-state'] = 'auspice_state';
+        session.style.widgets['map-field-zipcode'] = 'auspice_zip';
         session.data.phylogeneticBootstrap = {
           labels: expectedLeafIds,
           supportBySplitKey: { [split!.key]: 96.5 },
@@ -308,10 +310,11 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         });
         expect(dataset.meta.filters).to.include.members(['auspice_group', 'auspice_date']);
         expect(dataset.meta.geo_resolutions.map((resolution: any) => resolution.key))
-          .to.deep.equal(['country', 'state', 'site']);
+          .to.deep.equal(['country', 'state', 'zipcode', 'site']);
         expect(Object.keys(dataset.meta.geo_resolutions[0].demes)).to.deep.equal(['United States']);
         expect(Object.keys(dataset.meta.geo_resolutions[1].demes)).to.have.length(2);
-        expect(Object.keys(dataset.meta.geo_resolutions[2].demes)).to.deep.equal([
+        expect(Object.keys(dataset.meta.geo_resolutions[2].demes)).to.deep.equal(['30301', '36602']);
+        expect(Object.keys(dataset.meta.geo_resolutions[3].demes)).to.deep.equal([
           'Mobile clinic', 'Atlanta clinic',
         ]);
         expect(auspiceDisplayTopology(dataset.tree)).to.deep.equal(expectedTopology);

@@ -48,11 +48,13 @@ import {
   AuspiceExportOptions,
   AuspiceColoringStyle,
   AuspiceGeographyField,
+  AuspiceMapLookupData,
   AuspiceSourceTreeNode,
   AuspiceTreeScope,
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
   getAuspiceExportFieldOptions,
+  resolveAuspiceExportNodeCoordinates,
 } from '@app/helperClasses/auspiceExporter';
 
 type AuspiceExportSelectionCategory = 'metadata' | 'colorings' | 'filters';
@@ -1453,13 +1455,14 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     saveAs(newickBlob, this.SelectedNewickStringFilenameVariable);
   }
 
-  saveAuspiceJson(): void {
+  async saveAuspiceJson(): Promise<void> {
     this.AuspiceExportErrorMessage = '';
 
     try {
-      this.prepareAuspiceExportOptions();
+      const exportOptions = await this.getResolvedAuspiceExportOptions();
+      this.prepareAuspiceExportOptions(false, exportOptions);
       const dataset = buildAuspiceV2Dataset({
-        ...this.getAuspiceExportOptions(),
+        ...exportOptions,
         metadataFieldKeys: Array.from(this.SelectedAuspiceMetadataFieldKeys),
         coloringFieldKeys: Array.from(this.SelectedAuspiceColoringFieldKeys),
         filterFieldKeys: Array.from(this.SelectedAuspiceFilterFieldKeys),
@@ -1485,9 +1488,12 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     }
   }
 
-  prepareAuspiceExportOptions(resetSelections = false): void {
+  prepareAuspiceExportOptions(
+    resetSelections = false,
+    exportOptions: AuspiceExportOptions = this.getAuspiceExportOptions(),
+  ): void {
     try {
-      const fieldOptions = getAuspiceExportFieldOptions(this.getAuspiceExportOptions())
+      const fieldOptions = getAuspiceExportFieldOptions(exportOptions)
         .sort((left, right) => left.title.localeCompare(right.title));
       this.AuspiceMetadataFieldOptions = fieldOptions.filter(field => !field.synthetic);
       this.AuspiceColoringFieldOptions = fieldOptions;
@@ -1578,14 +1584,14 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     return fields.length > 0 && fields.every(field => selection.has(field.key));
   }
 
-  private getAuspiceExportOptions(): AuspiceExportOptions {
+  private getAuspiceExportOptions(nodes = this.commonService.session.data?.nodes): AuspiceExportOptions {
     const widgets = this.commonService.session.style.widgets;
     return {
       tree: this.tree?.data,
       fullTree: this.auspiceFullTreeData ?? this.originalTreeData ?? this.tree?.data,
       attributeTree: this.getAuspiceAttributeTreeData(),
       treeScope: this.SelectedAuspiceTreeScope,
-      nodes: this.commonService.session.data?.nodes,
+      nodes,
       nodeFields: this.commonService.session.data?.nodeFields,
       title: this.getAuspiceExportTitle(),
       updated: new Date(),
@@ -1597,6 +1603,37 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       geographyFields: this.getAuspiceGeographyFields(),
       bootstrap: this.commonService.session.data?.phylogeneticBootstrap,
     };
+  }
+
+  private async getResolvedAuspiceExportOptions(): Promise<AuspiceExportOptions> {
+    const options = this.getAuspiceExportOptions();
+    const mapData = await this.loadAuspiceMapLookupData(options.geographyFields || []);
+    return {
+      ...options,
+      nodes: resolveAuspiceExportNodeCoordinates(options, mapData),
+    };
+  }
+
+  private async loadAuspiceMapLookupData(
+    geographyFields: AuspiceGeographyField[],
+  ): Promise<AuspiceMapLookupData> {
+    const keys = new Set(geographyFields.map(definition => definition.key));
+    const mapData: AuspiceMapLookupData = {};
+    const requests: Promise<void>[] = [];
+    const load = (type: string, assign: (data: any) => void): void => {
+      requests.push(this.commonService.getMapData(type).then(data => assign(data)));
+    };
+
+    if (keys.has('country')) load('countries.json', data => { mapData.countries = data; });
+    if (keys.has('state') || keys.has('division') || keys.has('county')) {
+      load('states.json', data => { mapData.states = data; });
+    }
+    if (keys.has('county')) load('counties.json', data => { mapData.counties = data; });
+    if (keys.has('zipcode')) load('zipcodes.csv', data => { mapData.zipcodes = data; });
+    if (keys.has('tract')) load('tracts.csv', data => { mapData.tracts = data; });
+
+    await Promise.all(requests);
+    return mapData;
   }
 
   private getAuspiceAttributeTreeData(): AuspiceSourceTreeNode | undefined {
@@ -1769,9 +1806,16 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
   private getAuspiceGeographyFields(): AuspiceGeographyField[] {
     const widgets = this.commonService.session.style.widgets;
-    const availableFields = Array.isArray(this.commonService.session.data?.nodeFields)
-      ? this.commonService.session.data.nodeFields.filter(field => typeof field === 'string')
+    const availableFields = new Set<string>(
+      (Array.isArray(this.commonService.session.data?.nodeFields)
+        ? this.commonService.session.data.nodeFields
+        : [])
+        .filter((field): field is string => typeof field === 'string'),
+    );
+    const nodes = Array.isArray(this.commonService.session.data?.nodes)
+      ? this.commonService.session.data.nodes
       : [];
+    nodes.forEach(node => Object.keys(node || {}).forEach(field => availableFields.add(field)));
     const fieldByLowerName = new Map<string, string>();
     availableFields.forEach(field => {
       const normalized = field.trim().toLowerCase();
@@ -1779,7 +1823,9 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     });
     const resolveField = (widgetKey: string, inferredNames: string[]): string | null => {
       const configured = widgets[widgetKey];
-      if (typeof configured === 'string' && configured.trim() && configured !== 'None') {
+      if (typeof configured === 'string'
+          && configured.trim()
+          && configured.trim().toLowerCase() !== 'none') {
         return configured.trim();
       }
       for (const name of inferredNames) {
