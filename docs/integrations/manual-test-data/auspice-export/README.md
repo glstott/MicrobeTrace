@@ -12,6 +12,7 @@ This directory contains small, synthetic datasets for manually checking the Ausp
 | Grouped and multi-resolution geography | Rich pair + style | Country/state/county/ZIP/tract/site resolutions; A and B share one `Atlanta Clinic` deme; malformed F and unmapped H have no location trait |
 | Bootstrap support | Rich pair | After calculating bootstrap values, matching branches have `branch_attrs.labels.bootstrap` and the default branch label is `bootstrap` |
 | Imported internal-node attributes and Auspice round trip | `internal-node-attributes.json` | Root and clade scalar attributes survive re-export; leaf map positions and the preferred `site` resolution survive |
+| Imported temporal map round trip | `../../examples/microbetrace-auspice-temporal-map.json` | All seven structured `num_date` objects, their confidence intervals and ambiguity metadata, plus three map resolutions survive re-export |
 | Computed FASTA tree | `computed-sequences.fasta` | A generated tree exports with all eight IDs and no sequence data |
 | Computed node-list tree | `rich-nodes.csv` alone | A generated tree exports with all eight IDs and no sequence data |
 | Computed matrix tree | `computed-distance-matrix.csv` | When loaded as a Matrix, a generated tree exports with six exact IDs |
@@ -89,7 +90,17 @@ Drop this JSON onto [auspice.us](https://auspice.us) or open it with `auspice vi
 3. Confirm internal nodes receive deterministic `NODE_...` names while the scalar `clade_score`, `internal_note`, and `root_note` values remain on their corresponding internal splits.
 4. Confirm original meaningful labels are retained as branch labels, leaf IDs remain I1–I4, `site` remains the preferred map resolution, and North/South coordinates reappear after re-importing the new file.
 
-## 6. Computed tree sources
+## 6. Temporal map round trip
+
+1. Load `../../examples/microbetrace-auspice-temporal-map.json` as Auspice and launch MicrobeTrace.
+2. Open **Phylogenetic Tree**, then **Save > Auspice JSON**, and save the default full-tree export.
+3. Open the result in Auspice. Confirm both tree and map panels appear, `site` is the default map resolution, and country, division, and site can be selected.
+4. Inspect the exported JSON. All seven nodes must have `node_attrs.num_date`; the two inferred tip dates must retain `raw_value`, `inferred`, and `confidence`; `microbetrace_num_date` and `__auspice_num_date` must not appear.
+5. Import the result into a fresh MicrobeTrace session and export it again. The seven structured `num_date` objects and three geographic resolutions must remain unchanged.
+
+The fixture is entirely synthetic. `sample_c` and `sample_d` intentionally share one site coordinate so the map demonstrates a grouped deme.
+
+## 7. Computed tree sources
 
 Run each case in a fresh MicrobeTrace session, open Phylogenetic Tree, and export:
 
@@ -99,7 +110,7 @@ Run each case in a fresh MicrobeTrace session, open Phylogenetic Tree, and expor
 
 Each export should contain the source IDs exactly once, valid non-negative cumulative divergence, and no raw sequence. Re-import each exported JSON into MicrobeTrace and verify Phylogenetic Tree renders without errors.
 
-## 7. Validation failures
+## 8. Validation failures
 
 Run each case in a fresh session. A failed export must show an inline actionable error and must not download a partial file.
 
@@ -123,6 +134,6 @@ Run each case in a fresh session. A failed export must show an inline actionable
 
    Export should reject the negative length. Repeat with `Number.NaN` to confirm non-finite lengths are rejected.
 
-## 8. Privacy and deliberate omissions
+## 9. Privacy and deliberate omissions
 
 Before sharing any export, inspect it as ordinary JSON. Scalar metadata selected in Advanced options is included and can be identifying. Raw sequences, branch mutations, genome annotations, root sequences, entropy/frequency data, render coordinates, and original Auspice metadata that MicrobeTrace no longer represents are deliberately omitted. Round trips preserve normalized MicrobeTrace meaning, not the original bytes or every Auspice extension.

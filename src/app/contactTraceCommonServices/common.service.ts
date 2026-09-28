@@ -397,6 +397,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             floorplanBoundaries: [],
             tree: {},
             newickString: '',
+            datedNewickTree: null as any,
             phylogeneticBootstrap: null,
             newickSource: '',
             auspiceMapData: {
@@ -2798,6 +2799,9 @@ export class CommonService extends AppComponentBase implements OnInit {
 
         if (typeof oldSession.data?.newickString === 'string') {
             this.session.data.newickString = oldSession.data.newickString;
+        }
+        if (oldSession.data?.datedNewickTree) {
+            this.session.data.datedNewickTree = oldSession.data.datedNewickTree;
         }
         if (oldSession.data?.phylogeneticBootstrap) {
             this.session.data.phylogeneticBootstrap = oldSession.data.phylogeneticBootstrap;

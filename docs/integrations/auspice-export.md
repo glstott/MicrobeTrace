@@ -28,14 +28,15 @@ The single JSON file follows the Auspice v2 `version`, `meta`, and `tree` struct
 - current resolved tip coordinates without external geocoding; when exact coordinates are absent, export also resolves configured country, state, county, ZIP code, and census-tract values against MicrobeTrace's bundled map data, then groups tips at identical coordinates into one location and uses meaningful site/location values as deme names when available;
 - separate country, state, county, ZIP code, census tract, and site resolutions when the corresponding configured or conventionally named fields are available; named administrative demes use the spherical centroid of their mapped tips;
 - saved MicrobeTrace categorical value colors as Auspice coloring scales, plus custom key-table legend labels when available;
-- stored bootstrap support when its split still matches a current branch; and
+- stored bootstrap support when its split still matches a current branch;
+- structured `num_date` values when an imported Auspice tree or explicitly dated Newick tree provides a complete, valid value for every exported node, including confidence and ambiguity metadata retained from Auspice; and
 - categorical, ordinal, continuous, boolean, and supported date colorings and filters. Numeric fields with a saved discrete MicrobeTrace palette are exported as ordinal rather than as an interpolated continuous scale.
 
 The title uses a partner-provided dataset name when one is available. Otherwise it uses the source filename without its extension. Auspice chooses the palette and visual presentation.
 
-## Divergence-only behavior and exclusions
+## Divergence and temporal behavior
 
-MicrobeTrace exports branch distance as cumulative `div` values with root divergence set to zero. It does not claim the tree is time-scaled and does not emit `num_date`, because MicrobeTrace does not infer dates for internal ancestors. Date-like tip fields can still appear as temporal colorings when every value is a real calendar date or a supported partial date such as `2026-02-XX` or `2026-XX-XX`; impossible dates remain categorical metadata.
+MicrobeTrace always exports branch distance as cumulative `div` values with root divergence set to zero. It does not infer dates for internal ancestors. When an imported Auspice dataset has complete `num_date` values, or a Newick tree explicitly annotates every node with `[&num_date=<decimal-year>]`, those supplied values are preserved and the Auspice time-tree view is selected by default. Divergence remains available. Small date reversals already present in the source are retained rather than silently changing source data. Incomplete or malformed temporal trees fall back to divergence-only export. Date-like tip fields can still appear as temporal colorings when every value is a real calendar date or a supported partial date such as `2026-02-XX` or `2026-XX-XX`; impossible dates remain categorical metadata.
 
 The export deliberately omits:
 
@@ -50,7 +51,7 @@ Export stops with an inline error instead of changing invalid data when a tip ID
 
 ## Round-trip limitations
 
-An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, retained scalar fields on identifiable internal nodes, and tip coordinates from the default geographic resolution. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported Auspice dataset. Pixel-level styling, inferred ancestral geography, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
+An exported file can be imported into MicrobeTrace again, including its tree orientation, scalar tip fields, retained scalar fields on identifiable internal nodes, complete valid `num_date` trees from Auspice or explicitly dated Newick, and tip coordinates from the default geographic resolution. It is a new representation of MicrobeTrace's normalized current state, not a byte-for-byte copy of an originally imported dataset. Pixel-level styling, inferred ancestral geography or dates, original internal node identifiers, original palettes, mutations, and unsupported Auspice sidecar data are not reconstructed.
 
 Auspice displays sibling arrays in reverse traversal order compared with MicrobeTrace. The JSON therefore stores sibling arrays in the opposite order so that the visible tree orientation—including branch rotations—matches when the file is opened in Auspice. MicrobeTrace applies the same convention when an Auspice file is imported.
 

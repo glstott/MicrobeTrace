@@ -5,7 +5,10 @@ import annotationsSchema from './testData/auspice-annotations-schema.pinned.json
 import auspiceConfigSchema from './testData/auspice-config-v2-schema.pinned.json';
 import rootSequenceSchema from './testData/auspice-root-sequence-schema.pinned.json';
 import auspiceV2Schema from './testData/auspice-v2-schema.pinned.json';
+import temporalMapDataset from '../../../docs/integrations/examples/microbetrace-auspice-temporal-map.json';
+import { parseDatedNewick } from './datedNewick';
 import {
+  AUSPICE_NUM_DATE_STORAGE_KEY,
   AuspiceExportError,
   buildAuspiceV2Dataset,
   ensureAuspiceJsonFilename,
@@ -43,6 +46,43 @@ describe('Auspice v2 exporter', () => {
       },
     ],
   });
+
+  const fourTipNumDateTree = () => {
+    const tree: any = fourTipTree();
+    tree.data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: {
+        value: 2020,
+        confidence: [2019.9, 2020.1],
+      },
+    };
+    tree.children[0].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: { value: 2020.1 },
+    };
+    tree.children[0].children[0].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: {
+        value: 2020.4,
+        confidence: [2020.35, 2020.45],
+        inferred: false,
+      },
+    };
+    tree.children[0].children[1].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: {
+        value: 2020.5,
+        inferred: true,
+        raw_value: '2020-07-XX',
+      },
+    };
+    tree.children[1].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: { value: 2020.2 },
+    };
+    tree.children[1].children[0].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: { value: 2020.6 },
+    };
+    tree.children[1].children[1].data = {
+      [AUSPICE_NUM_DATE_STORAGE_KEY]: { value: 2020.7 },
+    };
+    return tree;
+  };
 
   it('creates a deterministic v2 divergence tree and preserves current Auspice display order', () => {
     const dataset = buildAuspiceV2Dataset({
@@ -91,6 +131,106 @@ describe('Auspice v2 exporter', () => {
     expect(dataset.tree.name).toBe('NODE_0000001');
     expect(dataset.tree.children!.map(child => child.name)).toEqual(['sample-2', 'NODE_0000000']);
     expect(auspiceDisplayLeafOrder(dataset.tree)).toEqual(['NODE_0000000', 'sample-2']);
+  });
+
+  it('preserves a complete num_date tree without changing divergence', () => {
+    const tree = fourTipNumDateTree();
+    const fieldOptions = getAuspiceExportFieldOptions({ tree, colorBy: 'num_date' });
+    const dataset = buildAuspiceV2Dataset({ tree, colorBy: 'num_date' });
+
+    expect(fieldOptions).toContain(jasmine.objectContaining({
+      key: 'num_date',
+      title: 'Sampling date',
+      type: 'temporal',
+      synthetic: true,
+    }));
+    expect(dataset.meta.colorings?.[0]).toEqual({
+      key: 'num_date',
+      title: 'Sampling date',
+      type: 'temporal',
+    });
+    expect(dataset.meta.filters).toContain('num_date');
+    expect(dataset.meta.display_defaults).toEqual(jasmine.objectContaining({
+      distance_measure: 'num_date',
+      color_by: 'num_date',
+    }));
+    expect(dataset.tree.node_attrs.div).toBe(0);
+    expect(dataset.tree.node_attrs.num_date).toEqual({
+      value: 2020,
+      confidence: [2019.9, 2020.1],
+    });
+
+    const left = dataset.tree.children!.find(child => (
+      child.branch_attrs?.labels?.microbetrace === 'left-clade'
+    ))!;
+    expect(left.node_attrs.num_date).toEqual({ value: 2020.1 });
+    expect(left.children!.find(child => child.name === 'A')!.node_attrs.num_date).toEqual({
+      value: 2020.4,
+      confidence: [2020.35, 2020.45],
+      inferred: false,
+    });
+    expect(left.children!.find(child => child.name === 'B')!.node_attrs.num_date).toEqual({
+      value: 2020.5,
+      inferred: true,
+      raw_value: '2020-07-XX',
+    });
+    expect(JSON.stringify(dataset)).not.toContain(AUSPICE_NUM_DATE_STORAGE_KEY);
+  });
+
+  it('matches explicit dated-Newick attributes to the displayed tree without inference', () => {
+    const datedNewick = parseDatedNewick(
+      '((A:2[&num_date=2024],B:2.5[&num_date=2024.5])left-clade:1[&num_date=2022],'
+      + '(C:2.75[&num_date=2025],D:3.25[&num_date=2025.5]):1.25[&num_date=2022.25])'
+      + 'original-root:0[&num_date=2020];',
+    );
+    expect(datedNewick?.complete).toBeTrue();
+
+    const dataset = buildAuspiceV2Dataset({
+      tree: fourTipTree(),
+      attributeTree: datedNewick!.tree,
+    });
+
+    expect(dataset.meta.display_defaults.distance_measure).toBe('num_date');
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'num_date',
+      type: 'temporal',
+    }));
+    expect(dataset.tree.node_attrs.num_date).toEqual({ value: 2020 });
+    const left = dataset.tree.children!.find(child => (
+      child.branch_attrs?.labels?.microbetrace === 'left-clade'
+    ))!;
+    expect(left.node_attrs.num_date).toEqual({ value: 2022 });
+    expect(left.children!.find(child => child.name === 'A')!.node_attrs.num_date)
+      .toEqual({ value: 2024 });
+    expect(left.children!.find(child => child.name === 'B')!.node_attrs.num_date)
+      .toEqual({ value: 2024.5 });
+  });
+
+  it('falls back to divergence-only output for incomplete num_date data', () => {
+    const incompleteTree = fourTipNumDateTree();
+    delete incompleteTree.children[1].children[1].data[AUSPICE_NUM_DATE_STORAGE_KEY];
+    const incomplete = buildAuspiceV2Dataset({ tree: incompleteTree });
+
+    expect(incomplete.meta.colorings).toBeUndefined();
+    expect(incomplete.meta.display_defaults).toEqual({ distance_measure: 'div' });
+    expect(JSON.stringify(incomplete)).not.toContain('num_date');
+
+  });
+
+  it('preserves source num_date values when the imported tree contains date reversals', () => {
+    const tree = fourTipNumDateTree();
+    tree.children[0].children[0].data[AUSPICE_NUM_DATE_STORAGE_KEY].value = 2019;
+    const dataset = buildAuspiceV2Dataset({ tree });
+
+    const left = dataset.tree.children!.find(child => (
+      child.branch_attrs?.labels?.microbetrace === 'left-clade'
+    ))!;
+    expect(left.children!.find(child => child.name === 'A')!.node_attrs.num_date)
+      .toEqual(jasmine.objectContaining({ value: 2019 }));
+    expect(dataset.meta.colorings).toContain(jasmine.objectContaining({
+      key: 'num_date',
+      type: 'temporal',
+    }));
   });
 
   it('exports all safe scalars, infers coloring types, and remaps reserved fields', () => {
@@ -697,10 +837,10 @@ describe('Auspice v2 exporter', () => {
     expect(ensureAuspiceJsonFilename('')).toBe('microbetrace-auspice.json');
   });
 
-  it('validates a generated rich fixture against the pinned official Auspice v2 schema', () => {
+  it('validates generated and demonstration fixtures against the pinned Auspice v2 schema', () => {
     const splitKey = canonicalSplitKey(['A', 'B'], ['A', 'B', 'C', 'D'])!;
     const dataset = buildAuspiceV2Dataset({
-      tree: fourTipTree(),
+      tree: fourTipNumDateTree(),
       title: 'Synthetic compatibility fixture',
       updated: '2026-09-22',
       nodes: [
@@ -737,6 +877,9 @@ describe('Auspice v2 exporter', () => {
     const validate = ajv.compile(auspiceV2Schema);
 
     expect(validate(dataset))
+      .withContext(JSON.stringify(validate.errors, null, 2))
+      .toBeTrue();
+    expect(validate(temporalMapDataset))
       .withContext(JSON.stringify(validate.errors, null, 2))
       .toBeTrue();
   });

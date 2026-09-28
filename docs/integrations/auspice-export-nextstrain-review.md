@@ -26,7 +26,7 @@ This packet is designed for the MicrobeTrace project lead to share through the e
 
 ## Deliberate omissions
 
-The exporter does not include raw sequences, mutations, root sequences, genome annotations, entropy or frequency data, ancestral geographic inference, or original Auspice metadata which MicrobeTrace cannot retain semantically. The output is divergence-only and does not include `num_date`.
+The exporter does not include raw sequences, mutations, root sequences, genome annotations, entropy or frequency data, ancestral date or geographic inference, or original Auspice metadata which MicrobeTrace cannot retain semantically. Every export includes divergence. A complete, valid `num_date` tree from an imported Auspice dataset or explicitly annotated dated Newick is preserved without inference, including source date reversals; other datasets remain divergence-only.
 
 ## Compatibility questions for Nextstrain
 

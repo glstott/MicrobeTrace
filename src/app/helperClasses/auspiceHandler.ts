@@ -1,5 +1,9 @@
 import { CommonService } from '../contactTraceCommonServices/common.service';
 import * as patristic from 'patristic';
+import {
+  AUSPICE_NUM_DATE_STORAGE_KEY,
+  normalizeAuspiceNumDateAttribute,
+} from './auspiceExporter';
 
 export default class AuspiceHandler {
 
@@ -47,6 +51,8 @@ export default class AuspiceHandler {
       node.mutations = tree.branch_attrs.mutations.nuc;
     }
     const nodeAttrs = tree.node_attrs || {};
+    const numDate = normalizeAuspiceNumDateAttribute(nodeAttrs.num_date);
+    if (numDate) node[AUSPICE_NUM_DATE_STORAGE_KEY] = numDate;
     for (const attribute of Object.keys(nodeAttrs)) {
       if (attribute !== 'div') {
         node[attribute] = nodeAttrs[attribute]?.value;
@@ -277,8 +283,13 @@ export default class AuspiceHandler {
     const updatedTree = this.combineMutations(fullTree);
     const bareNewickString =  this.treeToNewick(jsonObj.tree, false, false);
     this.nodeList = this.addLatLong(this.nodeList, jsonObj.meta);
+    const sessionNodes = this.nodeList.map(node => {
+      const sessionNode = { ...node };
+      delete sessionNode[AUSPICE_NUM_DATE_STORAGE_KEY];
+      return sessionNode;
+    });
     return {
-      nodes: this.nodeList,
+      nodes: sessionNodes,
       links: [],
       tree: updatedTree,
       newick: bareNewickString,

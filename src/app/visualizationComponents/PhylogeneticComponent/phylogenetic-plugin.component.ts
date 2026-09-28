@@ -1637,6 +1637,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   }
 
   private getAuspiceAttributeTreeData(): AuspiceSourceTreeNode | undefined {
+    const datedNewickTree = this.commonService.session.data?.datedNewickTree;
+    if (this.isAuspiceSourceTree(datedNewickTree)) return datedNewickTree;
     const sessionTree = this.commonService.session.data?.tree;
     if (this.isAuspiceSourceTree(sessionTree)) return sessionTree;
     return this.auspiceFullTreeData ?? undefined;
