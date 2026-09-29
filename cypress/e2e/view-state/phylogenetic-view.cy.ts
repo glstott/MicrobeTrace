@@ -49,12 +49,19 @@ describe('Phylogenetic Tree View', () => {
     });
   };
 
+  const showFloatingNodeColorTable = (): void => {
+    cy.get('#node-color-table-row')
+      .contains('.p-togglebutton-label', 'Show')
+      .click({ force: true });
+    cy.window().its('commonService.visuals.microbeTrace.SelectedNodeColorTableTypesVariable').should('equal', 'Show');
+  };
+
   /**
    * This block runs before each test. It loads the application,
    * continues with the sample dataset, and navigates to the view.
    */
   beforeEach(() => {
-    visitAppAndAcceptEula({ skipDemoSession: false });
+    visitAppAndAcceptEula({ skipDemoSession: false, dismissWelcomeOverlay: true });
     
     // Open the "View" menu and click on "Phylogenetic Tree"
     cy.contains('button', 'View').click();
@@ -99,6 +106,7 @@ describe('Phylogenetic Tree View', () => {
       cy.openGlobalSettings();
       cy.get('#node-color-variable').click()
       cy.get('li[role="option"]').contains('Lineage').click()
+      showFloatingNodeColorTable();
       cy.get('#node-color-table td input', { timeout: 10000 }).should('exist');
       cy.get('#node-color-table tr').eq(1).find('.transparency-symbol').click({ force: true });
       cy.get('#color-transparency').invoke('val', alpha).trigger('change');
