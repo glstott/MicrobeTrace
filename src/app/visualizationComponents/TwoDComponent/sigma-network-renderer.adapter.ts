@@ -156,6 +156,7 @@ export interface SigmaPocLink {
   labelSize?: number;
   overlayDashColor?: string;
   overlayDashOpacity?: number;
+  layerStyles?: Array<{ color: string; opacity: number }>;
   head?: 'arrow' | 'none';
   tail?: 'arrow' | 'none';
   raw: any;
@@ -1337,6 +1338,7 @@ export class SigmaNetworkRendererAdapter {
     let maxX = Number.NEGATIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
+    let largestRadius = 0;
     this.graph.forEachNode((_nodeId, attributes) => {
       const x = Number(attributes.x);
       const y = Number(attributes.y);
@@ -1345,8 +1347,20 @@ export class SigmaNetworkRendererAdapter {
       maxX = Math.max(maxX, x);
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y);
+      const size = Number(attributes.size);
+      if (Number.isFinite(size)) largestRadius = Math.max(largestRadius, size);
     });
     if (!Number.isFinite(minX) || !Number.isFinite(minY)) return { x: [0, 1], y: [0, 1] };
+    // Sigma sizes nodes in graph units. A one-unit box around a singleton (or
+    // nearly coincident nodes) magnifies the node until it covers the viewport.
+    // Give such graphs room around their glyphs without moving the saved nodes
+    // or changing the framing of normally spread-out networks.
+    if (Math.max(maxX - minX, maxY - minY) < largestRadius * 2) {
+      // Keep the ordinary size-control range in a stable frame, so increasing
+      // a singleton's size still makes it visibly larger rather than zooming out.
+      const padding = Math.max(200, largestRadius * 2);
+      return { x: [minX - padding, maxX + padding], y: [minY - padding, maxY + padding] };
+    }
     if (minX === maxX) {
       minX -= 0.5;
       maxX += 0.5;
@@ -2200,7 +2214,16 @@ export class SigmaNetworkRendererAdapter {
         context.moveTo(clipped.source.x, clipped.source.y);
         context.lineTo(clipped.target.x, clipped.target.y);
       }
-      context.stroke();
+      const layerStyles = this.displayGraph.getEdgeAttribute(edgeId, 'raw')?.layerStyles;
+      if (layerStyles && layerStyles.length > 2) {
+        layerStyles.forEach((style, index) => {
+          context.strokeStyle = style.color;
+          context.globalAlpha = style.opacity;
+          context.setLineDash([10, 10 * (layerStyles.length - 1)]);
+          context.lineDashOffset = -index * 10;
+          context.stroke();
+        });
+      } else context.stroke();
       context.restore();
     });
   }

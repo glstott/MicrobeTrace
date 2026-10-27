@@ -106,6 +106,9 @@ export function visitAppAndAcceptEula(options: JourneyVisitOptions = {}): void {
 
   if (!resolvedOptions.skipDemoSession) {
     cy.window({ timeout: 120000 })
+      .its('commonService.session.data.nodes')
+      .should('have.length.greaterThan', 0);
+    cy.window({ timeout: 120000 })
       .its('commonService.session.network.isFullyLoaded')
       .should('equal', true);
   }

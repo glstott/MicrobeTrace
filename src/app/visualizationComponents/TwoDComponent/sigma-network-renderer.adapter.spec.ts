@@ -7,6 +7,48 @@ import {
 } from './sigma-network-renderer.adapter';
 
 describe('Sigma network renderer adapter', () => {
+  it('frames a singleton as a small node instead of a viewport-filling disk', () => {
+    const adapter = new SigmaNetworkRendererAdapter(document.createElement('div'), '#ff2d55');
+    const graph = adapter.getGraph() as any;
+    graph.addNode('F', { x: 480, y: 330, size: 9 });
+    const bounds = (adapter as any).resolveGraphBounds();
+    const span = Math.max(bounds.x[1] - bounds.x[0], bounds.y[1] - bounds.y[0]);
+    expect(18 / span).toBeLessThan(0.1);
+    expect((bounds.x[0] + bounds.x[1]) / 2).toBe(480);
+    expect((bounds.y[0] + bounds.y[1]) / 2).toBe(330);
+    expect(graph.getNodeAttribute('F', 'x')).toBe(480);
+    expect(graph.getNodeAttribute('F', 'y')).toBe(330);
+    adapter.destroy();
+  });
+  it('keeps nearly coincident nodes from becoming an oversized solid-color view', () => {
+    const adapter = new SigmaNetworkRendererAdapter(document.createElement('div'), '#ff2d55');
+    const graph = adapter.getGraph() as any;
+    graph.addNode('A', { x: 10, y: 20, size: 9 });
+    graph.addNode('B', { x: 10.001, y: 20.001, size: 9 });
+    const bounds = (adapter as any).resolveGraphBounds();
+    const span = Math.max(bounds.x[1] - bounds.x[0], bounds.y[1] - bounds.y[0]);
+    expect(18 / span).toBeLessThan(0.1);
+    expect(bounds.x[0]).toBeLessThan(10);
+    expect(bounds.x[1]).toBeGreaterThan(10.001);
+    adapter.destroy();
+  });
+  it('keeps singleton framing stable when normal node-size styling changes', () => {
+    const adapter = new SigmaNetworkRendererAdapter(document.createElement('div'), '#ff2d55');
+    const graph = adapter.getGraph() as any;
+    graph.addNode('F', { x: 480, y: 330, size: 9 });
+    const original = (adapter as any).resolveGraphBounds();
+    graph.setNodeAttribute('F', 'size', 18);
+    expect((adapter as any).resolveGraphBounds()).toEqual(original);
+    adapter.destroy();
+  });
+  it('preserves the existing framing of normally spaced and collinear nodes', () => {
+    const adapter = new SigmaNetworkRendererAdapter(document.createElement('div'), '#ff2d55');
+    const graph = adapter.getGraph() as any;
+    graph.addNode('A', { x: 0, y: 0, size: 9 });
+    graph.addNode('B', { x: 200, y: 0, size: 9 });
+    expect((adapter as any).resolveGraphBounds()).toEqual({ x: [0, 200], y: [-0.5, 0.5] });
+    adapter.destroy();
+  });
   it('flips custom SVG paths upright while centering them on the Sigma canvas', () => {
     const context = {
       translate: jasmine.createSpy('translate'),

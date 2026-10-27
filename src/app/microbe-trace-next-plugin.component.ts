@@ -5348,15 +5348,33 @@ ${warnings.join('\n')}`,
         saveAs(content as any, filename);
     }
 
-    private buildSessionStash(): StashObjects {
-        this.commonService.session.files.forEach(file => {
-            if (file.extension === 'xlsx' || file.extension === 'xls') {
-                this.convertFileToCSV(file);
-            }
-        });
+    private async buildSessionStash(): Promise<StashObjects> {
+        await this.commonService.investigationCalculations.flush();
+        this.commonService.investigationCalculations.refreshStatus(this.commonService.session);
+        const captured = this.commonService.visuals.twoD?.captureInvestigationState?.();
+        const current = this.commonService.session;
+        const tableView = this.commonService.visuals.tableComp?.captureInvestigationViewState?.();
+        const mapView = this.commonService.visuals.gisMap?.captureInvestigationViewState?.();
+        const statisticsView = this.commonService.visuals.networkStatistics?.captureInvestigationViewState?.();
+        const viewStates = { ...current.investigation.viewStates,
+            ...(captured ? { '2D Network': captured.viewState } : {}),
+            ...(tableView ? { Table: tableView } : {}), ...(mapView ? { Map: mapView } : {}),
+            ...(statisticsView ? { 'Network Statistics': statisticsView } : {}) };
+        const tableSettings = Object.fromEntries((tableView?.tables || []).flatMap(table => [
+            [`${table.type}Filter`, table.filter], [`${table.type}TableColumns`, table.columns] ]));
+        const positionById = new Map<string, any>((captured?.nodes || []).map(node => [node.id, node]));
+        const session = {
+            ...current,
+            investigation: { ...current.investigation, viewStates },
+            meta: { ...current.meta, ...(captured?.camera ? { rendererViewState: captured.camera } : {}) },
+            data: { ...current.data, ...tableSettings, nodes: current.data.nodes.map(node => {
+                const saved = positionById.get(String(node._id ?? node.id));
+                return saved ? { ...node, ...saved, _id: node._id, id: node.id } : node;
+            }) },
+        };
 
         const stash: StashObjects = {
-            session: this.commonService.session,
+            session,
             tabs: this.homepageTabs.map(x => ({
                 label: x.label,
                 tabTitle: x.tabTitle,
@@ -5370,7 +5388,7 @@ ${warnings.join('\n')}`,
         const dashboardState = this.getSerializableDashboardState();
         if (dashboardLayout) stash.dashboardLayout = dashboardLayout;
         if (dashboardState) stash.dashboardState = dashboardState;
-        return stash;
+        return this.commonService.investigationSessions.capture(stash);
     }
 
     clearLocalSessionLinkResult(): void {
@@ -5397,7 +5415,7 @@ ${warnings.join('\n')}`,
         this.localSessionLinkSaving = true;
         this.localSessionLinkError = null;
         try {
-            this.localSessionLinkUrl = await this.localSessionLinkService.save(this.saveFileName, this.buildSessionStash());
+            this.localSessionLinkUrl = await this.localSessionLinkService.save(this.saveFileName, await this.buildSessionStash());
         } catch (error) {
             console.error('Unable to save a local session link.', error);
             this.localSessionLinkError = 'The session could not be saved in this browser. Check that browser storage is available and has enough space.';
@@ -5416,7 +5434,6 @@ ${warnings.join('\n')}`,
             if (!stash) {
                 this.localSessionLinkLoadError = 'This local session link was not found in this browser. It only works in the browser and site where it was saved, while its site data remains available.';
             } else {
-                this.commonService.session = this.commonService.sessionSkeleton();
                 await this.commonService.applySession(stash);
             }
         } catch (error) {
@@ -5426,7 +5443,9 @@ ${warnings.join('\n')}`,
         this.cdref.markForCheck();
     }
 
-    DisplayStashDialog(saveStash: string) {
+    async DisplayStashDialog(saveStash: string) {
+        this.sessionSaveError = '';
+        try {
         switch (saveStash) {
             case "Save": {
 
@@ -5532,20 +5551,26 @@ ${warnings.join('\n')}`,
                       }
                         
                       const that = this;
+                      const snapshot = await this.buildSessionStash();
+                      zip.file(`${this.saveFileName}.microbetrace`, JSON.stringify(snapshot));
+                      zip.file('investigation-manifest.json', JSON.stringify(snapshot.provenance, null, 2));
+                      zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance));
                       // generate zip repsetnation in memory
-                      zip.generateAsync({type:"blob"}).then(function(content) {
+                      await zip.generateAsync({type:"blob"}).then(function(content) {
                           // see FileSaver.js
                           that.saveGeneratedFile(content, `${that.saveFileName}.zip`);
                       });
                 } else {
-                    const stash = this.buildSessionStash();
+                    const stash = await this.buildSessionStash();
 
                     const that = this;
 
                     if ($("#save-file-compress").is(":checked")) {
                         const zip = new JSZip();
                         zip.file(`${that.saveFileName}.microbetrace`, new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" }));
-                        zip.generateAsync({
+                        zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
+                        zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
+                        await zip.generateAsync({
                             type: "blob",
                             compression: "DEFLATE",
                             compressionOptions: {
@@ -5571,6 +5596,30 @@ ${warnings.join('\n')}`,
             }
         }
         this.displayStashDialog = !this.displayStashDialog;
+        } catch (error) {
+            this.sessionSaveError = error instanceof Error ? error.message : 'The investigation could not be saved.';
+            this.displayStashDialog = true;
+        } finally {
+            this.cdref.markForCheck();
+        }
+    }
+
+    sessionSaveError = '';
+    investigationOpen = false;
+
+    async downloadInvestigationRecord(): Promise<void> {
+        try {
+            const stash = await this.buildSessionStash();
+            const zip = new JSZip();
+            zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
+            zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
+            this.saveGeneratedFile(await zip.generateAsync({ type: 'blob' }), `${this.saveFileName || 'investigation'}-record.zip`);
+        } catch (error) {
+            this.sessionSaveError = error instanceof Error ? error.message : 'The investigation record could not be saved.';
+            this.displayStashDialog = true;
+        } finally {
+            this.cdref.markForCheck();
+        }
     }
 
     /**

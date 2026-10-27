@@ -230,14 +230,18 @@ export function getSelectedTwoDNodeIds(win: any): string[] {
 
 export function hoverTwoDNode(win: any, nodeId: string, show: boolean): void {
   const twoD = getTwoD(win);
+  const container = twoD.sigmaActive ? win.document.querySelector('#sigma-network') : twoD.cy.container();
+  const rect = container.getBoundingClientRect();
+  // Keep synthetic pointer events inside the pane when banners or toolbars change its bounds.
+  const pointer = { clientX: rect.left + Math.min(80, rect.width / 2), clientY: rect.top + Math.min(80, rect.height / 2) };
   if (twoD.sigmaActive) {
     (twoD.sigmaRenderer as any).handleNodeHover(
       show ? String(nodeId) : null,
-      new win.MouseEvent(show ? 'mousemove' : 'mouseout', { clientX: 120, clientY: 120 }),
+      new win.MouseEvent(show ? 'mousemove' : 'mouseout', pointer),
     );
     return;
   }
-  win.Cypress.test.hoverNode(show ? 'show' : 'hide', String(nodeId));
+  win.Cypress.test.hoverNode(show ? 'show' : 'hide', String(nodeId), pointer);
 }
 
 export function getHighlightedIncidentEdgeCount(win: any, nodeId: string): number {

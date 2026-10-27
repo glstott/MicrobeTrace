@@ -1,0 +1,75 @@
+<div data-testid="investigation-panel">
+  <p>Save the investigation to preserve these settings, its data, and completed results.</p>
+  @if (error) { <p role="alert" class="text-danger">{{ error }}</p> }
+  @if (status) { <p role="status">{{ status }}</p> }
+  <section aria-labelledby="investigation-cohorts-title">
+    <h3 id="investigation-cohorts-title">Cohorts</h3>
+    <p class="muted">Create a fixed cohort from selected nodes. Checked cohorts form a union for cohort calculations; filters do not change membership.</p>
+    <div class="row-actions">
+      <input class="form-control name" aria-label="New cohort name" placeholder="Cohort name" [(ngModel)]="cohortName">
+      <button class="btn btn-primary btn-sm" (click)="createCohort()" data-testid="investigation-create-cohort">Create from selection</button>
+    </div>
+    @for (cohort of workspace.cohorts; track cohort) {
+      <div class="entry">
+        <div class="row-actions">
+          <input type="checkbox" [attr.aria-label]="'Use cohort ' + cohort.name" [checked]="workspace.selectedCohortIds.includes(cohort.id)" (change)="toggleCohort(cohort.id, $any($event.target).checked)">
+          <input class="form-control name" aria-label="Cohort name" [ngModel]="cohortNameDrafts.get(cohort) ?? cohort.name" (ngModelChange)="cohortNameDrafts.set(cohort, $event)" (blur)="renameCohort(cohort)" [attr.aria-invalid]="cohortNameErrors.has(cohort)" [attr.aria-describedby]="cohortNameErrors.has(cohort) ? 'cohort-name-error-' + cohort.id : null" required>
+          <span>{{ cohort.nodeIds.length }} members</span>
+          <button class="btn btn-light btn-sm" (click)="selectMembers(cohort)">Select members</button>
+          <button class="btn btn-light btn-sm" (click)="replaceMembership(cohort)">Replace from selection</button>
+          <button class="btn btn-light btn-sm" (click)="deleteCohort(cohort.id)">Delete</button>
+        </div>
+        @if (cohortNameErrors.get(cohort); as message) { <p role="alert" class="text-danger" [id]="'cohort-name-error-' + cohort.id">{{ message }}</p> }
+        <small class="muted">ID: {{ cohort.id }}</small>
+      </div>
+    }
+  </section>
+  <section aria-labelledby="investigation-layers-title">
+    <h3 id="investigation-layers-title">Relationship layers</h3>
+    <p class="muted">Enabled sources contribute edges. Color and opacity overrides take precedence over view styling.</p>
+    @for (layer of workspace.edgeLayers; track layer.id; let index = $index) {
+      <div class="entry">
+        <div class="row-actions">
+          <input type="checkbox" [attr.aria-label]="'Enable layer ' + layer.name" [(ngModel)]="layer.enabled" (change)="changed(true)">
+          <input class="form-control name" aria-label="Layer name" [(ngModel)]="layer.name" (change)="changed()">
+          <input type="color" [attr.aria-label]="'Color for ' + layer.name" [value]="layer.color || '#94a3b8'" (input)="layer.color = $any($event.target).value; changed(true)">
+          <label>Opacity <input type="range" min="0" max="1" step="0.05" [value]="layer.opacity ?? 1" (change)="layerOpacity(layer, $any($event.target).value)"></label>
+          <button class="btn btn-light btn-sm" (click)="clearLayerStyle(layer)">Reset style</button>
+          <button class="btn btn-light btn-sm" aria-label="Move layer up" [disabled]="index === 0" (click)="moveLayer(layer, -1)">↑</button>
+          <button class="btn btn-light btn-sm" aria-label="Move layer down" [disabled]="index === workspace.edgeLayers.length - 1" (click)="moveLayer(layer, 1)">↓</button>
+        </div>
+        <small class="muted">Source: {{ layer.source }}</small>
+      </div>
+    }
+  </section>
+  <section aria-labelledby="investigation-notes-title">
+    <h3 id="investigation-notes-title">Annotations</h3>
+    <div class="row-actions">
+      <label>Target <select class="form-control" [(ngModel)]="noteTargetType"><option value="investigation">Investigation</option><option value="node">Node</option><option value="edge">Edge</option><option value="cohort">Cohort</option></select></label>
+      @if (noteTargetType !== 'investigation') { <input class="form-control name" aria-label="Annotation target ID" placeholder="Target ID" [(ngModel)]="noteTargetId"> }
+    </div>
+    <textarea aria-label="New annotation" [(ngModel)]="noteText" placeholder="Investigation note"></textarea>
+    <button class="btn btn-primary btn-sm" (click)="addNote()">Save note</button>
+    @for (note of workspace.annotations; track note) {
+      <div class="entry">
+        <label>{{ note.target.type }} {{ note.target.id }} @if (!resolved(note)) { <strong class="text-warning">Unresolved target</strong> }</label>
+        <textarea [attr.aria-label]="'Edit note ' + note.id" [ngModel]="noteDrafts.get(note) ?? note.text" (ngModelChange)="noteDrafts.set(note, $event)" (blur)="updateNote(note)" [attr.aria-invalid]="noteErrors.has(note)" [attr.aria-describedby]="noteErrors.has(note) ? 'note-text-error-' + note.id : null"></textarea>
+        @if (noteErrors.get(note); as message) { <p role="alert" class="text-danger" [id]="'note-text-error-' + note.id">{{ message }}</p> }
+        <div class="row-actions"><small class="muted">Updated {{ note.updatedAt }}</small><button class="btn btn-light btn-sm" (click)="deleteNote(note.id)">Delete note</button></div>
+      </div>
+    }
+  </section>
+  <section aria-labelledby="investigation-calculations-title">
+    <h3 id="investigation-calculations-title">Calculation scope</h3>
+    <p class="muted">Full and cohort scopes ignore display filters and retain enabled relationship layers and applicable analysis settings. Visible scope uses the current filtered graph. Each run captures its inputs before starting.</p>
+    @for (operation of operations; track operation.id) {
+      <div class="scope-row">
+        <label [for]="'scope-' + operation.id">{{ operation.label }}</label>
+        <select class="form-control" [id]="'scope-' + operation.id" [ngModel]="scope(operation.id)" (ngModelChange)="setScope(operation.id, $event)"><option value="full">Full</option><option value="visible">Visible</option><option value="cohort">Cohort</option></select>
+        <small>{{ previews[operation.id] }} @if (workspace.calculations[operation.id]; as run) { <br>Saved result: {{ run.status }} · {{ run.completedAt }} }</small>
+        <button class="btn btn-light btn-sm" [disabled]="!!running" (click)="run(operation.id)">{{ running === operation.id ? 'Running…' : 'Run' }}</button>
+      </div>
+    }
+  </section>
+  <div class="row-actions"><button class="btn btn-primary" (click)="downloadRecord.emit()">Download investigation record</button><small class="muted">Includes a readable record and machine-readable manifest. Save the session to preserve exact inputs and outputs.</small></div>
+</div>

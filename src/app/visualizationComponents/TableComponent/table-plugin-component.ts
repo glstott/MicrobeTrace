@@ -160,6 +160,13 @@ import { sanitizeExportCell } from '@app/contactTraceCommonServices/export-sanit
       this.dataSetView.push({ label: 'Clusters', value: 'Cluster' });
   
       this.dataSetViewSelected = 'Node';
+      const savedView = this.commonService.session.investigation?.viewStates?.Table;
+      if (savedView) {
+        this.dataSetViewSelected = savedView.dataSetViewSelected || 'Node';
+        this.selectedRows = savedView.selectedRows ?? this.selectedRows;
+        this.selectedSize = savedView.selectedSize ?? this.selectedSize;
+        this.selectedTextSizeFromInvestigation(savedView);
+      }
   
       this.IsDataAvailable =
         this.commonService.session.data.nodes.length == 0 ? false : true;
@@ -809,7 +816,26 @@ import { sanitizeExportCell } from '@app/contactTraceCommonServices/export-sanit
       //Not Relevant
     }
   
-    onRecallSession() {}
+    captureInvestigationViewState(): any {
+      return { dataSetViewSelected: this.dataSetViewSelected, selectedRows: this.selectedRows,
+        selectedSize: this.selectedSize, textSize: this.SelectedTextSizeVariable,
+        sortField: this.dataTable?.sortField, sortOrder: this.dataTable?.sortOrder,
+        multiSortMeta: this.dataTable?.multiSortMeta,
+        tables: this.TableDatas.map(table => ({ type: table.tableType, filter: table.filter, columns: table.tableColumns })) };
+    }
+
+    private selectedTextSizeFromInvestigation(saved: any): void {
+      this.SelectedTextSizeVariable = saved.textSize ?? this.SelectedTextSizeVariable;
+      setTimeout(() => {
+        if (!this.dataTable) return;
+        this.dataTable.sortField = saved.sortField;
+        this.dataTable.sortOrder = saved.sortOrder;
+        this.dataTable.multiSortMeta = saved.multiSortMeta;
+        if (saved.sortField) this.dataTable.sortSingle();
+      });
+    }
+
+    onRecallSession() { this.TableDatas = []; this.createTable(this.dataSetViewSelected); }
   
     goldenLayoutComponentResize() {
       this.scrollHeight =

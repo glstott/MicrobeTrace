@@ -160,6 +160,12 @@ export class NetworkStatisticsComponent
   }
 
   ngOnInit(): void {
+    const saved = this.commonService.session.investigation?.viewStates?.['Network Statistics'];
+    if (saved) {
+      this.dataSetViewSelected = saved.dataSetViewSelected || 'summary';
+      this.selectedRows = saved.selectedRows ?? this.selectedRows;
+      this.selectedSize = saved.selectedSize ?? this.selectedSize;
+    }
     this.SelectedTableData = this.getTableData(this.dataSetViewSelected);
     this.IsDataAvailable = this.commonService.session.data.nodes.length > 0;
     this.goldenLayoutComponentResize();
@@ -220,7 +226,7 @@ export class NetworkStatisticsComponent
   openCenter(): void {}
 
   openRefreshScreen(): void {
-    void this.refreshNetworkStatistics();
+    void this.refreshNetworkStatistics(true);
   }
 
   onLoadNewData(): void {
@@ -247,7 +253,12 @@ export class NetworkStatisticsComponent
 
   applyStyleFileSettings(): void {}
 
-  onRecallSession(): void {}
+  onRecallSession(): void { void this.refreshNetworkStatistics(); }
+
+  captureInvestigationViewState(): any {
+    return { dataSetViewSelected: this.dataSetViewSelected, selectedRows: this.selectedRows, selectedSize: this.selectedSize,
+      tables: this.TableDatas.map(table => ({ type: table.tableType, columns: table.tableColumns })) };
+  }
 
   openSelectDataSetScreen(event: any): void {
     this.dataSetViewSelected = event?.value ?? this.dataSetViewSelected;
@@ -387,7 +398,7 @@ export class NetworkStatisticsComponent
     };
   }
 
-  async refreshNetworkStatistics(): Promise<void> {
+  async refreshNetworkStatistics(forceRecalculate = false): Promise<void> {
     this.IsDataAvailable = this.commonService.session.data.nodes.length > 0;
     if (!this.IsDataAvailable) {
       this.networkStatisticsResult = null;
@@ -402,23 +413,29 @@ export class NetworkStatisticsComponent
     this.cdref.detectChanges();
 
     try {
-      const result = await this.workerComputeService.computeNetworkStatistics(this.buildNetworkStatisticsRequest());
+      const session = this.commonService.session;
+      this.commonService.investigationCalculations.refreshStatus(session);
+      const recorded = session.investigation.calculations['network-statistics'];
+      const restored = !forceRecalculate && (session.meta as any).restoredCalculationIds?.includes(recorded?.id);
+      const saved = forceRecalculate ? undefined : restored ? recorded.output
+        : this.commonService.investigationCalculations.savedOutput(session, 'network-statistics', { allowEmpty: true });
+      const result = saved ?? await this.commonService.computeInvestigationStatistics();
       if (this.isDestroyed || requestId !== this.networkStatisticsRequestId) {
         return;
       }
 
       this.networkStatisticsResult = result;
       this.networkStatisticsLoading = false;
-      this.networkStatisticsError = '';
+      this.networkStatisticsError = restored && recorded.status === 'stale' ? 'This saved result is stale. Run network statistics again to use the current investigation inputs.' : '';
       this.syncSelectedTableData();
       this.markNetworkStatisticsRendered();
-    } catch {
+    } catch (error) {
       if (this.isDestroyed || requestId !== this.networkStatisticsRequestId) {
         return;
       }
 
       this.networkStatisticsLoading = false;
-      this.networkStatisticsError = 'Network statistics could not be calculated.';
+      this.networkStatisticsError = error instanceof Error ? error.message : 'Network statistics could not be calculated.';
     } finally {
       if (!this.isDestroyed && requestId === this.networkStatisticsRequestId) {
         this.cdref.detectChanges();
@@ -524,6 +541,8 @@ export class NetworkStatisticsComponent
         value: column,
       })),
     };
+    const saved = this.commonService.session.investigation?.viewStates?.['Network Statistics']?.tables?.find(table => table.type === section);
+    if (saved?.columns) tableData.tableColumns = saved.columns;
     this.TableDatas.push(tableData);
     return tableData;
   }

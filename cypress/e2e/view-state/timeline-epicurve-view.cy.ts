@@ -1,3 +1,5 @@
+import { visitAppAndAcceptEula } from '../../support/journey-helpers';
+
 describe('Epi Curve / Timeline View', () => {
     const selectors = {
       container: '#epiCurve',
@@ -6,11 +8,7 @@ describe('Epi Curve / Timeline View', () => {
     };
   
     beforeEach(() => {
-      cy.visit('/');
-      cy.wait(6000);
-  
-      cy.contains('button', 'Continue with Sample Dataset', { timeout: 10000 }).click({ force: true });
-      cy.get('#overlay').should('not.be.visible', { timeout: 10000 });
+      visitAppAndAcceptEula({ skipDemoSession: false, dismissWelcomeOverlay: true });
   
       cy.contains('button', 'View').click();
       cy.contains('button[mat-menu-item]', 'Epi Curve').click();
@@ -195,11 +193,11 @@ describe('Epi Curve / Timeline View', () => {
         cy.get('#node-color-variable').click()
         cy.get('li[role="option"]').contains('Cluster').click()
         cy.get('#node-color-table-row', { timeout: 10000 }).should('be.visible');
-        cy.get('#node-color-table-row').contains('.p-selectbutton .p-togglebutton-label', 'Show').click({ force: true });
+        cy.get('#node-color-table-row').contains('.p-selectbutton .p-togglebutton-label', 'Dock').click({ force: true });
 
         cy.window()
           .its('commonService.GlobalSettingsModel.SelectedNodeColorTableTypesVariable')
-          .should('equal', 'Show');
+          .should('equal', 'Dock');
         cy.get('#key-tables-node-table').should('be.visible');
 
         cy.contains('#global-settings-modal .nav-link', 'Filtering').click();

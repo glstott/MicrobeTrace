@@ -28,6 +28,12 @@ import {
     type ThresholdSweepSummary
 } from './threshold-analysis';
 import * as tn93 from 'tn93';
+import { isActiveNetworkSubsetRule, networkSubsetValueMatches } from './network-subset-rule';
+import { InvestigationSessionService } from './investigation-session.service';
+import { InvestigationCalculationService, InvestigationRunOptions } from './investigation-calculation.service';
+import { createInvestigationWorkspace, InvestigationOperation, investigationCopy, investigationNodeId,
+    investigationEdgeId, investigationEndpointId, investigationChangeKey,
+    enabledInvestigationOrigins, type ResolvedInvestigationInputs } from './investigation-state';
 
 interface SequencePairwiseLinkGuardrails {
     warningThreshold: number;
@@ -115,6 +121,7 @@ export class CommonService extends AppComponentBase implements OnInit {
 
     activeTab: string = 'Files';
     pendingDashboardRestore: DashboardRestoreState | null = null;
+    sessionLoadError = '';
 
     private readonly restorableDashboardViews = new Set<string>([
         '2D Network',
@@ -664,6 +671,8 @@ export class CommonService extends AppComponentBase implements OnInit {
      */   
     sessionSkeleton = () => {
         return {
+            investigation: createInvestigationWorkspace(),
+            investigationHistoricalProvenance: 'recorded' as 'recorded' | 'not recorded',
             data: this.dataSkeleton(),
             files: [],
             layout: {
@@ -919,6 +928,7 @@ export class CommonService extends AppComponentBase implements OnInit {
     }
 
     beginDataLoad(): number {
+        this.investigationCalculations?.cancelSession(this.session);
         this.dataLoadGeneration += 1;
         return this.dataLoadGeneration;
     }
@@ -1193,21 +1203,60 @@ export class CommonService extends AppComponentBase implements OnInit {
     public getThresholdSweepSummary(metric = this.session.style.widgets["link-sort-variable"]): ThresholdSweepSummary {
         const analysis = this.getAnalysisCache();
         const showNN = Boolean(this.session.style.widgets["link-show-nn"]);
-        const cacheKey = `${metric}|policy:genetic|nn:${showNN ? 1 : 0}`;
+        const options = { sweep: true, allowEmpty: true, parameters: { metric } };
+        const recorded = this.session.investigation?.calculations?.['threshold-analysis'];
+        if (recorded && (this.session.meta as any).restoredCalculationIds?.includes(recorded.id)) {
+            this.investigationCalculations?.refreshStatus(this.session);
+            return recorded.output;
+        }
+        const inputs = this.investigationCalculations?.resolve(this.session, 'threshold-analysis', options);
+        const saved = this.investigationCalculations?.savedOutput(this.session, 'threshold-analysis', options);
+        if (saved) return saved;
+        const scopeKey = inputs ? investigationChangeKey({ scope: inputs.scope, cohortIds: inputs.cohortIds,
+            nodes: inputs.nodes.map(investigationNodeId), links: inputs.links.map(investigationEdgeId),
+            disabledSources: this.session.investigation.edgeLayers.filter(layer => !layer.enabled).map(layer => layer.source).sort() }) : 'legacy';
+        const cacheKey = `${metric}|policy:genetic|nn:${showNN ? 1 : 0}|${scopeKey}`;
         const cached = analysis.thresholdSweepCache[cacheKey] as ThresholdSweepSummary | undefined;
 
         if (cached && cached.version === analysis.version) {
+            this.investigationCalculations?.recordSynchronous(this.session, 'threshold-analysis', cached, options);
             return cached;
         }
 
-        const distanceCache = this.getStoredDistanceEdgeCache(metric);
+        let distanceCache = this.getStoredDistanceEdgeCache(metric);
+        if (inputs) {
+            const virtualPairs = distanceCache === analysis.patristicDistanceCache[metric];
+            const nodeIds = inputs.nodes.map(investigationNodeId);
+            const nodeIndexById = Object.fromEntries(nodeIds.map((id, index) => [id, index]));
+            const links = new Set(inputs.links.map(investigationEdgeId));
+            const restrictedPairs = inputs.scope === 'visible' && isActiveNetworkSubsetRule(this.session.state?.networkSubsetFilter?.link)
+                ? new Set(inputs.links.map(link => JSON.stringify([investigationEndpointId(link.source), investigationEndpointId(link.target)].sort()))) : null;
+            const treeSource = virtualPairs ? this.getNewickBackedSourceFile()?.name : undefined;
+            const sourceEnabled = treeSource
+                ? this.session.investigation.edgeLayers.find(layer => layer.source === treeSource)?.enabled !== false
+                : !this.session.investigation.edgeLayers.some(layer => !layer.enabled)
+                    || inputs.links.some(link => this.isThresholdAnalysisGeneticLink(link, metric));
+            const sortedEdges = distanceCache.sortedEdges.filter(edge => nodeIndexById[edge.sourceId] !== undefined && nodeIndexById[edge.targetId] !== undefined
+                && (virtualPairs || edge.linkIndex < 0
+                    ? sourceEnabled && (!restrictedPairs || restrictedPairs.has(JSON.stringify([edge.sourceId, edge.targetId].sort())))
+                    : links.has(investigationEdgeId(this.session.data.links[edge.linkIndex]))))
+                .map(edge => ({ ...edge, sourceIndex: nodeIndexById[edge.sourceId], targetIndex: nodeIndexById[edge.targetId] }));
+            distanceCache = { ...distanceCache, nodeIds, nodeIndexById, sortedEdges, sortedValues: sortedEdges.map(edge => edge.value) };
+        }
         const summary = buildThresholdSweepSummary(
             distanceCache,
             [],
             this.getThresholdAnalysisExcludedLinkIndexes(metric)
         );
         analysis.thresholdSweepCache[cacheKey] = summary;
+        this.investigationCalculations?.recordSynchronous(this.session, 'threshold-analysis', summary, options);
         return summary;
+    }
+
+    recalculateInvestigationThreshold(): ThresholdSweepSummary {
+        const record = this.session.investigation.calculations['threshold-analysis'];
+        if (record) (this.session.meta as any).restoredCalculationIds = ((this.session.meta as any).restoredCalculationIds || []).filter(id => id !== record.id);
+        return this.getThresholdSweepSummary();
     }
 
     private isThresholdAnalysisGeneticLink(link: any, metric: string): boolean {
@@ -1243,7 +1292,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         private http: HttpClient,
         private store: CommonStoreService,
         private colorMappingService: ColorMappingService,
-        private workerComputeService: WorkerComputeService
+        private workerComputeService: WorkerComputeService,
+        public investigationSessions: InvestigationSessionService,
+        public investigationCalculations: InvestigationCalculationService
         // private srv: GoldenLayoutService
     ) {
 
@@ -2289,11 +2340,7 @@ export class CommonService extends AppComponentBase implements OnInit {
     }
 
     private isNetworkSubsetRuleActive(rule?: NetworkSubsetFilterRule): boolean {
-        const field = `${rule?.field ?? ''}`.trim();
-        const value = rule?.value;
-        const hasValue = value !== undefined && value !== null && `${value}`.trim() !== '';
-
-        return Boolean(rule?.enabled) && field.length > 0 && field !== 'None' && hasValue;
+        return isActiveNetworkSubsetRule(rule);
     }
 
     private getNetworkSubsetNodeId(node: any): string {
@@ -2313,72 +2360,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         return String(link?.id ?? link?.index ?? index);
     }
 
-    private normalizeNetworkSubsetValue(value: any): string {
-        if (value === undefined || value === null) {
-            return '';
-        }
-
-        return String(value).trim();
-    }
-
-    private getNetworkSubsetFieldValues(value: any): string[] {
-        if (Array.isArray(value)) {
-            return value.map(item => this.normalizeNetworkSubsetValue(item));
-        }
-
-        return [this.normalizeNetworkSubsetValue(value)];
-    }
-
     private networkSubsetValueMatches(rawValue: any, operator: string = 'contains', expectedValue: any): boolean {
-        const expected = this.normalizeNetworkSubsetValue(expectedValue);
-        const expectedLower = expected.toLowerCase();
-        const rawValues = this.getNetworkSubsetFieldValues(rawValue);
-        const rawLowerValues = rawValues.map(value => value.toLowerCase());
-
-        switch (operator) {
-            case 'equals':
-                return rawLowerValues.some(value => value === expectedLower);
-            case 'notEquals':
-                return rawLowerValues.every(value => value !== expectedLower);
-            case 'startsWith':
-                return rawLowerValues.some(value => value.startsWith(expectedLower));
-            case 'endsWith':
-                return rawLowerValues.some(value => value.endsWith(expectedLower));
-            case 'in': {
-                const expectedValues = expectedLower
-                    .split(',')
-                    .map(value => value.trim())
-                    .filter(value => value.length > 0);
-                return rawLowerValues.some(value => expectedValues.includes(value));
-            }
-            case 'lt':
-            case 'lte':
-            case 'gt':
-            case 'gte': {
-                const expectedNumber = Number(expected);
-                if (!Number.isFinite(expectedNumber)) {
-                    return false;
-                }
-
-                return rawValues.some(value => {
-                    if (value.trim().length === 0) {
-                        return false;
-                    }
-                    const rawNumber = Number(value);
-                    if (!Number.isFinite(rawNumber)) {
-                        return false;
-                    }
-
-                    if (operator === 'lt') return rawNumber < expectedNumber;
-                    if (operator === 'lte') return rawNumber <= expectedNumber;
-                    if (operator === 'gt') return rawNumber > expectedNumber;
-                    return rawNumber >= expectedNumber;
-                });
-            }
-            case 'contains':
-            default:
-                return rawLowerValues.some(value => value.includes(expectedLower));
-        }
+        return networkSubsetValueMatches(rawValue, operator, expectedValue);
     }
 
     getNetworkSubsetFieldValue(record: any, target: 'node' | 'link', field: string): any {
@@ -2508,8 +2491,9 @@ export class CommonService extends AppComponentBase implements OnInit {
         });
     }
 
-    private removeGeneticDistanceLinks(): void {
+    private removeGeneticDistanceLinks(members?: Set<string>): void {
         const retainedLinks = this.session.data.links.filter((link) => {
+            if (members && (!members.has(investigationEndpointId(link.source)) || !members.has(investigationEndpointId(link.target)))) return true;
             const distanceOrigins = this.getLinkDistanceOrigins(link);
             const hasGeneticDistance = distanceOrigins.includes('Genetic Distance');
 
@@ -2518,9 +2502,7 @@ export class CommonService extends AppComponentBase implements OnInit {
                 return true;
             }
 
-            const remainingOrigins = Array.isArray(link.origin)
-                ? link.origin.filter((origin: string) => origin !== 'Genetic Distance')
-                : [];
+            const remainingOrigins = this.getLinkAllOrigins(link).filter((origin: string) => origin !== 'Genetic Distance');
             const remainingDistanceOrigins = distanceOrigins.filter(origin => origin !== 'Genetic Distance');
 
             if (remainingOrigins.length === 0) {
@@ -2564,7 +2546,6 @@ export class CommonService extends AppComponentBase implements OnInit {
             }
         });
 
-        this.removeGeneticDistanceLinks();
         await this.computeLinks(subset);
         this.rebuildLinkMatrix();
 
@@ -2733,12 +2714,10 @@ export class CommonService extends AppComponentBase implements OnInit {
             // abp.notify.error(
             //     'File Not Recognized! Are you certain this is a MicrobeTrace Session or HIV-TRACE Output File?'
             // );
-            console.error(error);
-            return;
+            this.sessionLoadError = 'The session file is not valid JSON.';
+            throw new Error(this.sessionLoadError);
         }
         if (extension == 'microbetrace') {
-            this.session = this.sessionSkeleton();
-
             return this.applySession(data);
         } else {
             if (data.meta && data.tree) {
@@ -2759,6 +2738,19 @@ export class CommonService extends AppComponentBase implements OnInit {
      * Updates commonService.session with information from stashObject. Variables updated include data, files, state, style, and layout.
      */
     async applySession(stashObject: StashObjects) {
+        // Validation, migrations and checksum verification precede every live-state change.
+        this.sessionLoadError = '';
+        try { stashObject = await this.investigationSessions.prepare(stashObject); }
+        catch (error) {
+            this.sessionLoadError = error instanceof Error ? error.message : 'The investigation could not be opened.';
+            throw error;
+        }
+        const previousSession = this.session;
+        const previousTemp = this.temp;
+        const previousDashboard = this.pendingDashboardRestore;
+        this.session = this.sessionSkeleton();
+        this.temp = this.tempSkeleton();
+        try {
         //If anything here seems eccentric, assume it's to maintain compatibility with
         //session files from older versions of MicrobeTrace.
         this.beginDataLoad();
@@ -2796,6 +2788,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         }
 
         const oldSession = stashObject.session;
+        this.session.investigation = oldSession.investigation || createInvestigationWorkspace();
+        this.session.investigationHistoricalProvenance = oldSession.investigationHistoricalProvenance || 'not recorded';
         const savedTabs = Array.isArray(stashObject.tabs) ? stashObject.tabs : [];
 
         const normalizedDefaultView = this.normalizeViewName(oldSession?.style?.widgets?.['default-view']);
@@ -2828,6 +2822,8 @@ export class CommonService extends AppComponentBase implements OnInit {
         if (oldSession.meta?.rendererViewState) {
             (this.session.meta as any).rendererViewState = oldSession.meta.rendererViewState;
         }
+        (this.session.meta as any).restoredCalculationIds = Object.values(this.session.investigation.calculations).map(run => run.id);
+        this.session.meta.anySequences = oldSession.meta?.anySequences ?? oldSession.data.nodes.some(node => !!node.seq);
         this.session.meta.startTime = Date.now();
 
 
@@ -2843,10 +2839,13 @@ export class CommonService extends AppComponentBase implements OnInit {
             n = nodes.length,
             m = links.length;
 
+        this.session.data = { ...this.dataSkeleton(), ...oldSession.data, nodes: [], links: [],
+            nodeFilteredValues: [], linkFilteredValues: [], clusterFilteredValues: [] };
+
         for (let i = 0; i < n; i++) this.addNode(nodes[i]);
         for (let j = 0; j < m; j++) {
             // Add distance property for files saved prior to distance visibility fix
-            if ((links[j].origin).includes('Genetic Distance')) {
+            if ((links[j].origin || []).includes('Genetic Distance')) {
                 links[j].hasDistance = true;
                 links[j].distanceOrigin = 'Genetic Distance';
             } else if (links[j].distance && links[j].distance > 0) {
@@ -2947,7 +2946,16 @@ export class CommonService extends AppComponentBase implements OnInit {
         //         this.session.style.widgets['link-sort-variable'] = 'snps';
         //     }
         // }
-        this.finishUp();
+        await this.finishUp();
+        } catch (error) {
+            this.session = previousSession;
+            this.temp = previousTemp;
+            this.pendingDashboardRestore = previousDashboard;
+            this.store.setNetworkRendered(!!previousSession.network.isFullyLoaded);
+            this.store.setSettingsLoaded(!!previousSession.network.isFullyLoaded);
+            this.sessionLoadError = error instanceof Error ? error.message : 'The investigation could not be opened.';
+            throw error;
+        }
 
     };
 
@@ -3359,8 +3367,218 @@ parseFASTA(text): Promise<any> {
         return nodeCount;
     };
 
+    private isolatedInvestigationAnalysis = false;
+    private skippedInvestigationAnalysis: any = null;
+
+    private analysisContext(inputs: ResolvedInvestigationInputs, operation: InvestigationOperation): CommonService {
+        const context = Object.create(this) as CommonService;
+        context.isolatedInvestigationAnalysis = true;
+        context.session = { ...this.session, data: { ...this.dataSkeleton(),
+            ...investigationCopy(this.session.data), nodes: inputs.nodes, links: inputs.links },
+            meta: { ...this.session.meta }, style: investigationCopy(this.session.style),
+            warnings: investigationCopy(this.session.warnings || []) };
+        context.temp = this.tempSkeleton();
+        context.temp.matrix = Object.create(null);
+        for (let index = 0; index < inputs.nodes.length; index++) {
+            const node = inputs.nodes[index];
+            node.index = index;
+            if (node.seq) node._seqInt = tn93.toInts(node.seq);
+        }
+        for (const link of inputs.links) {
+            const source = investigationEndpointId(link.source), target = investigationEndpointId(link.target);
+            if (!context.temp.matrix[source]) context.temp.matrix[source] = Object.create(null);
+            if (!context.temp.matrix[target]) context.temp.matrix[target] = Object.create(null);
+            context.temp.matrix[source][target] = context.temp.matrix[target][source] = link;
+        }
+        // A whole-tree shortcut would reintroduce pairs removed by an explicit
+        // visible link rule. These operations must use the resolved edge matrix.
+        const restrictTreePairs = inputs.scope === 'visible'
+            && isActiveNetworkSubsetRule(this.session.state?.networkSubsetFilter?.link)
+            && ['mst', 'nearest-neighbor', 'tree', 'distance-matrix'].includes(operation);
+        if (restrictTreePairs) {
+            delete context.session.data['newick'];
+            context.session.data.newickString = '';
+        }
+        const newick = restrictTreePairs ? null : this.session.data.newickString || this.session.data['newick'];
+        if (newick) {
+            const tree = patristic.parseNewick(newick);
+            const ids = new Set(inputs.nodes.map(investigationNodeId));
+            const leaves: string[] = [];
+            const collect = (branch: any) => branch.children?.length ? branch.children.forEach(collect) : leaves.push(String(branch.id));
+            collect(tree);
+            const matches = leaves.length === ids.size && leaves.every(id => ids.has(id));
+            if (matches && operation !== 'tree') context.temp.treeObj = tree;
+            else if (operation === 'tree') {
+                delete context.session.data['newick'];
+                context.session.data.newickString = '';
+            }
+            else if (operation === 'patristic' || operation === 'mst' || operation === 'nearest-neighbor' || operation === 'distance-matrix') {
+                const prune = (branch: any): any => {
+                    if (!branch.children?.length) return ids.has(String(branch.id)) ? branch : null;
+                    branch.children = branch.children.map(prune).filter(Boolean);
+                    if (!branch.children.length) return null;
+                    if (branch.children.length === 1) {
+                        const child = branch.children[0];
+                        child.length = Number(child.length || 0) + Number(branch.length || 0);
+                        return child;
+                    }
+                    return branch;
+                };
+                const scopedTree = prune(tree);
+                if (!scopedTree) throw new Error('The calculation scope has no leaves in the loaded tree.');
+                scopedTree.fixParenthood();
+                context.session.data.newickString = scopedTree.toNewick();
+                context.session.data['newick'] = scopedTree.toNewick();
+                context.temp.treeObj = scopedTree;
+            } else {
+                delete context.session.data['newick'];
+                context.session.data.newickString = '';
+            }
+        }
+        return context;
+    }
+
+    private async runScopedAnalysis<T>(operation: InvestigationOperation, work: (context: CommonService) => Promise<T>,
+        options: InvestigationRunOptions = {}, nodeFields: string[] = [], linkFields: string[] = [], mergeNewLinks = false): Promise<T> {
+        const session = this.session;
+        let context: CommonService;
+        const warningId = (warning: any) => warning?.id ? `id:${warning.id}` : `value:${investigationChangeKey(warning)}`;
+        let warningsBefore = new Map<string, string>();
+        const output = await this.investigationCalculations.run(session, operation, async inputs => {
+            context = this.analysisContext(inputs, operation);
+            warningsBefore = new Map((context.session.warnings || []).map(warning => [warningId(warning), investigationChangeKey(warning)]));
+            if (operation === 'pairwise-distances') context.removeGeneticDistanceLinks();
+            const workers: any[] = [];
+            const failure = new Promise<never>((_resolve, reject) => {
+                context.computer = new Proxy(this.computer, {
+                    get(target, key) {
+                        const method = target[key];
+                        if (typeof method !== 'function' || !String(key).startsWith('get')) return method;
+                        return (...args: any[]) => {
+                            const worker = method.apply(target, args);
+                            workers.push(worker);
+                            worker.addEventListener('error', event => reject(new Error(event.message || 'The calculation worker failed.')));
+                            return worker;
+                        };
+                    },
+                });
+            });
+            let value: T;
+            try { value = await Promise.race([work(context), failure]); }
+            finally { workers.forEach(worker => worker.terminate()); }
+            const nodes = nodeFields.length ? context.session.data.nodes.map(node => ({ _id: investigationNodeId(node),
+                ...Object.fromEntries(nodeFields.filter(key => node[key] !== undefined).map(key => [key, node[key]])) })) : [];
+            const members = new Set(inputs.nodes.map(investigationNodeId));
+            const links = mergeNewLinks ? context.session.data.links.filter(link => members.has(investigationEndpointId(link.source)) && members.has(investigationEndpointId(link.target)))
+                : linkFields.length ? context.session.data.links.map(link => ({ id: investigationEdgeId(link),
+                    ...Object.fromEntries(linkFields.map(key => [key, link[key]])) })) : [];
+            return { value: value ?? null, nodes, links, skipped: context.skippedInvestigationAnalysis };
+        }, result => {
+            // Apply this calculation's warning changes while retaining concurrent changes.
+            const warningsAfter = new Map<string, any>((context.session.warnings || []).map(warning => [warningId(warning), warning]));
+            const warnings = new Map<string, any>((session.warnings || []).map(warning => [warningId(warning), warning]));
+            for (const id of warningsBefore.keys()) if (!warningsAfter.has(id)) warnings.delete(id);
+            for (const [id, warning] of warningsAfter) {
+                if (warningsBefore.get(id) !== investigationChangeKey(warning)) warnings.set(id, warning);
+            }
+            session.warnings = Array.from(warnings.values());
+            if (result.skipped) {
+                return;
+            }
+            if (operation === 'pairwise-distances') this.removeGeneticDistanceLinks(new Set(result.nodes.length ? result.nodes.map(node => node._id)
+                : context.session.data.nodes.map(investigationNodeId)));
+            const nodeMap = new Map(session.data.nodes.map(node => [investigationNodeId(node), node]));
+            for (const node of result.nodes) {
+                const target: any = nodeMap.get(node._id);
+                if (target) for (const key of nodeFields) if (node[key] !== undefined) target[key] = node[key];
+            }
+            const edgeMap = new Map(session.data.links.map(link => [investigationEdgeId(link), link]));
+            for (const link of result.links) {
+                if (mergeNewLinks) {
+                    const existing: any = edgeMap.get(investigationEdgeId(link));
+                    this.addLink({ ...investigationCopy(link), index: existing?.index ?? session.data.links.length }, true);
+                }
+                else {
+                    const target: any = edgeMap.get(link.id);
+                    if (target) for (const key of linkFields) target[key] = link[key];
+                }
+            }
+            session.data.nodeFields = this.uniq(session.data.nodeFields.concat(nodeFields));
+        }, options, () => this.session);
+        return output.value as T;
+    }
+
+    align(params): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.alignUnscoped(params);
+        return this.runScopedAnalysis('alignment', async context => {
+            const result = await context.alignUnscoped({ ...params, nodes: context.session.data.nodes });
+            const nodes = new Map(context.session.data.nodes.map(node => [investigationNodeId(node), node]));
+            for (const node of result) Object.assign(nodes.get(investigationNodeId(node)) || {}, node);
+            return result;
+        }, { sequence: true, nodes: params.nodes, parameters: { aligner: params.aligner, reference: params.reference, match: params.match, gap: params.gap } },
+            ['_seq', '_score', '_padding', '_cigar']);
+    }
+    computeConsensus(nodes = null): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.computeConsensusUnscoped(nodes);
+        return this.runScopedAnalysis('consensus', context => context.computeConsensusUnscoped(context.session.data.nodes), { sequence: true, ...(nodes ? { nodes } : {}) });
+    }
+    computeAmbiguityCounts(): Promise<void> {
+        if (this.isolatedInvestigationAnalysis) return this.computeAmbiguityCountsUnscoped();
+        return this.runScopedAnalysis('ambiguity', context => context.computeAmbiguityCountsUnscoped(), { sequence: true }, ['_ambiguity']);
+    }
+    computeConsensusDistances(): Promise<void> {
+        if (this.isolatedInvestigationAnalysis) return this.computeConsensusDistancesUnscoped();
+        return this.runScopedAnalysis('consensus-distances', context => context.computeConsensusDistancesUnscoped(),
+            { sequence: true, parameters: { consensus: this.session.data['consensus'] } }, ['_diff']);
+    }
+    computeLinks(subset): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.computeLinksUnscoped(subset);
+        return this.runScopedAnalysis('pairwise-distances', context => context.computeLinksUnscoped(context.session.data.nodes),
+            { sequence: true, nodes: subset }, [], [], true);
+    }
+    getDM(): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.getDMUnscoped();
+        return this.runScopedAnalysis('distance-matrix', context => context.getDMUnscoped(), { unpruned: true });
+    }
+    computeTree(): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.computeTreeUnscoped();
+        const saved = this.investigationCalculations.savedOutput(this.session, 'tree', { unpruned: true });
+        if (saved?.value) return Promise.resolve(saved.value);
+        return this.runScopedAnalysis('tree', context => {
+            if (context.session.data.nodes.length < 2) throw new Error('Tree inference requires at least two eligible nodes.');
+            return context.computeTreeUnscoped();
+        }, { unpruned: true });
+    }
+    computeMST(): Promise<void> {
+        if (this.isolatedInvestigationAnalysis) return this.computeMSTUnscoped();
+        return this.runScopedAnalysis('mst', context => {
+            if (!context.session.data.links.length && !context.hasNewickBackedDistanceSource(context.session.data.newickString)) throw new Error('Minimum spanning tree calculation requires eligible weighted edges in this scope.');
+            return context.computeMSTUnscoped();
+        }, { unpruned: true }, [], ['nn'], true);
+    }
+    computeDirectionality(): Promise<void> {
+        return this.runScopedAnalysis('directionality', context => {
+            if (!context.temp.treeObj) throw new Error('Directionality requires a tree matching the scoped nodes.');
+            context.session['temp'] = { tree: context.temp.treeObj.toObject() };
+            return this.workerComputeService.computeDirectionality(context.session);
+        }, {}, [], ['source', 'target', 'directed']);
+    }
+
+    computeInvestigationStatistics(): Promise<any> {
+        const session = this.session;
+        return this.investigationCalculations.run(session, 'network-statistics', async inputs => {
+            const widgets = session.style.widgets;
+            return this.workerComputeService.computeNetworkStatistics({
+                nodes: inputs.nodes.map(node => ({ _id: investigationNodeId(node), selected: !!node.selected })),
+                links: inputs.links.map(link => ({ source: investigationEndpointId(link.source), target: investigationEndpointId(link.target), visible: true })),
+                selectedNodeIds: inputs.nodes.filter(node => node.selected).map(investigationNodeId),
+                metricLabel: widgets['link-sort-variable'], threshold: widgets['link-threshold'],
+            });
+        }, undefined, { allowEmpty: true }, () => this.session);
+    }
+
     // Align function using a fresh align worker
-align(params): Promise<any> {
+private alignUnscoped(params): Promise<any> {
     return new Promise(resolve => {
       if (params.aligner === "none") {
         return resolve(params.nodes);
@@ -3405,7 +3623,7 @@ align(params): Promise<any> {
   
   
   // Compute consensus using a fresh consensus worker
-  computeConsensus(nodes = null): Promise<any> {
+  private computeConsensusUnscoped(nodes = null): Promise<any> {
     if (!nodes) {
       nodes = this.session.data.nodes.filter(d => d.seq);
     }
@@ -3434,7 +3652,7 @@ align(params): Promise<any> {
   
   
   // Compute ambiguity counts using a fresh ambiguity counts worker
-  computeAmbiguityCounts(): Promise<void> {
+  private computeAmbiguityCountsUnscoped(): Promise<void> {
     return new Promise(resolve => {
       const requestStart = Date.now();
       let nodes = this.session.data.nodes;
@@ -3468,7 +3686,7 @@ align(params): Promise<any> {
   
   
   // Compute consensus distances using a fresh consensus worker
-  computeConsensusDistances(): Promise<void> {
+  private computeConsensusDistancesUnscoped(): Promise<void> {
     return new Promise(resolve => {
       const requestStart = Date.now();
       let nodes = this.session.data.nodes;
@@ -3592,7 +3810,7 @@ align(params): Promise<any> {
   }
 
   // Compute links using a fresh links worker
-  computeLinks(subset): Promise<any> {
+  private computeLinksUnscoped(subset): Promise<any> {
     return new Promise(resolve => {
       const computeLinksStart = Date.now();
       let k = 0;
@@ -3605,6 +3823,7 @@ align(params): Promise<any> {
       this.recordSequencePairwiseLinkGuardrailWarning(guardrail);
 
       if (guardrail?.hardLimitHit) {
+        if (this.isolatedInvestigationAnalysis) this.skippedInvestigationAnalysis = guardrail;
         this.recordPerformanceDuration('load', 'computeLinks', Date.now() - computeLinksStart, {
           metric,
           sequences: n,
@@ -3655,6 +3874,7 @@ align(params): Promise<any> {
               origin: ['Genetic Distance'],
               distanceOrigin: 'Genetic Distance',
               hasDistance: true,
+              _investigationDistanceMetric: metric,
               directed: false
             }, check);
           }
@@ -3690,19 +3910,18 @@ align(params): Promise<any> {
         return false;
     }
 
-    getDM(): Promise<any> {
+    private getDMUnscoped(): Promise<any> {
         const start = Date.now();
         return new Promise(resolve => {
             let labels = [];
             let dm : any = '';
             if (this.session.data['newick']){
                 let treeObj = patristic.parseNewick(this.session.data['newick']);
-                dm = treeObj.toMatrix();
+                const matrix = treeObj.toMatrix();
+                dm = matrix.matrix;
+                labels = matrix.ids;
             } else {
-                labels = this.session.data.nodes.filter(this.hasSeq).map(d => d.id);
-                if (labels.length === 0) labels = this.session.data.nodes.filter(this.hasSeq).map(d => d._id);
-                if (labels.length === 0) labels = this.session.data.nodes.map(d => d.id);
-                if (labels.length === 0) labels = this.session.data.nodes.map(d => d._id);
+                labels = this.session.data.nodes.map(investigationNodeId);
                 //console.log("Before sorting: " + labels);
                 //labels = labels.sort();
                 //console.log("After sorting: " + labels);
@@ -3736,18 +3955,22 @@ align(params): Promise<any> {
         });
     };
 
-    computeTree(): Promise<any> {
+    private computeTreeUnscoped(): Promise<any> {
         if (this.debugMode) {
           console.log('computing tree');
         }
         console.log('------------------------------------------------------');
-        return new Promise(resolve => {
+        return new Promise((resolve, reject) => {
           if (this.temp.treeObj) {
             return resolve(this.temp.treeObj.toNewick());
           } else if (this.session.data['newick']) {
             return resolve(this.session.data['newick']);
           } else {
             this.getDM().then(({dm, labels}) => {
+              if (dm.some((row: any[], i: number) => row.length !== labels.length || labels.some((_label, j) => i !== j && !Number.isFinite(row[j])))) {
+                reject(new Error('Tree inference requires a complete distance matrix for the scoped nodes. Calculate distances for this scope first.'));
+                return;
+              }
               // Get a fresh tree worker from the factory.
               const treeWorker = this.computer.getTreeWorker();
               treeWorker.postMessage({
@@ -3767,14 +3990,16 @@ align(params): Promise<any> {
                 sub.unsubscribe();
                 return resolve(treeString);
               });
-            });
+            }).catch(reject);
           }
         });
       }
 
-      computeMST(): Promise<void> {
+      private computeMSTUnscoped(): Promise<void> {
         const newickString = this.session.data?.newickString;
-        if (this.hasNewickBackedDistanceSource(newickString)) {
+        const treeSource = this.getNewickBackedSourceFile()?.name;
+        const sourceEnabled = (this.session.investigation?.edgeLayers || []).find(layer => layer.source === treeSource)?.enabled !== false;
+        if (this.hasNewickBackedDistanceSource(newickString) && sourceEnabled) {
             const firstDistanceLink = this.session.data.links.find(link => link?.hasDistance && link?.distanceOrigin);
             const distanceOrigins = firstDistanceLink ? this.getLinkDistanceOrigins(firstDistanceLink) : [];
             const distanceOrigin = distanceOrigins[0] || this.getNewickBackedSourceFile()?.name || 'Newick Tree';
@@ -3839,10 +4064,28 @@ align(params): Promise<any> {
 
 
       computeNN(): Promise<void> {
-        return this.workerComputeService.computeNN(this.session, this.temp);
+        if (this.isolatedInvestigationAnalysis) return this.workerComputeService.computeNN(this.session, this.temp);
+        return this.runScopedAnalysis('nearest-neighbor', context => {
+            if (!context.session.data.links.length) throw new Error('Nearest-neighbor calculation requires eligible weighted edges in this scope.');
+            return this.workerComputeService.computeNN(context.session, context.temp);
+        }, { unpruned: true }, [], ['nn']);
     }
 
     ensurePatristicEdgesForThreshold(threshold: number): Promise<any> {
+        if (this.isolatedInvestigationAnalysis) return this.ensurePatristicEdgesForThresholdUnscoped(threshold);
+        if (!this.hasNewickBackedDistanceSource(this.session.data?.newickString)) return Promise.resolve(null);
+        return this.runScopedAnalysis('patristic', context => context.ensurePatristicEdgesForThresholdUnscoped(threshold),
+            { parameters: { threshold } }, [], [], true);
+    }
+
+    computePatristicForSource(threshold: number, options: { origin: string[]; distanceOrigin: string; newickString?: string }): Promise<any> {
+        return this.runScopedAnalysis('patristic', context => this.workerComputeService.computePatristicEdges(
+            context.session.data.newickString || options.newickString, threshold, context.addLink.bind(context), context.filterXSS,
+            context.session, { origin: options.origin, distanceOrigin: options.distanceOrigin, check: true }),
+            { parameters: { threshold, source: options.distanceOrigin } }, [], [], true);
+    }
+
+    private ensurePatristicEdgesForThresholdUnscoped(threshold: number): Promise<any> {
         const newickString = this.session.data?.newickString;
 
         if (!this.hasNewickBackedDistanceSource(newickString)) {
@@ -3871,6 +4114,9 @@ align(params): Promise<any> {
     async runHamsters() {
 
         const runHamstersStart = Date.now();
+        const session = this.session;
+        const loadGeneration = this.getDataLoadGeneration();
+        const isCurrentLoad = () => this.session === session && this.isCurrentDataLoad(loadGeneration);
         console.log('running hamsters');
         //if (!this.session.style.widgets['triangulate-false']) this.computeTriangulation();
         // this.computeNN();
@@ -3879,13 +4125,23 @@ align(params): Promise<any> {
         let computedTree = false;
         if (hasDistances && this.session.data.links.length <= 2500 && !hasNewickString) {
             console.log('run ham computeTree');
-            const newickString = await this.computeTree();
-            this.session.data.newickString = newickString;
-            computedTree = true;
-            console.log('compute tree end');
+            try {
+                const newickString = await this.computeTree();
+                if (!isCurrentLoad()) return;
+                session.data.newickString = newickString;
+                computedTree = true;
+                console.log('compute tree end');
+            } catch (error) {
+                if (!isCurrentLoad()) return;
+                const id = 'automatic-tree-inference-unavailable';
+                session.warnings = (session.warnings || []).filter(warning => warning?.id !== id);
+                session.warnings.push({ id, type: id, severity: 'warning', recordedAt: Date.now(),
+                    message: `Automatic tree inference was skipped. ${error instanceof Error ? error.message : String(error)}` });
+            }
         }
         //if (!this.session.style.widgets['infer-directionality-false']) this.computeDirectionality();
-        this.finishUp();
+        if (!isCurrentLoad()) return;
+        await this.finishUp();
         this.recordPerformanceTiming('load', 'runHamsters', runHamstersStart, {
             nodes: this.session.data.nodes.length,
             links: this.session.data.links.length,
@@ -4050,6 +4306,25 @@ align(params): Promise<any> {
         });
 
         return select;
+    }
+
+    invalidateInvestigationInputs(): void {
+        this.invalidateThresholdAnalysisCache();
+        this.investigationCalculations.refreshStatus(this.session);
+    }
+
+    getInvestigationLayerStyle(linkOrSource: any, fallback: { color: any; opacity: any }): { color: any; opacity: any } {
+        const origins = typeof linkOrSource === 'string' ? [linkOrSource]
+            : Array.isArray(linkOrSource?.origin) ? linkOrSource.origin : [linkOrSource?.origin];
+        const layers = this.session.investigation?.edgeLayers || [];
+        const layer = layers.find(item => item.enabled && origins.includes(item.source) && (item.color !== undefined || item.opacity !== undefined));
+        return layer ? { color: layer.color ?? fallback.color, opacity: layer.opacity ?? fallback.opacity } : fallback;
+    }
+
+    hasInvestigationLayerStyle(link: any): boolean {
+        const origins = Array.isArray(link?.origin) ? link.origin : [link?.origin];
+        return (this.session.investigation?.edgeLayers || []).some(layer => layer.enabled && origins.includes(layer.source)
+            && (layer.color !== undefined || layer.opacity !== undefined));
     }
 
     updateNetworkVisuals(silent: boolean = false, forceClusterUpdate: boolean = false) {
@@ -5151,7 +5426,13 @@ align(params): Promise<any> {
             });
             this.setLinkAllOrigins(link, allOrigins);
 
-            let finalOrigins = [...allOrigins];
+            let finalOrigins = this.investigationSessions
+                ? enabledInvestigationOrigins(this.investigationSessions.workspace(this.session), link)
+                : [...allOrigins];
+            if (metric === 'distance' && link._investigationDistanceMetric
+                && link._investigationDistanceMetric !== this.session.style.widgets['default-distance-metric']) {
+                finalOrigins = finalOrigins.filter(source => source !== 'Genetic Distance');
+            }
 
             let visible = true;
             let overrideNN = false;
@@ -5221,6 +5502,7 @@ align(params): Promise<any> {
                 visible = visible && Boolean(cluster) && cluster.visible;
             }
     
+            visible = visible && (allOrigins.length === 0 || finalOrigins.length > 0);
             link.origin = this.orderLinkOriginsForDisplay(finalOrigins, globalOriginOrder);
     
             link.visible = visible; // Set final visibility

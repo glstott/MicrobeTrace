@@ -329,6 +329,11 @@ describe('Journey Flow - Phylogenetic bootstrap support', () => {
         expect(widgets['tree-node-label-show']).to.equal(false);
         expect(widgets['tree-node-label-size']).to.equal(16);
         if (version !== 'current') {
+          // Model a legacy session without the versioned integrity envelope.
+          delete payload.schemaVersion;
+          delete payload.snapshotId;
+          delete payload.investigation;
+          delete payload.provenance;
           delete widgets['tree-node-label-show'];
           delete widgets['tree-node-label-size'];
           if (defaultSettings) {

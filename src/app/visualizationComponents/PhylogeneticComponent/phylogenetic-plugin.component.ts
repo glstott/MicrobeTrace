@@ -1242,6 +1242,13 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     }
 
     const labels = collectLeafIds(this.tree.data);
+    try {
+      const scoped = this.commonService.investigationCalculations.resolve(this.commonService.session, 'bootstrap', { sequence: true });
+      const ids = new Set(scoped.nodes.map(node => String(node._id ?? node.id)));
+      if (labels.length !== ids.size || labels.some(label => !ids.has(label))) {
+        return { available: false, reason: 'Bootstrap requires a base tree matching the calculation scope. Infer a tree for this scope first.' };
+      }
+    } catch (error) { return { available: false, reason: (error as Error).message }; }
     if (labels.length < 3) {
       return { available: false, reason: 'Bootstrap requires at least 3 tree leaves.' };
     }
@@ -1377,6 +1384,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       splitCounts: result.splitCounts,
       supportBySplitKey: result.supportBySplitKey,
       calculatedAt: new Date().toISOString(),
+      sampling: result.sampling,
     };
   }
 
@@ -1429,7 +1437,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.cdref.detectChanges();
 
     try {
-      const result = await this.workerComputeService.computePhylogeneticBootstrap({
+      const session = this.commonService.session;
+      const result = await this.commonService.investigationCalculations.run(session, 'bootstrap', async () => this.workerComputeService.computePhylogeneticBootstrap({
         labels: input.labels,
         sequences: input.sequences,
         baseSplitKeys: input.baseSplitKeys,
@@ -1439,10 +1448,14 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         stabilityWindow: 100,
         stabilityTolerancePercent: BOOTSTRAP_DEFAULT_STABILITY_TOLERANCE_PERCENT,
         onProgress: progress => this.updateBootstrapProgress(progress),
-      });
+      }), result => {
+        this.storeBootstrapResult(result, input.labels, input.baseSplitKeys);
+      }, { sequence: true, parameters: { labels: input.labels, sequences: input.sequences, baseSplitKeys: input.baseSplitKeys,
+        replicates, stopWhenStable: this.SelectedBootstrapStopWhenStable, batchSize: 10,
+        stabilityWindow: 100, stabilityTolerancePercent: BOOTSTRAP_DEFAULT_STABILITY_TOLERANCE_PERCENT } }, () => this.commonService.session);
 
-      this.storeBootstrapResult(result, input.labels, input.baseSplitKeys);
       this.applyStoredBootstrapSupport(true, true);
+      this.commonService.investigationCalculations.rebaseAfterApply(session, 'bootstrap');
       this.BootstrapProgressValue = 100;
       this.BootstrapStatusMessage = result.stoppedEarly
         ? `Bootstrap support stabilized after ${result.completedReplicates} replicates.`

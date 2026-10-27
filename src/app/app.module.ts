@@ -87,6 +87,7 @@ import { StyleKeyTableComponent } from './visualizationComponents/KeyTablesCompo
 import * as PlotlyJS from 'plotly.js-dist-min';
 import { PlotlyModule } from 'angular-plotly.js';
 import { GlobalErrorHandler } from './runtime-security/global-error-handler';
+import { InvestigationPanelComponent } from './investigation-panel.component';
 
 PlotlyModule.plotlyjs = PlotlyJS;
 // It is required to have JQuery as global in the window object.
@@ -111,6 +112,7 @@ export class TestedComponent {
 @NgModule({ declarations: [
         AppComponent,
         MicrobeTraceNextHomeComponent,
+        InvestigationPanelComponent,
         FilesComponent,
         TwoDComponent,
         TableComponent,

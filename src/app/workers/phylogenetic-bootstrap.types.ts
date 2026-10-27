@@ -66,4 +66,10 @@ export interface PhylogeneticBootstrapComputeResult {
   stable: boolean;
   splitCounts: Record<string, number>;
   supportBySplitKey: Record<string, number>;
+  sampling?: {
+    batchSize: number;
+    workerCount: number;
+    batches: Array<{ batchId: number; seed: number; replicates: number; completed: boolean }>;
+    completedBatchOrder: number[];
+  };
 }

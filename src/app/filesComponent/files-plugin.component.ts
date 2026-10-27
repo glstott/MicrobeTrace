@@ -1634,16 +1634,11 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           });
           let linkCount = 0;
           try {
-            const patristicResult = await this.workerComputeService.computePatristicEdges(
-              auspiceData['newickWithLabels'] || auspiceData['newick'],
-              parseFloat(`${this.commonService.session.style.widgets['link-threshold']}`),
-              this.commonService.addLink.bind(this.commonService),
-              this.commonService.filterXSS,
-              this.commonService.session,
-              {
+            const patristicResult = await this.commonService.computePatristicForSource(
+              parseFloat(`${this.commonService.session.style.widgets['link-threshold']}`), {
                 origin,
                 distanceOrigin: file.name,
-                check: true,
+                newickString: auspiceData['newickWithLabels'] || auspiceData['newick'],
               }
             );
             linkCount = patristicResult.newLinks;
@@ -2346,18 +2341,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           if (!isCurrentLoad()) return;
           const activeThreshold = Number(this.commonService.session.style.widgets['link-threshold']);
           const requeryStart = Date.now();
-          const patristicResult = await this.workerComputeService.ensurePatristicEdgesForThreshold(
-            activeThreshold,
-            this.commonService.addLink.bind(this.commonService),
-            this.commonService.filterXSS,
-            this.commonService.session,
-            {
-              origin,
-              distanceOrigin: file.name,
-              check,
-              newickString: normalizedNewick,
-            }
-          );
+          const patristicResult = await this.commonService.ensurePatristicEdgesForThreshold(activeThreshold);
 
           if (!isCurrentLoad()) return;
 
@@ -2550,7 +2534,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
     if (this.commonService.session.style.widgets['align-sw']) {
       this.showMessage('Aligning Sequences...');
-      let output = await (this.commonService.session as any).align({
+      let output = await this.commonService.align({
         reference: this.commonService.session.data.reference,
         isLocal: $('#localAlign').is(':checked'),
         match: [$('#alignerMatch').val(), $('#alignerMismatch').val()].map(parseFloat),
@@ -2563,8 +2547,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
       const start = Date.now();
       const m = subset.length;
+      const alignedById = new Map<string, any>(output.map(node => [String(node._id ?? node.id), node]));
       for (let j = 0; j < m; j++) {
-        Object.assign(subset[j], output[j]);
+        const aligned = alignedById.get(String(subset[j]._id ?? subset[j].id));
+        if (aligned) for (const key of ['_seq', '_score', '_padding', '_cigar']) subset[j][key] = aligned[key];
       }
       console.log("Alignment Merge time: ", (Date.now() - start).toLocaleString(), "ms");
     }
@@ -2660,14 +2646,14 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
   };
 
-  private applySerializedSession(payload: any, extension: string) {
-    Promise.resolve(this.commonService.processJSON(payload, extension))
+  private applySerializedSession(payload: any, extension: string): Promise<void> {
+    return Promise.resolve(this.commonService.processJSON(payload, extension))
       .then(() => this.populateTable())
       .catch(error => console.error('Unable to load MicrobeTrace session file.', error));
   }
 
-  private loadCompressedSession(rawfile: File) {
-    JSZip.loadAsync(rawfile)
+  private loadCompressedSession(rawfile: File): Promise<void> {
+    return JSZip.loadAsync(rawfile)
       .then(zip => {
         const sessionEntries = Object.values(zip.files).filter(entry => {
           if (entry.dir) return false;
@@ -2723,7 +2709,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
 
     console.log('process file end');
     if (extension === 'zip') {
-      this.loadCompressedSession(rawfile);
+      await this.loadCompressedSession(rawfile);
       this.refreshTemplateState();
       return;
     }

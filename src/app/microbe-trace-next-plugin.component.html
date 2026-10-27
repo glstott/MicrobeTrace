@@ -1,4 +1,5 @@
 <div class="m-content">
+  @if (commonService.sessionLoadError) { <p role="alert" class="text-danger" data-testid="investigation-load-error">{{ commonService.sessionLoadError }}</p> }
   @if (exportService.exportProgress$ | async; as exportProgress) {
     @if (exportProgress.active) {
       <div
@@ -65,6 +66,7 @@
           <!-- <button mat-menu-item (click)="FileClick('New Session')">New</button> -->
         </mat-menu>
         <button class="navbar-item" data-testid="app-global-settings-button" (click)="DisplayGlobalSettingsDialog()" mat-button><i class="far nav-icon flaticon-cogwheel-2"></i>Settings</button>
+        <button class="navbar-item" data-testid="app-investigation-button" (click)="investigationOpen = true" mat-button>Investigation</button>
         <button class="navbar-item" data-testid="app-view-menu-button" mat-button [matMenuTriggerFor]="viewMenu"><i class="far nav-icon flaticon-web"></i>View<span class="dropdown-symbol">&#9660;</span></button>
         <mat-menu #viewMenu="matMenu" overlapTrigger="false">
           <button data-testid="app-view-menu-2d-network" mat-menu-item (click)="Viewclick('2D Network')">2D Network</button>
@@ -538,6 +540,9 @@
                     @if (thresholdStabilityExpanded) {
                       <div class="threshold-stability-panel" data-testid="threshold-stability-panel">
                         <div class="threshold-stability-panel__hint">
+                          @if (commonService.session.investigation.calculations['threshold-analysis']?.status === 'stale') {
+                            <p role="status">Saved threshold analysis is stale. Run Threshold analysis in Investigation to refresh it.</p>
+                          }
                           Genetic-link analysis only.
                           <i
                             class="pi pi-info-circle threshold-help-icon"
@@ -1227,7 +1232,13 @@
   <!-- /.modal-dialog -->
 </p-dialog>
 
+<p-dialog header="Investigation" [(visible)]="investigationOpen" [modal]="false" appendTo="body" [style]="{ width: '780px', maxWidth: '95vw' }" [baseZIndex]="1500">
+  @if (investigationOpen) {
+    <app-investigation-panel (downloadRecord)="downloadInvestigationRecord()"></app-investigation-panel>
+  }
+</p-dialog>
 <p-dialog id="session-stash-modal" [(visible)]="displayStashDialog" [modal]="true" [closable]="!localSessionLinkSaving" [baseZIndex]="1400" header="Save Session">
+  @if (sessionSaveError) { <p class="text-danger" role="alert">{{ sessionSaveError }}</p> }
   <div class="modal-dialog" role="document">
     <div class="modal-content">
 

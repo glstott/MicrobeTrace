@@ -521,7 +521,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
     }
 
     ngAfterViewInit() {
-        setTimeout(() => this.centerMap(), 1000)
+        if (!this.commonService.session.investigation?.viewStates?.Map) setTimeout(() => this.centerMap(), 1000)
     }
 
 
@@ -603,6 +603,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
             try {
                 this.applyingSettings = true;
                 this.loadSettings();
+                this.restoreInvestigationView();
                 this.initialSettingsLoaded = true;
             } finally {
                 this.applyingSettings = false;
@@ -966,7 +967,22 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         // }
     }
 
+    captureInvestigationViewState(): any {
+        if (!this.lmap) return undefined;
+        const center = this.lmap.getCenter();
+        return { center: [center.lat, center.lng], zoom: this.lmap.getZoom() };
+    }
+
+    private restoreInvestigationView(): boolean {
+        const saved = this.commonService.session.investigation?.viewStates?.Map;
+        if (!this.lmap || !Array.isArray(saved?.center) || saved.center.length !== 2
+            || !saved.center.every(Number.isFinite) || !Number.isFinite(saved.zoom)) return false;
+        this.lmap.setView(saved.center, saved.zoom, { animate: false });
+        return true;
+    }
+
     centerMap() {
+        if (!this.initialSettingsLoaded && this.restoreInvestigationView()) return;
         if (!this.lmap) {
             return;
         }
@@ -4414,9 +4430,23 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
                 const sourceLatLng = this.getRenderedMapLatLng(source._jlat, source._jlon);
                 const targetLatLng = this.getRenderedMapLatLng(target._jlat, target._jlon);
                 // Handle multiple origins
-                if (lcv == 'origin' && d.origin && d.origin.length > 1) {
-                    let color1 = this.commonService.temp.style.linkColorMap(d.origin[0]);
-                    let color2 = this.commonService.temp.style.linkColorMap(d.origin[1]);
+                if ((String(lcv).toLowerCase() === 'origin' || this.commonService.hasInvestigationLayerStyle(d)) && d.origin?.length > 2) {
+                    d.origin.forEach((origin: string, index: number) => {
+                        const style = this.commonService.getInvestigationLayerStyle(origin, { color: this.commonService.temp.style.linkColorMap(origin), opacity });
+                        const line: PolyLineWithData = L.polyline([sourceLatLng, targetLatLng], {
+                            pane: this.mapNetworkLinkPaneName, ...style, dashArray: `10, ${10 * (d.origin.length - 1)}`, dashOffset: String(-index * 10),
+                        });
+                        line.data = d;
+                        line.on('mouseover', event => this.showLinkTooltip(event)).on('mouseout', () => this.hideTooltip());
+                        features.push(line);
+                    });
+                    return;
+                }
+                if ((String(lcv).toLowerCase() === 'origin' || this.commonService.hasInvestigationLayerStyle(d)) && d.origin && d.origin.length > 1) {
+                    const style1 = this.commonService.getInvestigationLayerStyle(d.origin[0], { color: this.commonService.temp.style.linkColorMap(d.origin[0]), opacity });
+                    const style2 = this.commonService.getInvestigationLayerStyle(d.origin[1], { color: this.commonService.temp.style.linkColorMap(d.origin[1]), opacity });
+                    let color1 = style1.color;
+                    let color2 = style2.color;
     
                     let dashPattern1 = '10, 10';
                     let dashPattern2 = '0, 10, 10, 0';
@@ -4425,14 +4455,14 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
                         pane: this.mapNetworkLinkPaneName,
                         color: color1,
                         dashArray: dashPattern1,
-                        opacity: opacity
+                        opacity: style1.opacity
                     });
     
                     let polyline2: PolyLineWithData = L.polyline([sourceLatLng, targetLatLng], {
                         pane: this.mapNetworkLinkPaneName,
                         color: color2,
                         dashArray: dashPattern2,
-                        opacity: opacity
+                        opacity: style2.opacity
                     });
 
                     polyline2.data = d;
@@ -4446,10 +4476,8 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
                     // Single origin handling
                     const connectorLine: PolyLineWithData = L.polyline([sourceLatLng, targetLatLng], {
                         pane: this.mapNetworkLinkPaneName,
-                        color: lcv === "None" ?
-                            this.commonService.session.style.widgets['link-color'] :
-                            this.commonService.temp.style.linkColorMap(getLinkColorValue(d)),
-                        opacity: opacity
+                        ...this.commonService.getInvestigationLayerStyle(d, {
+                            color: lcv === 'None' ? this.commonService.session.style.widgets['link-color'] : this.commonService.temp.style.linkColorMap(getLinkColorValue(d)), opacity })
                     });
     
                     connectorLine.data = d;

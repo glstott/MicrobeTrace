@@ -728,6 +728,8 @@ export class WorkerComputeService {
       let completedReplicates = 0;
       let settled = false;
       const snapshots: Array<{ replicates: number; support: Record<string, number> }> = [];
+      const batches: Array<{ batchId: number; seed: number; replicates: number; completed: boolean }> = [];
+      const completedBatchOrder: number[] = [];
 
       const reportProgress = (stable: boolean, stoppedEarly: boolean): void => {
         const progress: PhylogeneticBootstrapProgress = {
@@ -757,6 +759,7 @@ export class WorkerComputeService {
           stable,
           splitCounts: { ...splitCounts },
           supportBySplitKey,
+          sampling: { batchSize, workerCount: workerTotal, batches, completedBatchOrder },
         });
       };
 
@@ -801,6 +804,7 @@ export class WorkerComputeService {
         activeBatches++;
         const batchId = ++nextBatchId;
         const seed = (Date.now() + jobId * 1000003 + batchId * 9176 + Math.floor(Math.random() * 0xffffffff)) >>> 0;
+        batches.push({ batchId, seed, replicates, completed: false });
 
         worker.postMessage({
           type: 'RUN_BATCH',
@@ -815,6 +819,9 @@ export class WorkerComputeService {
       };
 
       const handleBatchComplete = (worker: Worker, msg: PhylogeneticBootstrapBatchResponse): void => {
+        const batch = batches.find(item => item.batchId === msg.batchId);
+        if (batch) batch.completed = true;
+        completedBatchOrder.push(msg.batchId);
         activeBatches--;
         completedReplicates += msg.replicates;
         mergeSplitCounts(splitCounts, msg.splitCounts, baseSplitKeys);

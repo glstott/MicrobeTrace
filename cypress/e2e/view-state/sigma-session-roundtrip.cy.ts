@@ -96,6 +96,12 @@ describe('Sigma session round-trip', () => {
 
       // Pre-migration sessions stored the slider value but not the explicit
       // override marker. Re-load that shape to verify backward compatibility.
+      // Strip the versioned envelope to construct an actual legacy session;
+      // editing a versioned snapshot must instead fail its integrity check.
+      delete saved.schemaVersion;
+      delete saved.snapshotId;
+      delete saved.investigation;
+      delete saved.provenance;
       delete saved.session.style.widgets['link-opacity-override-enabled'];
       cy.writeFile(sessionFilePath, JSON.stringify(saved));
     });

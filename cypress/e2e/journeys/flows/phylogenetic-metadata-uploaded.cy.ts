@@ -37,8 +37,8 @@ const STYLE_PROFILE = getProfile('style-apply-cypress-test-style-threshold');
 
 const HEALTHCARE_NODE_ID = 'MZ797703';
 const EDUCATION_NODE_ID = 'MZ797980';
-const STYLE_HEALTHCARE_NODE_ID = '797703';
-const STYLE_EDUCATION_NODE_ID = '797980';
+const STYLE_HEALTHCARE_NODE_ID = 'MZ797703';
+const STYLE_EDUCATION_NODE_ID = 'MZ797980';
 
 const normalizeColor = (value: string): string => String(value || '').replace(/\s+/g, '').toLowerCase();
 
@@ -705,7 +705,8 @@ describe('Journey Flow - Phylogenetic Tree metadata-backed controls', () => {
 
 describe('Journey Flow - Phylogenetic Tree style file reflection', () => {
   beforeEach(() => {
-    launchProfileToPhyloTree(STYLE_PROFILE);
+    // Tree inference needs the complete distances provided by this metadata fixture.
+    launchProfileToPhyloTree(METADATA_PROFILE);
     assertPhyloTreeReady();
   });
 

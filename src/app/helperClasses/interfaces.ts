@@ -1,3 +1,5 @@
+import type { InvestigationState, InvestigationManifest } from '../contactTraceCommonServices/investigation-state';
+
 export interface MicobeTraceNextPluginEvents{
     updateNodeColors();
     updateVisualization();
@@ -14,6 +16,10 @@ export interface MicobeTraceNextPluginEvents{
 }
 
 export interface StashObjects  {
+    schemaVersion?: number
+    snapshotId?: string
+    investigation?: InvestigationState
+    provenance?: InvestigationManifest
     session: any
     tabs: HomePageTabItem[]
     dashboardLayout?: any

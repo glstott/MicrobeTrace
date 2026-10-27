@@ -89,6 +89,7 @@ export interface NetworkStatisticsResult {
   generatedAtIso: string;
   exactNodeLimit: number;
   exactLinkLimit: number;
+  sampledSourceNodeIds?: string[];
 }
 
 export interface NetworkStatisticsExportSection {
@@ -396,6 +397,7 @@ function computePathAndBetweenness(
   averagePathLength: number;
   diameter: number;
   sampledSourceCount: number;
+  sampledSourceNodeIds: string[];
 } {
   const nodeCount = nodeIds.length;
   const adjacency = adjacencySets.map((neighbors) => Array.from(neighbors).sort((a, b) => a - b));
@@ -463,7 +465,8 @@ function computePathAndBetweenness(
     betweenness,
     averagePathLength: safeRatio(pathLengthSum, reachablePairCount),
     diameter: graphDiameter,
-    sampledSourceCount: sources.length
+    sampledSourceCount: sources.length,
+    sampledSourceNodeIds: sources.map(index => nodeIds[index]),
   };
 }
 
@@ -529,6 +532,7 @@ export function computeNetworkStatistics(request: NetworkStatisticsRequest): Net
   );
 
   return {
+    sampledSourceNodeIds: pathAndBetweenness.sampledSourceNodeIds,
     summary: {
       nodeCount,
       linkCount,

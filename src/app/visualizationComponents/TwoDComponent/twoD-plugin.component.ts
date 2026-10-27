@@ -1022,6 +1022,19 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         if (persist) this.persistRendererViewState(state);
     }
 
+    /** Read pending drag/camera state directly without changing the running investigation. */
+    captureInvestigationState(): { camera: NetworkRendererViewState; nodes: any[]; viewState: any } {
+        const nodes = this.commonService.session.data.nodes.map(node => {
+            const id = String(node._id ?? node.id);
+            const rendered = !this.sigmaActive && this.cy ? this.cy.getElementById(id) : null;
+            const position = rendered?.length ? rendered.position() : this.nodePositions.get(id);
+            return { id, ...(position ? { x: position.x, y: position.y } : {}), fixed: node.fixed, selected: !!node.selected };
+        });
+        return { camera: this.getRendererViewState(), nodes, viewState: {
+            collapsedAnchors: this.collapsedAggregatePositionAnchors.map(anchor => ({ id: anchor.id, memberIds: [...anchor.memberIds], position: { ...anchor.position } }))
+        } };
+    }
+
     private resolveSavedSigmaEdgeDetailMode(): SigmaEdgeDetailMode {
         const mode = this.widgets?.['network-edge-detail-mode'];
         return mode === 'detail' || mode === 'all' ? mode : 'overview';
@@ -1941,7 +1954,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             });
             const sigmaLinks = networkData.links.map((link, index) => {
                 const originValues = Array.isArray(link?.origin) ? link.origin : [];
-                const splitOriginLink = String(this.widgets['link-color-variable'] || '').toLowerCase() === 'origin'
+                const splitOriginLink = (String(this.widgets['link-color-variable'] || '').toLowerCase() === 'origin' || this.commonService.hasInvestigationLayerStyle(link))
                     && originValues.length > 1;
                 const firstOriginLink = splitOriginLink
                     ? { ...link, origin: [originValues[0]], Origin: [originValues[0]] }
@@ -1966,6 +1979,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     labelSize: Math.max(6, Number(this.widgets['link-label-size']) || 12),
                     overlayDashColor: overlayDashColor?.color,
                     overlayDashOpacity: overlayDashColor?.opacity,
+                    layerStyles: splitOriginLink ? originValues.map(origin => this.getLinkColor({ ...link, origin: [origin], Origin: [origin] })) : undefined,
                     ...extremities,
                     raw: link
                 };
@@ -2742,6 +2756,11 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
 
     ngOnInit() {
+        const savedInvestigation = this.commonService.session.investigation?.viewStates?.['2D Network'];
+        if (Array.isArray(savedInvestigation?.collapsedAnchors)) {
+            this.collapsedAggregatePositionAnchors = savedInvestigation.collapsedAnchors.map(anchor => ({ ...anchor, memberIds: new Set<string>(anchor.memberIds) }));
+            this.collapsedAggregatePositionAnchors.forEach(anchor => this.nodePositions.set(anchor.id, { ...anchor.position }));
+        }
         this.commonService.visuals.twoD = this;
         
         // Console log this out to see what the window objetc has like temp
@@ -2823,12 +2842,12 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
     const parentNodes = new Set();
 
     const edges = data.links.flatMap((link: any) => {
-        if ((this.widgets['link-color-variable'] == 'Origin' || this.widgets['link-color-variable'] == 'origin') && link.origin.length > 1) {
+        if ((String(this.widgets['link-color-variable']).toLowerCase() === 'origin' || this.commonService.hasInvestigationLayerStyle(link)) && link.origin.length > 1) {
             return link.origin.map((originItem: any, index) => ({
                 data: {
                     // Include any additional edge-specific data properties
                     ...link,
-                    id: index > 0 ? `${link.id}-2`: link.id,
+                    id: index > 0 ? `${link.id}-${index + 1}`: link.id,
                     source: link.source,
                     target: link.target,
                     lineSelectedColor: this.widgets['selected-color'],
@@ -5983,7 +6002,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                     });
                 });
 
-                cy.collection(group.values).move({ parent: parentId });
+                group.values.reduce((collection, node) => collection.merge(node), cy.collection()).move({ parent: parentId });
             });
 
             this.applyPolygonLabelStyle();
@@ -6339,10 +6358,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             alphaValue = Number(this.widgets['link-opacity']);
         }
 
-        return {
-            color: finalColor,
-            opacity: alphaValue
-        };
+        return this.commonService.getInvestigationLayerStyle(link, { color: finalColor, opacity: alphaValue });
 
     }
 
@@ -6974,13 +6990,13 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                       }
                   });
               },
-                hoverNode: (action: 'show' | 'hide', nodeId: string) => {
+                hoverNode: (action: 'show' | 'hide', nodeId: string, pointer?: { clientX: number; clientY: number }) => {
                     this.zone.run(() => {
                         const node = this.cy.getElementById(nodeId);
                         if (!node || node.empty()) return;
 
 	                        if (action === 'show') {
-	                            const mockEvent = { clientX: 120, clientY: 120 };
+	                            const mockEvent = pointer || { clientX: 120, clientY: 120 };
 	                            this.showNodeTooltip(this.getFullNodeDataForCyNode(node), mockEvent);
                             if (this.widgets['node-highlight']) {
                                 node.connectedEdges().addClass('highlighted');
