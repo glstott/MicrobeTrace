@@ -6,7 +6,7 @@ export interface ThreeDPoint {
 
 export interface ThreeDViewState {
   version: 1;
-  camera: { position: ThreeDPoint; target: ThreeDPoint };
+  camera: { position: ThreeDPoint; target: ThreeDPoint; up: ThreeDPoint };
   positions: Record<string, ThreeDPoint>;
   layoutFrozen: boolean;
 }
@@ -64,6 +64,10 @@ export function normalizeThreeDViewState(value: any): ThreeDViewState | null {
   const target = finiteThreeDPoint(value?.camera?.target);
   if (value?.version !== 1 || !position || !target
     || Math.hypot(position.x - target.x, position.y - target.y, position.z - target.z) < 0.001) return null;
+  const savedUp = finiteThreeDPoint(value.camera.up);
+  // Sessions saved with orbit controls have no roll and use the upright default.
+  const up = savedUp && Math.hypot(savedUp.x, savedUp.y, savedUp.z) > 0
+    ? savedUp : { x: 0, y: 1, z: 0 };
   const positions: Record<string, ThreeDPoint> = Object.create(null);
   if (value.positions && typeof value.positions === 'object' && !Array.isArray(value.positions)) {
     Object.entries(value.positions).forEach(([id, point]) => {
@@ -71,7 +75,7 @@ export function normalizeThreeDViewState(value: any): ThreeDViewState | null {
       if (normalized) positions[id] = normalized;
     });
   }
-  return { version: 1, camera: { position, target }, positions, layoutFrozen: value.layoutFrozen === true };
+  return { version: 1, camera: { position, target, up }, positions, layoutFrozen: value.layoutFrozen === true };
 }
 
 function bounded(value: any, fallback: number, min: number, max: number): number {

@@ -4,9 +4,12 @@ import {
   ThreeDSettings, ThreeDViewState,
 } from './three-d-network.model';
 
-interface OrbitControls {
+interface CameraControls {
   target: ThreeDPoint;
+  dynamicDampingFactor: number;
   update(): void;
+  reset(): void;
+  handleResize(): void;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
 }
@@ -20,6 +23,8 @@ export class ThreeDNetworkRenderer {
   private restoringPositions = false;
   private positions = new Map<string, ThreeDPoint>();
   private cameraChanged: () => void;
+  private cameraInteractionStarted: () => void;
+  private resizeFrame: number | null = null;
   private contextLost: (event: Event) => void;
 
   static async create(
@@ -30,7 +35,7 @@ export class ThreeDNetworkRenderer {
   ): Promise<ThreeDNetworkRenderer> {
     const { default: ForceGraph3D } = await import('3d-force-graph');
     return new ThreeDNetworkRenderer(new ForceGraph3D(host, {
-      controlType: 'orbit', rendererConfig: { antialias: true, preserveDrawingBuffer: true },
+      controlType: 'trackball', rendererConfig: { antialias: true, preserveDrawingBuffer: true },
     }) as ForceGraph3DInstance<ThreeDNode, ThreeDLink>, onSelect, onStateChange, onContextLost);
   }
 
@@ -55,15 +60,17 @@ export class ThreeDNetworkRenderer {
         }
         onStateChange();
       });
-    this.cameraChanged = () => { this.fitOnSettle = false; onStateChange(); };
-    this.controls.addEventListener('end', this.cameraChanged);
+    this.cameraChanged = onStateChange;
+    this.cameraInteractionStarted = () => { this.fitOnSettle = false; };
+    this.controls.addEventListener('change', this.cameraChanged);
+    this.controls.addEventListener('start', this.cameraInteractionStarted);
     this.contextLost = event => { event.preventDefault(); this.setVisible(false); onContextLost(); };
     this.canvas.addEventListener('webglcontextlost', this.contextLost);
     // Cap the backing-buffer cost on high-density displays.
     this.graph.renderer().setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   }
 
-  private get controls(): OrbitControls { return this.graph.controls() as OrbitControls; }
+  private get controls(): CameraControls { return this.graph.controls() as CameraControls; }
   get canvas(): HTMLCanvasElement { return this.graph.renderer().domElement; }
   get nodes(): ReadonlyMap<string, ThreeDNode> { return new Map(this.data.nodes.map(node => [node.id, node])); }
   get savedPositions(): ReadonlyMap<string, ThreeDPoint> { return this.positions; }
@@ -102,13 +109,19 @@ export class ThreeDNetworkRenderer {
   }
 
   restore(state: ThreeDViewState | null): void {
+    this.stopCameraMotion();
     this.positions = new Map(Object.entries(state?.positions ?? {}));
     this.data = { nodes: [], links: [] };
     this.graph.graphData(this.data);
     this.frozen = state?.layoutFrozen === true;
     this.restoringPositions = Boolean(state);
     this.fitOnSettle = !state;
-    if (state) this.graph.cameraPosition(state.camera.position, state.camera.target, 0);
+    if (state) {
+      const { up } = state.camera;
+      this.graph.camera().up.set(up.x, up.y, up.z);
+      this.graph.cameraPosition(state.camera.position, state.camera.target, 0);
+      this.controls.update();
+    }
   }
 
   private capturePositions(): void {
@@ -123,17 +136,43 @@ export class ThreeDNetworkRenderer {
     if (validIds) this.positions.forEach((_, id) => { if (!validIds.has(id)) this.positions.delete(id); });
     return {
       version: 1,
-      camera: { position: finiteThreeDPoint(this.graph.cameraPosition())!, target: finiteThreeDPoint(this.controls.target)! },
+      camera: {
+        position: finiteThreeDPoint(this.graph.cameraPosition())!,
+        target: finiteThreeDPoint(this.controls.target)!,
+        up: finiteThreeDPoint(this.graph.camera().up)!,
+      },
       positions: Object.fromEntries(this.positions), layoutFrozen: this.frozen,
     };
   }
 
   resize(width: number, height: number): void {
-    if (width > 0 && height > 0) this.graph.width(Math.round(width)).height(Math.round(height));
+    if (width <= 0 || height <= 0) return;
+    this.graph.width(Math.round(width)).height(Math.round(height));
+    if (this.resizeFrame !== null) cancelAnimationFrame(this.resizeFrame);
+    // Trackball maps pointer positions using the canvas bounds, which change when docked.
+    this.resizeFrame = requestAnimationFrame(() => {
+      this.resizeFrame = null;
+      if (!this.destroyed) this.controls.handleResize();
+    });
   }
 
   fit(): void { if (this.data.nodes.length) this.graph.zoomToFit(0, 35); }
-  resetCamera(): void { this.graph.cameraPosition({ x: 0, y: 0, z: 1000 }, { x: 0, y: 0, z: 0 }); this.fit(); }
+  private stopCameraMotion(): void {
+    // Trackball retains inertia after pointer-up, including across reset().
+    const controls = this.controls;
+    const damping = controls.dynamicDampingFactor;
+    controls.dynamicDampingFactor = 1;
+    controls.update();
+    controls.update();
+    controls.dynamicDampingFactor = damping;
+  }
+
+  resetCamera(): void {
+    this.stopCameraMotion();
+    this.controls.reset();
+    this.graph.cameraPosition({ x: 0, y: 0, z: 1000 }, { x: 0, y: 0, z: 0 });
+    this.fit();
+  }
 
   zoom(factor: number): void {
     const position = this.graph.cameraPosition();
@@ -191,14 +230,17 @@ export class ThreeDNetworkRenderer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.resizeFrame !== null) cancelAnimationFrame(this.resizeFrame);
     const renderer = this.graph.renderer();
-    this.controls.removeEventListener('end', this.cameraChanged);
+    this.controls.removeEventListener('change', this.cameraChanged);
+    this.controls.removeEventListener('start', this.cameraInteractionStarted);
     this.canvas.removeEventListener('webglcontextlost', this.contextLost);
     this.graph.onNodeClick(() => {}).onBackgroundClick(() => {}).onEngineStop(() => {});
     this.graph._destructor();
     renderer.forceContextLoss();
     this.graph = null;
     this.cameraChanged = null;
+    this.cameraInteractionStarted = null;
     this.contextLost = null;
     this.data = { nodes: [], links: [] };
     this.positions.clear();

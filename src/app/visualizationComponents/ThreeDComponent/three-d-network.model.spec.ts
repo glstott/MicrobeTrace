@@ -118,6 +118,25 @@ describe('3D network data and saved state', () => {
     expect(state.positions.A.z).toBe(3);
   });
 
+  it('loads an older camera without roll using the upright orientation', () => {
+    const state = normalizeThreeDViewState({ version: 1, camera });
+    expect(state.camera).toEqual({ ...camera, up: { x: 0, y: 1, z: 0 } });
+  });
+
+  it('preserves trackball roll through a session round trip', () => {
+    const up = { x: 0.6, y: 0.8, z: 0 };
+    const state = normalizeThreeDViewState({ version: 1, camera: { ...camera, up } });
+    expect(state.camera.up).toEqual(up);
+    expect(normalizeThreeDViewState(JSON.parse(JSON.stringify(state)))).toEqual(state);
+  });
+
+  it('falls back to an upright camera for invalid up directions', () => {
+    [null, { x: 0, y: 0, z: 0 }, { x: Infinity, y: 1, z: 0 }].forEach(up => {
+      const state = normalizeThreeDViewState({ version: 1, camera: { ...camera, up } });
+      expect(state.camera.up).toEqual({ x: 0, y: 1, z: 0 });
+    });
+  });
+
   it('rejects corrupt or future camera states, and coincident camera/target coordinates', () => {
     expect(normalizeThreeDViewState(null)).toBeNull();
     expect(normalizeThreeDViewState({ version: 2, camera })).toBeNull();
