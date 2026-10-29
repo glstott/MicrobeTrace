@@ -1,0 +1,144 @@
+export interface ThreeDPoint {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ThreeDViewState {
+  version: 1;
+  camera: { position: ThreeDPoint; target: ThreeDPoint };
+  positions: Record<string, ThreeDPoint>;
+  layoutFrozen: boolean;
+}
+
+export interface ThreeDSettings {
+  nodeSize: number;
+  nodeSizeField: string;
+  nodeTooltipField: string;
+  linkWidth: number;
+  linkTransparency: number;
+  linkTooltipField: string;
+}
+
+export interface ThreeDNode {
+  id: string;
+  color: string;
+  value: number;
+  tooltip: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  fx?: number;
+  fy?: number;
+  fz?: number;
+  vx?: number;
+  vy?: number;
+  vz?: number;
+}
+
+export interface ThreeDLink {
+  key: string;
+  source: string | ThreeDNode;
+  target: string | ThreeDNode;
+  color: string;
+  tooltip: string;
+}
+
+export interface ThreeDGraphData {
+  nodes: ThreeDNode[];
+  links: ThreeDLink[];
+}
+
+export function threeDNodeId(value: any): string {
+  return String(value && typeof value === 'object' ? value._id ?? value.id ?? '' : value ?? '');
+}
+
+export function finiteThreeDPoint(value: any): ThreeDPoint | null {
+  return value && ['x', 'y', 'z'].every(axis => typeof value[axis] === 'number' && Number.isFinite(value[axis]))
+    ? { x: value.x, y: value.y, z: value.z }
+    : null;
+}
+
+export function normalizeThreeDViewState(value: any): ThreeDViewState | null {
+  const position = finiteThreeDPoint(value?.camera?.position);
+  const target = finiteThreeDPoint(value?.camera?.target);
+  if (value?.version !== 1 || !position || !target
+    || Math.hypot(position.x - target.x, position.y - target.y, position.z - target.z) < 0.001) return null;
+  const positions: Record<string, ThreeDPoint> = Object.create(null);
+  if (value.positions && typeof value.positions === 'object' && !Array.isArray(value.positions)) {
+    Object.entries(value.positions).forEach(([id, point]) => {
+      const normalized = finiteThreeDPoint(point);
+      if (normalized) positions[id] = normalized;
+    });
+  }
+  return { version: 1, camera: { position, target }, positions, layoutFrozen: value.layoutFrozen === true };
+}
+
+function bounded(value: any, fallback: number, min: number, max: number): number {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+}
+
+// Retain Classic's widget names so style/session imports keep their 3D settings.
+export function readThreeDSettings(widgets: Record<string, any>): ThreeDSettings {
+  return {
+    nodeSize: bounded(widgets['3DNet-node-radius'], 4, 0.1, 20),
+    nodeSizeField: String(widgets['3DNet-node-radius-variable'] ?? 'None'),
+    nodeTooltipField: String(widgets['3DNet-node-tooltip-variable'] ?? '_id'),
+    linkWidth: bounded(widgets['3DNet-link-width'], 1.6, 0, 20),
+    linkTransparency: bounded(widgets['3DNet-link-transparency'], 0, 0, 1),
+    linkTooltipField: String(widgets['3DNet-link-tooltip-variable'] ?? 'None'),
+  };
+}
+
+export function writeThreeDSettings(widgets: Record<string, any>, settings: ThreeDSettings): void {
+  widgets['3DNet-node-radius'] = settings.nodeSize;
+  widgets['3DNet-node-radius-variable'] = settings.nodeSizeField;
+  widgets['3DNet-node-tooltip-variable'] = settings.nodeTooltipField;
+  widgets['3DNet-link-width'] = settings.linkWidth;
+  widgets['3DNet-link-transparency'] = settings.linkTransparency;
+  widgets['3DNet-link-tooltip-variable'] = settings.linkTooltipField;
+}
+
+function tooltip(record: any, field: string): string {
+  if (field === 'None') return '';
+  const value = record[field];
+  return value == null ? '' : Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+/** Only renderer-owned records reach the physics engine: it mutates endpoints and coordinates. */
+export function buildThreeDGraph(
+  nodes: any[],
+  links: any[],
+  settings: ThreeDSettings,
+  nodeColor: (node: any) => string,
+  linkColor: (link: any) => string,
+  previousNodes: ReadonlyMap<string, ThreeDNode> = new Map(),
+  positions: ReadonlyMap<string, ThreeDPoint> = new Map(),
+): ThreeDGraphData {
+  const ids = new Set<string>();
+  const renderedNodes: ThreeDNode[] = [];
+  nodes.forEach(source => {
+    const id = threeDNodeId(source);
+    if (!id || ids.has(id)) return;
+    ids.add(id);
+    const node = previousNodes.get(id) ?? { id, ...positions.get(id) } as ThreeDNode;
+    const rawValue = settings.nodeSizeField === 'None' ? 1 : Number(source[settings.nodeSizeField]);
+    node.color = nodeColor(source);
+    node.value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 1;
+    node.tooltip = tooltip(source, settings.nodeTooltipField);
+    renderedNodes.push(node);
+  });
+  const renderedLinks: ThreeDLink[] = [];
+  links.forEach((source, index) => {
+    const from = threeDNodeId(source.source);
+    const to = threeDNodeId(source.target);
+    if (!ids.has(from) || !ids.has(to)) return;
+    renderedLinks.push({
+      key: JSON.stringify([from, to, index]), source: from, target: to,
+      color: linkColor(source), tooltip: tooltip(source, settings.linkTooltipField),
+    });
+  });
+  return { nodes: renderedNodes, links: renderedLinks };
+}

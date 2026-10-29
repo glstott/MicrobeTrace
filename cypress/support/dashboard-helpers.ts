@@ -28,6 +28,7 @@ type DashboardFixture = {
   network?: any;
   session?: {
     data?: any;
+    dashboardLayout?: any;
     files?: any[];
     layout?: any;
     messages?: any[];
@@ -51,6 +52,7 @@ type DashboardFixture = {
 
 type LoadedDashboardFixture = {
   activeLabel?: string;
+  hasSavedDashboardLayout: boolean;
   hasSerializedSession: boolean;
   layout: any;
   tabLabels: string[];
@@ -74,6 +76,7 @@ type DashboardApp = {
     templateRef: any;
   }>;
   activeTabIndex: number;
+  applyingPendingDashboardRestore: boolean;
   commonService: any;
   Viewclick: (viewName: string) => void;
   setActiveTabProperties: (tabIndex?: number) => void;
@@ -515,11 +518,13 @@ export function loadDashboardSessionFixture(fixtureName: string): void {
 
   cy.fixture(fixtureName, 'utf8').then((rawFixture) => {
     const fixture = JSON.parse(String(rawFixture || '{}')) as DashboardFixture;
+    const savedDashboardLayout = fixture.dashboardLayout ?? fixture.session?.dashboardLayout;
 
     loadedFixture = {
-      layout: fixture.dashboardLayout ?? fixture.layout ?? fixture.session?.layout,
+      layout: savedDashboardLayout ?? fixture.layout ?? fixture.session?.layout,
       tabLabels: (fixture.tabs || []).map((tab) => normalizeViewName(tab.label)),
       activeLabel: fixture.tabs?.find((tab) => tab.isActive)?.label,
+      hasSavedDashboardLayout: Boolean(savedDashboardLayout?.root),
       hasSerializedSession: Boolean(
         fixture.session?.data ||
         fixture.data ||
@@ -539,13 +544,25 @@ export function loadDashboardSessionFixture(fixtureName: string): void {
     cy.get('#fileDropRef', { timeout: 15000 })
       .selectFile(`${Cypress.config('fixturesFolder')}/${fixtureName}`, { force: true });
 
-    cy.window({ timeout: 60000 })
-      .its('commonService.session.network.isFullyLoaded')
-      .should('equal', true);
+    // Data can be loaded before the queued dashboard restore replaces its panes.
+    cy.window({ timeout: 60000 }).should((win: unknown) => {
+      const typedWindow = win as DashboardWindow;
+      const app = getDashboardApp(typedWindow);
+
+      expect(typedWindow.commonService.session.network.isFullyLoaded, 'session data loaded').to.equal(true);
+      expect(typedWindow.commonService.pendingDashboardRestore, 'pending dashboard restoration').not.to.exist;
+      expect(app.applyingPendingDashboardRestore, 'dashboard restoration in progress').to.equal(false);
+      expect(typedWindow.commonService.session.tabLoaded, 'dashboard panes loaded').to.equal(true);
+    });
   });
 
   cy.then(() => {
     expect(loadedFixture, `dashboard fixture available for ${fixtureName}`).to.exist;
+
+    // Serialized dashboards already have live panes; loading again discards their state.
+    if (loadedFixture.hasSerializedSession && loadedFixture.hasSavedDashboardLayout) {
+      return;
+    }
 
     const activeLabel = loadedFixture.activeLabel ?? loadedFixture.tabLabels[0];
     applyDashboardLayout(loadedFixture.layout, loadedFixture.tabLabels, activeLabel);

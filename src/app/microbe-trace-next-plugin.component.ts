@@ -1244,25 +1244,25 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             // Retrieve export options from the service
             const options: ExportOptions = this.exportService.getExportOptions();
             this.exportService.updateExportProgress('Preparing visible content', 12);
-            const mapLibreCanvasSnapshots = elementsForExport.flatMap((element) =>
-                Array.from(element.querySelectorAll<HTMLCanvasElement>('canvas.maplibregl-canvas')).map((canvas) => ({
+            const webglCanvasSelector = 'canvas.maplibregl-canvas, canvas[data-testid="threed-webgl-canvas"]';
+            // Keep document-order indices: html2canvas clones the whole document even
+            // when only one pane is being exported.
+            const webglCanvasSnapshots = Array.from(document.querySelectorAll<HTMLCanvasElement>(webglCanvasSelector))
+                .map((canvas) => elementsForExport.some(element => element.contains(canvas)) ? ({
                     dataUrl: canvas.toDataURL('image/png'),
                     width: canvas.width,
                     height: canvas.height
-                }))
-            );
+                }) : null);
             let settings = {
                 scale: Number(options.scale) || 1,
                 useCORS: true, // Enable CORS if images are loaded from external sources,
                 allowTaint: true,
                 onclone: async (clonedDoc: Document) => {
-                    // html2canvas does not reliably preserve a transformed WebGL canvas.
-                    // Replace MapLibre canvases in the clone with snapshots of their current
-                    // composited frames so panned/zoomed basemaps export at the visible position.
-                    const clonedMapLibreCanvases = clonedDoc.querySelectorAll<HTMLCanvasElement>('canvas.maplibregl-canvas');
-                    const mapLibreImageLoads: Promise<void>[] = [];
-                    clonedMapLibreCanvases.forEach((clonedCanvas, index) => {
-                        const snapshot = mapLibreCanvasSnapshots[index];
+                    // Preserve WebGL frames for both MapLibre and the 3D network in dashboard exports.
+                    const clonedWebglCanvases = clonedDoc.querySelectorAll<HTMLCanvasElement>(webglCanvasSelector);
+                    const webglImageLoads: Promise<void>[] = [];
+                    clonedWebglCanvases.forEach((clonedCanvas, index) => {
+                        const snapshot = webglCanvasSnapshots[index];
                         if (!snapshot) {
                             return;
                         }
@@ -1274,7 +1274,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                         image.className = clonedCanvas.className;
                         image.style.cssText = clonedCanvas.style.cssText;
                         clonedCanvas.parentNode?.replaceChild(image, clonedCanvas);
-                        mapLibreImageLoads.push(image.decode());
+                        webglImageLoads.push(image.decode());
                     });
 
                     // Remove all transparency symbols
@@ -1298,7 +1298,7 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                         input.parentNode?.replaceChild(span, input);
                     });
 
-                    await Promise.all(mapLibreImageLoads);
+                    await Promise.all(webglImageLoads);
     
                     // Optionally, handle other elements that display hex codes
                     // For example, if you have spans or divs showing hex values:
@@ -5349,6 +5349,7 @@ ${warnings.join('\n')}`,
     }
 
     private buildSessionStash(): StashObjects {
+        this.commonService.visuals.threeD?.persistViewState();
         this.commonService.session.files.forEach(file => {
             if (file.extension === 'xlsx' || file.extension === 'xls') {
                 this.convertFileToCSV(file);
@@ -6140,6 +6141,16 @@ ${warnings.join('\n')}`,
                 // this.GlobalSettingsLinkColorDialogSettings.setVisibility(false);
                 // this.GlobalSettingsNodeColorDialogSettings.setVisibility(false);
 
+                break;
+            }
+            case "3D Network": {
+                this.showSettings = true;
+                this.showExport = true;
+                this.showCenter = true;
+                this.showPinAllNodes = false;
+                this.showRefresh = true;
+                this.showButtonGroup = false;
+                this.showSorting = false;
                 break;
             }
             case "2D Network": {

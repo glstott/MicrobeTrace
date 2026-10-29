@@ -1,0 +1,71 @@
+<div class="three-d-wrapper" data-testid="threed-view" [attr.aria-busy]="loading">
+  <div class="three-d-toolbar" role="toolbar" aria-label="3D Network controls" data-html2canvas-ignore>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-settings-button" (click)="openSettings()">Settings</button>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-export-button" (click)="openExport()" [disabled]="loading || !!error">Export</button>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-fit-button" (click)="openCenter()" [disabled]="loading || !!error">Fit Network</button>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-reset-camera-button" (click)="resetCamera()" [disabled]="loading || !!error">Reset Camera</button>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-recalculate-button" (click)="openRefreshScreen()" [disabled]="loading || !!error">Recalculate Layout</button>
+    <button type="button" class="btn btn-sm btn-light" data-testid="threed-freeze-button" (click)="toggleFrozen()" [attr.aria-pressed]="layoutFrozen" [disabled]="loading || !!error">{{ layoutFrozen ? 'Resume Layout' : 'Freeze Layout' }}</button>
+    <button type="button" class="btn btn-sm btn-light" aria-label="Zoom in" (click)="zoom(0.8)" [disabled]="loading || !!error">+</button>
+    <button type="button" class="btn btn-sm btn-light" aria-label="Zoom out" (click)="zoom(1.25)" [disabled]="loading || !!error">−</button>
+  </div>
+  <div #graphHost class="three-d-canvas" data-testid="threed-canvas" role="region" tabindex="0"
+    aria-label="Interactive 3D network" aria-describedby="threed-help" (keydown)="onCanvasKeydown($event)"></div>
+  @if (loading) {
+    <div class="three-d-message" role="status">Loading 3D Network…</div>
+  } @else if (error) {
+    <div class="three-d-message" role="alert" data-testid="threed-error">
+      <p>{{ error }}</p>
+      <button type="button" class="btn btn-primary btn-sm" (click)="retry()">Retry</button>
+      <button type="button" class="btn btn-light btn-sm" (click)="openTwoD()">Open 2D Network</button>
+    </div>
+  } @else if (nodeCount === 0) {
+    <div class="three-d-message" role="status">{{ commonService.session.data.nodes.length ? 'No nodes match the current filters.' : 'Load network data to explore it in 3D.' }}</div>
+  }
+  <div class="three-d-footer">
+    <span data-testid="threed-counts">{{ nodeCount | number }} nodes · {{ linkCount | number }} links</span>
+    <span id="threed-help">Drag to rotate · Right-drag to pan · Scroll to zoom · Click to select · Shift-click to add · +/− to zoom · F to fit</span>
+  </div>
+</div>
+
+@if (viewActive) {
+  <p-dialog data-testid="threed-settings-dialog" [(visible)]="settingsOpen" header="3D Network Settings" appendTo="body" [style]="{width: '430px', maxWidth: '95vw'}">
+    <fieldset>
+      <legend>Nodes</legend>
+      <label for="threed-node-tooltip">Tooltip</label>
+      <select id="threed-node-tooltip" class="form-control form-control-sm" [(ngModel)]="settings.nodeTooltipField" (ngModelChange)="changeSettings()">
+        @for (field of nodeFields; track field.value) { <option [value]="field.value">{{ field.label }}</option> }
+      </select>
+      <label for="threed-node-size-field">Size By</label>
+      <select id="threed-node-size-field" class="form-control form-control-sm" [(ngModel)]="settings.nodeSizeField" (ngModelChange)="changeSettings()">
+        @for (field of sizeFields; track field.value) { <option [value]="field.value">{{ field.label }}</option> }
+      </select>
+      <label for="threed-node-size">Size: {{ settings.nodeSize }}</label>
+      <input id="threed-node-size" type="range" class="custom-range" min="0.1" max="20" step="0.1" [(ngModel)]="settings.nodeSize" (ngModelChange)="changeSettings()">
+    </fieldset>
+    <fieldset>
+      <legend>Links</legend>
+      <label for="threed-link-tooltip">Tooltip</label>
+      <select id="threed-link-tooltip" class="form-control form-control-sm" [(ngModel)]="settings.linkTooltipField" (ngModelChange)="changeSettings()">
+        @for (field of linkFields; track field.value) { <option [value]="field.value">{{ field.label }}</option> }
+      </select>
+      <label for="threed-link-width">Width: {{ settings.linkWidth }}</label>
+      <input id="threed-link-width" type="range" class="custom-range" min="0" max="20" step="0.1" [(ngModel)]="settings.linkWidth" (ngModelChange)="changeSettings()">
+      <label for="threed-link-transparency">Transparency: {{ settings.linkTransparency | percent }}</label>
+      <input id="threed-link-transparency" type="range" class="custom-range" min="0" max="1" step="0.01" [(ngModel)]="settings.linkTransparency" (ngModelChange)="changeSettings()">
+    </fieldset>
+    <p>Colors, background, distance threshold, and filtering follow the global settings.</p>
+    <button type="button" class="btn btn-sm btn-primary" (click)="openGlobalColors()">Global Settings</button>
+  </p-dialog>
+
+  <p-dialog data-testid="threed-export-dialog" [(visible)]="exportOpen" header="Export 3D Network" appendTo="body" [style]="{width: '400px', maxWidth: '95vw'}">
+    <label for="threed-export-filename">Filename</label>
+    <input id="threed-export-filename" class="form-control form-control-sm" [(ngModel)]="exportFilename">
+    <label for="threed-export-scale">Image scale</label>
+    <input id="threed-export-scale" class="form-control form-control-sm" type="number" min="1" max="5" step="0.5" [(ngModel)]="exportScale">
+    <label class="three-d-check"><input type="checkbox" [(ngModel)]="exportNodeTable"> Include node color key</label>
+    <label class="three-d-check"><input type="checkbox" [(ngModel)]="exportLinkTable"> Include link color key</label>
+    @if (exportError) { <p role="alert">{{ exportError }}</p> }
+    <button type="button" class="btn btn-primary btn-sm" data-testid="threed-export-confirm" (click)="exportImage()">Export PNG</button>
+  </p-dialog>
+}
