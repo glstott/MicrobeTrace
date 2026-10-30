@@ -1,14 +1,17 @@
 /// <reference types="cypress" />
 import JSZip from 'jszip';
+import { expandInvestigationTools } from '../../support/investigation-helpers';
 import {
   installSaveAsCaptureHook, openGlobalFilteringTab, saveSessionFromFileMenu,
   writeCapturedDownloadToDisk,
 } from '../../support/journey-helpers';
 
-const kit = 'docs/testing/investigation-manual-kit/';
+const kit = 'cypress/fixtures/investigation/';
 const openPanel = () => {
-  cy.get('[data-testid="app-investigation-button"]').click();
-  cy.get('[aria-label="New cohort name"]').should('have.focus');
+  cy.get('[data-testid="app-file-menu-button"]').click();
+  cy.get('[data-testid="app-file-menu-investigation"]').should('be.visible').click();
+  expandInvestigationTools();
+  cy.get('[aria-label="New cohort name"]').should('be.visible');
 };
 const closePanel = () => cy.get('[data-testid="investigation-panel"]').closest('.p-dialog')
   .find('button.p-dialog-close-button').click();

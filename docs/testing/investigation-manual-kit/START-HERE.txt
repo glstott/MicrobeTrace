@@ -1,0 +1,27 @@
+MicrobeTrace investigation snapshots: synthetic manual test kit
+
+1. Extract the outer investigation-manual-kit.zip into a folder.
+2. Open manual-testing.html in your browser for the full step-by-step checklist.
+3. Open the MicrobeTrace build containing the investigation feature.
+4. In MicrobeTrace, use File > Add Data to load 02-configured.microbetrace.
+5. Open File > Investigation Workspace and follow case M01. Use 01-start.microbetrace for authoring.
+6. Record Pass / Fail / Not exercised in manual-test-results.csv.
+
+Save investigation includes everything without individual feature selections.
+Expand Optional tools only for the editing and calculation checks in the guide.
+
+Quick expected counts on 02-configured, threshold 3 SNPs, all layers enabled:
+Full:    6 nodes, 7 eligible edges, 5 eligible sequences.
+Visible: 3 nodes, 3 eligible edges, 3 eligible sequences.
+Cohort:  4 nodes, 2 eligible edges, 4 eligible sequences.
+
+The outer ZIP is a kit, not an app session. Only 02-configured.zip is an app
+session ZIP. The reject-* files are intentionally invalid and must be rejected.
+
+All data are fictional. The prepared sessions preserve explicit mixed-source
+edge membership. Raw CSV/FASTA/Newick files are included for inspection and
+separate import checks; fresh import can assign different source names/IDs.
+
+The fixtures and expectations were checked with the current branch's snapshot
+capture/validation, scope-resolution, and statistics code. The manual cases are
+for execution by the tester and have not been pre-marked as passed.

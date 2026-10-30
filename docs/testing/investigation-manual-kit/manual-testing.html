@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MicrobeTrace investigation snapshots — manual test kit</title>
+  <style>
+    body{font:16px/1.6 system-ui,sans-serif;max-width:1080px;margin:36px auto;padding:0 24px 60px;color:#223247}h1,h2,h3{line-height:1.25;color:#12243b}h1{font-size:2.1rem}h2{margin-top:2.5rem;border-bottom:2px solid #dce7ef;padding-bottom:.5rem}h3{margin-top:1.8rem}a{color:#075ead}table{width:100%;border-collapse:collapse;margin:18px 0;font-size:.94rem}td,th{text-align:left;padding:9px 12px;border:1px solid #ccd8e2;vertical-align:top}th{background:#edf4f9}code{font-size:.92em;background:#edf2f6;padding:2px 5px;border-radius:3px}li{margin:.5rem 0}.note,.expected{padding:12px 16px;border-left:4px solid #217b9e;background:#f1f8fb;margin:15px 0}.expected{border-color:#31845e;background:#f1f8f3}.small{font-size:.9rem;color:#4d6074}.files{overflow-wrap:anywhere}button{padding:8px 14px;font:inherit;cursor:pointer}.check{font-weight:600;color:#37546e}@media print{body{margin:0;max-width:none;font-size:11pt}.print-hide{display:none}a{color:inherit}h2,h3{break-after:avoid}tr,.expected{break-inside:avoid}}
+  </style>
+</head>
+<body>
+<p class="small">Manual acceptance kit · 26 October 2026 · synthetic data only</p>
+<h1>Test reproducible investigation snapshots</h1>
+<p>Follow the checks below in the current branch's MicrobeTrace build. Allow about 45–60 minutes for the core checks, plus time for the optional analysis and interruption checks. All cases, sequences, dates, locations, and relationships in this kit are fictional.</p>
+<p class="print-hide"><button onclick="window.print()">Print checklist</button> &nbsp; <a href="manual-test-results.csv" download>Download results worksheet</a> · <a href="expected-results.json">Exact expected memberships and results</a></p>
+<div class="note"><strong>Use the files inside the extracted kit.</strong> The outer <code>investigation-manual-kit.zip</code> is a distribution package. Extract it first. Only <code>02-configured.zip</code> is a compressed session intended for loading directly into MicrobeTrace.</div>
+
+<h2>1. Get ready</h2>
+<ol>
+  <li>Save any investigation you want to keep. Open the build containing this feature. If running locally, start <code>npm.cmd start</code> from the project folder, then open <code>http://localhost:4200</code>. Accept the EULA and close the welcome panel.</li>
+  <li>Use <strong>File → Add Data</strong> to reach the file-loading area. Choose the specified <code>.microbetrace</code> file, or drop it onto the file-loading area. Wait for the restored dashboard to appear. A saved session replaces the open investigation; it does not need a separate launch step.</li>
+  <li>Begin each independent check with the file named in that check. This prevents a preceding calculation, disabled layer, or edited cohort from changing the expected counts.</li>
+  <li>Open <strong>File &rarr; Investigation Workspace</strong>. <strong>Save investigation</strong> saves all data, settings, notes, cohorts, layers, and completed results together; no feature selections are needed. For the editing and analysis checks below, expand <strong>Optional tools</strong>, then open the relevant section: <strong>Edit cohorts</strong>, <strong>Edit relationship layers</strong>, <strong>Edit notes</strong>, or <strong>Run or change calculations</strong>. Close the workspace with its upper-right close button when you need to work in a dashboard pane. Allow about two seconds for input previews to refresh after edits.</li>
+</ol>
+<table class="files">
+  <thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody>
+  <tr><td><a href="01-start.microbetrace" download>01-start.microbetrace</a></td><td>Six nodes, all visible, threshold 3 SNPs, three enabled layers, pinned layout, A/B/D selected. No cohorts, notes, or completed calculations. Use for authoring.</td></tr>
+  <tr><td><a href="02-configured.microbetrace" download>02-configured.microbetrace</a><br><a href="02-configured.zip" download>02-configured.zip</a></td><td>The same data with Region = North filtering, overlapping cohorts, contact styling, notes, grouping, and one completed cohort statistics result. The ZIP contains the session, manifest, and HTML record.</td></tr>
+  <tr><td><a href="03-imported-tree.microbetrace" download>03-imported-tree.microbetrace</a></td><td>Five sequenced nodes A–E and a matching imported Newick tree; use for patristic and bootstrap checks. Counts differ from the six-node scope tests.</td></tr>
+  <tr><td><a href="04-one-sequence.microbetrace" download>04-one-sequence.microbetrace</a><br><a href="05-no-sequence.microbetrace" download>05-no-sequence.microbetrace</a></td><td>Insufficient-input cases: A alone with a sequence; F alone without a sequence.</td></tr>
+  <tr><td><a href="06-legacy.microbetrace" download>06-legacy.microbetrace</a></td><td>Unversioned legacy session for migration testing.</td></tr>
+  <tr><td><a href="reject-unsupported-version.microbetrace" download>reject-unsupported-version.microbetrace</a><br><a href="reject-missing-node.microbetrace" download>reject-missing-node.microbetrace</a><br><a href="reject-changed-checksum.microbetrace" download>reject-changed-checksum.microbetrace</a><br><a href="reject-manifest-counts.microbetrace" download>reject-manifest-counts.microbetrace</a><br><a href="reject-manifest-software.microbetrace" download>reject-manifest-software.microbetrace</a></td><td>Intentionally invalid fixtures. Each must be rejected while preserving the open investigation.</td></tr>
+  </tbody>
+</table>
+<p>Optional raw inputs are also supplied: <a href="nodes.csv" download>nodes.csv</a>, <a href="genetic-distances.csv" download>genetic-distances.csv</a>, <a href="contacts.csv" download>contacts.csv</a>, <a href="imported-relationships.csv" download>imported-relationships.csv</a>, <a href="sequences.fasta" download>sequences.fasta</a>, and <a href="tree.nwk" download>tree.nwk</a>. These are for inspecting or separately testing import. Use the prepared sessions for the exact counts below; a fresh import can assign different source names and edge IDs.</p>
+
+<h2>2. Know the expected data</h2>
+<table><thead><tr><th>Node</th><th>Region</th><th>Sequence</th><th>Left review</th><th>Right review</th></tr></thead><tbody>
+<tr><td>A</td><td>North</td><td>64 bases</td><td>Yes</td><td></td></tr>
+<tr><td>B</td><td>North</td><td>64 bases</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>C</td><td>North</td><td>64 bases</td><td></td><td></td></tr>
+<tr><td>D</td><td>South</td><td>64 bases</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>E</td><td>South</td><td>64 bases</td><td></td><td>Yes</td></tr>
+<tr><td>F</td><td>South</td><td>None</td><td></td><td></td></tr>
+</tbody></table>
+<p>There are <strong>12 stored edges</strong>: all 10 genetic pairs among A–E, plus EF and AF. Pair names such as CD below use edge IDs with a hyphen, such as <code>C-D</code>. BC and CD each have both genetic and contact contributions. At threshold 3 SNPs, eligible genetic pairs are AB, AC, BC, and DE. CD stays eligible through its contact contribution despite its genetic distance of 8. EF is contact-only; AF is an imported relationship. An edge with two contributing sources counts once.</p>
+<table><thead><tr><th>Scope on 02-configured</th><th>Exact node membership</th><th>Eligible edges</th><th>Components</th><th>Eligible sequences</th></tr></thead><tbody>
+<tr><td>Full</td><td>A B C D E F — <strong>6</strong></td><td>AB AC BC CD DE EF AF — <strong>7</strong></td><td>1</td><td>A B C D E — <strong>5</strong></td></tr>
+<tr><td>Visible</td><td>A B C — <strong>3</strong></td><td>AB AC BC — <strong>3</strong></td><td>1</td><td>A B C — <strong>3</strong></td></tr>
+<tr><td>Cohort, both checked</td><td>A B D E — <strong>4</strong></td><td>AB DE — <strong>2</strong></td><td>2</td><td>A B D E — <strong>4</strong></td></tr>
+</tbody></table>
+<p class="small">These expectations require SNP distance, threshold 3, no nearest-neighbor pruning, minimum cluster size 1, both review cohorts checked, and all three layers enabled. Sequence operations exclude F. Tree inference and distance matrices use the sequenced taxa and complete eligible distances, so their edge previews can differ from threshold-pruned statistics.</p>
+
+<h2>3. Core acceptance checks</h2>
+
+<h3><span class="check">□ M01</span> Load the combined investigation</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>.</li>
+  <li>Check the side-by-side 2D Network and Table panes. Only A/B/C should be visible. A/B are selected; D remains selected in the underlying data while hidden.</li>
+  <li>Open <strong>File &rarr; Investigation Workspace</strong>. Find Left review and Right review, each showing three members, both checked. Find three enabled relationship layers, four notes, and Network statistics set to Cohort with a saved completed result.</li>
+  <li>Note the saved result's completion time. Wait several seconds and revisit the panel.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> no calculation starts automatically; the saved completion time remains unchanged. The retained note for <code>deleted-review-cohort</code> says <strong>Unresolved target</strong>. The cohort statistics preview is 4 eligible nodes · 2 edges.</p>
+
+<h3><span class="check">□ M02</span> Create overlapping cohorts and keep hidden members</h3>
+<ol>
+  <li>Load <code>01-start.microbetrace</code>. A/B/D are already selected. In Investigation Workspace, enter <strong>Left review</strong> and click <strong>Create from selection</strong>.</li>
+  <li>Close the panel. In the Table's Nodes dataset, hold Ctrl (Command on macOS) and click A to deselect it, then E to select it. Verify that the selected rows are B/D/E.</li>
+  <li>Reopen Investigation Workspace from File, create <strong>Right review</strong>, and check both cohort checkboxes. Set Network statistics to <strong>Cohort</strong>.</li>
+  <li>Close the panel. Open top-toolbar <strong>Settings → Filtering</strong>. Under <strong>Subset Nodes</strong>, choose Region, equals, North. Click <strong>Apply Subset</strong>, then <strong>Done</strong>.</li>
+  <li>Reopen Investigation Workspace from File. Click Left review's <strong>Select members</strong>. Clear the subset using the banner's <strong>Clear</strong> button, then inspect the Nodes table.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> each cohort stays at three members despite filtering. Both checked cohorts resolve to four unique nodes A/B/D/E. Select members selects exactly A/B/D; it does not change which cohort checkboxes are checked.</p>
+
+<h3><span class="check">□ M03</span> Rename, explicitly replace, and delete a cohort</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Rename Left review to <strong>Primary review</strong>, then click outside the name field.</li>
+  <li>Clear the shared subset. Click Primary review's <strong>Select members</strong>. In the Table, Ctrl/Command-click B to deselect it. A/D should remain selected.</li>
+  <li>Click Primary review's <strong>Replace from selection</strong>. Leave both cohorts checked.</li>
+  <li>Delete Right review.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> renaming keeps its ID and membership. Replacement changes Primary review to A/D (two members). The union before deletion is still A/B/D/E. After deleting Right review, Cohort scope resolves only A/D. Ordinary selection changes alone never replace saved cohort membership.</p>
+
+<h3><span class="check">□ M04</span> Threshold, layer eligibility, and mixed-source edges</h3>
+<ol>
+  <li>Load <code>01-start.microbetrace</code>. In Investigation Workspace, set Network statistics to <strong>Full</strong>. Check the preview: 6 nodes · 7 edges.</li>
+  <li>Disable <strong>Genetic Distance</strong>. Check 6 nodes · 4 edges: BC/CD/EF/AF. Re-enable it.</li>
+  <li>Disable <strong>Field contacts</strong>. Check 6 nodes · 5 edges: AB/AC/BC/DE/AF. BC survives through genetics; CD disappears. Re-enable it.</li>
+  <li>Disable <strong>Imported relationships</strong>. Check 6 nodes · 6 edges. Re-enable it.</li>
+  <li>Close the panel. In <strong>Settings → Filtering</strong>, set <strong>Filtering Threshold</strong> to 1, then Done. Reopen Investigation Workspace from File: expect 6 nodes · 6 edges. Repeat with 0: expect 6 nodes · 4 edges. Restore 3: expect 6 nodes · 7 edges.</li>
+  <li>Switch to Table's Links dataset or inspect link details to verify that BC/CD retain both source contributions. Use a saved snapshot's <code>_originAll</code> field if the current table column shows only contributing visible sources.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> source controls update shared visibility without deleting stored edges or source memberships. Mixed edges are counted once. Contact-only and imported-only edges are not removed by the genetic threshold.</p>
+
+<h3><span class="check">□ M05</span> Layer names, order, color, and opacity</h3>
+<ol>
+  <li>Load <code>01-start.microbetrace</code>. In Investigation Workspace, rename Field contacts to <strong>Interview evidence</strong>.</li>
+  <li>Set its color to a clearly different color and opacity to about 0.5. Move it above Genetic Distance with the up arrow.</li>
+  <li>Close the panel and inspect the 2D links. Check a contact-only edge (EF) and a mixed edge (BC/CD). Open <strong>View → Map</strong> and enable links in that pane's settings if necessary.</li>
+  <li>Use <strong>Reset style</strong>, verify that normal link styling returns, then reapply an override for the save test.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> explicit overrides take precedence over existing view colors; order determines precedence when more than one contributing layer has an override. Renaming changes the display name while the Source identity stays unchanged. Restoring a save preserves the final name, order, enabled states, and style values.</p>
+
+<h3><span class="check">□ M06</span> Plain-text annotations and unresolved targets</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Under Annotations, leave Target as Investigation, enter <strong>Methods note &lt;check sources&gt;</strong>, and click <strong>Save note</strong>.</li>
+  <li>Add a Node note targeting <strong>A</strong>, an Edge note targeting <strong>C-D</strong>, and a Cohort note targeting <strong>cohort-left</strong> (the ID is printed beneath Left review).</li>
+  <li>Edit one note and click outside its text box. Observe the updated timestamp.</li>
+  <li>Delete Left review. Inspect its cohort note. Delete another note using <strong>Delete note</strong>.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> the deleted cohort's note remains and says Unresolved target. The explicitly deleted note disappears. Angle brackets remain literal text in the panel and downloaded HTML record. A note aimed at an ID that never existed is rejected when creating it.</p>
+
+<h3><span class="check">□ M07</span> Compare all three scopes with known statistics</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Open <strong>View → Network Statistics</strong>.</li>
+  <li>In Investigation Workspace's Network statistics row, choose <strong>Full</strong>, check the preview, and click that row's <strong>Run</strong>. Inspect the statistics Summary: 6 nodes, 7 links, 1 component.</li>
+  <li>Choose <strong>Visible</strong> and Run: 3 nodes, 3 links, 1 component.</li>
+  <li>Choose <strong>Cohort</strong> and Run: 4 nodes, 2 links, 2 components. Check Clusters for the exact AB and DE components.</li>
+  <li>Uncheck both cohorts. Leave scope set to Cohort and try Run.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> results follow the table in section 2. Cohort union deduplicates B/D and includes hidden D/E. Empty cohort scope produces an explanation and preserves the last completed result; it never substitutes the full graph.</p>
+
+<h3><span class="check">□ M08</span> Save and reopen the complete analytical state</h3>
+<ol>
+  <li>Reload <code>02-configured.microbetrace</code>. Set threshold 1, leave the North subset active, retain both cohort checkboxes, and add a distinctive note.</li>
+  <li>In the 2D pane's <strong>Settings → Grouping → Controls</strong>, show Groups and set Group By to Ward. Enable group labels under Labels. Change a node color or label setting as well.</li>
+  <li>Close settings. Drag a node to a distinctive position while pinned. Pan/zoom the network. Drag a dashboard divider and move a tab to another stack if desired. Keep Table and 2D Network open; optionally add Map and Network Statistics.</li>
+  <li>Use Table's node-column picker to show Region/Ward. Apply a table-only column filter and note it separately from the shared North subset. Check that ordinary node selection is as intended.</li>
+  <li>Run Network statistics in Cohort scope. Record its saved completion time. Immediately after a final pan/zoom, use <strong>File → Save</strong>, enter <strong>manual-roundtrip</strong>, choose <strong>session</strong>, uncheck <strong>Compress?</strong>, and Save.</li>
+  <li>Change the threshold, grouping, cohort selection, note, layout, and camera. Then load the downloaded <code>manual-roundtrip.microbetrace</code>.</li>
+  <li>Inspect Investigation, global settings, each open pane, Table filters/columns, selection, pin state, node position, dashboard split, and zoom/pan. Open the saved file in a text editor if checking exact memberships, IDs, or camera values.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> all eight categories, selections, styling, and supported view settings return. Positions/camera/dashboard match within normal pixel and window-size differences. The calculation's completion time, run ID, recorded input IDs, and output are unchanged; reopening does not launch a replacement calculation.</p>
+
+<h3><span class="check">□ M09</span> Compressed save and publication record</h3>
+<ol>
+  <li>From the restored state in M08, save again with <strong>Compress?</strong> checked. Extract the downloaded ZIP outside the app.</li>
+  <li>Find the <code>.microbetrace</code> session, <code>investigation-manifest.json</code>, and <code>investigation-record.html</code>. Open the HTML record in a browser.</li>
+  <li>Compare the session's <code>snapshotId</code> and <code>provenance.stateChecksum</code> with the manifest's <code>snapshotId</code>/<code>stateChecksum</code> and the HTML header.</li>
+  <li>Check software identity, source checksums, all eight state categories, calculation scope/status, input memberships, timestamps, and counts. Stored-edge counts can exceed visible/eligible-edge counts: the original six-node fixture stores 12 edges.</li>
+  <li>Load the ZIP directly into MicrobeTrace and compare the restored state. Then use <strong>File &rarr; Investigation Workspace → Download investigation record</strong> and inspect its separate record bundle.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> artifacts inside each bundle identify the same captured snapshot. A later separate save or record download is a new capture and may have a different snapshot ID/checksum. The record contains summaries and output checksums; exact analytical inputs and completed outputs remain in the session. In a development build, commit identity can say development.</p>
+
+<h3><span class="check">□ M10</span> Local links and legacy sessions</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Choose <strong>File → Save</strong>, enter a name, select <strong>Local link</strong>, and Save.</li>
+  <li>Copy the link and open it in another tab in the <strong>same browser profile and same MicrobeTrace site</strong>. Compare cohorts, subset, layers, notes, and saved calculation time.</li>
+  <li>Try the link in a private window or another browser profile.</li>
+  <li>Load <code>06-legacy.microbetrace</code>, then download its investigation record.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> the same-profile local link restores the snapshot. The other profile reports the local session unavailable. The legacy file opens; historical provenance is labelled <strong>not recorded</strong>. Use portable session files for sharing.</p>
+
+<h3><span class="check">□ M11</span> Reject invalid restores without losing current work</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Add an unsaved investigation note saying <strong>KEEP THIS OPEN INVESTIGATION</strong>. Record the selected cohorts and saved calculation time.</li>
+  <li>Attempt to load <code>reject-unsupported-version.microbetrace</code>. Confirm the unsupported schema version error, then inspect the open state.</li>
+  <li>Repeat with <code>reject-missing-node.microbetrace</code> and <code>reject-changed-checksum.microbetrace</code>.</li>
+  <li>Repeat with <code>reject-manifest-counts.microbetrace</code> (reports 999 nodes) and <code>reject-manifest-software.microbetrace</code> (alters the recorded version). These must fail even though the analytical data are structurally valid.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> all five files are refused with explanations for unsupported version, missing node, checksum, or inconsistent manifest counts. New schema-2 saves bind publication metadata to the checksum. The unsaved note, open graph, filter, layout, selected cohorts, and previous result remain intact after every attempt.</p>
+
+<h3><span class="check">□ M12</span> Stale results preserve their completed output</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. Record the completed cohort statistics time. Change the global threshold to <strong>0</strong>.</li>
+  <li>Reopen Investigation Workspace from File and wait for its preview/status refresh. Do not click Run. Save and reopen this state.</li>
+  <li>Inspect the saved record or session: the prior run still records A/B/D/E with AB/DE and its original output. Its status is stale.</li>
+  <li>Click Run for Cohort statistics. The new input population is still four nodes, but now has zero eligible edges. Inspect the replacement time and four singleton components.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> input changes mark a saved result stale without deleting it or silently recomputing. A successful explicit replacement produces a new run and completion time.</p>
+
+<h3><span class="check">□ M13</span> Additional filters, collapsed nodes, and distance display</h3>
+<ol>
+  <li>Load <code>01-start.microbetrace</code>. In Settings → Timeline, set Timeline By to Collection_Date and the range to <strong>2026-01-01 through 2026-01-03</strong>. Keep playback paused. Save/reopen and compare both dates and the visible membership A/B/C. Reset the range and Timeline By before the next part.</li>
+  <li>In Settings → Filtering, set Subset Links to Relationship, equals, <strong>Household</strong>, and Apply Subset. Only EF should remain as an eligible visible edge. Save/reopen and check the link rule and its value, then clear it.</li>
+  <li>Set Minimum Cluster Size to <strong>7</strong>, above the six loaded nodes. Save/reopen: the value remains 7 and no nodes are visible. Full scope still resolves the six loaded nodes. Restore the minimum to 1.</li>
+  <li>In the 2D pane's Settings, set Grouping → Group By to Region and show groups. Under Nodes → Collapse Related Nodes, show Collapse and set its Distance to <strong>1</strong>. Save/reopen and compare aggregate membership and position. Turn collapsing off again to reveal the unchanged underlying nodes.</li>
+  <li>Reload the start fixture. Change Distance Metric to <strong>TN93</strong>, choose Percentage under Distance Format, and run Genetic distances in Full scope. Choose a suitable threshold for the computed values, record it, then save/reopen. Verify metric, format, numeric threshold, and completed distance result. Use this as a separate case; its distances and counts differ from the SNP baseline.</li>
+  <li>Repeat a small save/reopen with the chosen <strong>Prune With</strong> setting enabled, noting the exact choice and current link mask. Verify the same setting and graph return. Restore the baseline fixture before comparing the counts in section 2.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> time ranges, shared node/link rules, minimum size, collapse settings/resolved membership, distance format, and pruning settings persist. Display filters do not remove cohort membership or widen an analysis population.</p>
+
+<h2>4. Analysis and interruption checks</h2>
+<p>Reload the indicated starting session before each operation/scope combination. Some operations modify links, alignment, or the base tree. Their later previews may correctly differ from the original fixture.</p>
+
+<h3><span class="check">□ M14</span> Scope preview and successful calculation coverage</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>. For each operation below, set its scope to Full, Visible, and Cohort in turn. Check the preview before running. Save each result you want to inspect; one latest completed run is retained per operation.</li>
+  <li>For Sequence alignment, Sequence ambiguity, Consensus sequence, Consensus distances, and Genetic distances, expect <strong>5 / 3 / 4 eligible sequences</strong>. F must never appear in a sequence operation's recorded input IDs. All provided bases are unambiguous, so ambiguity counts should be zero.</li>
+  <li>For Distance matrix and Tree inference, expect taxa A/B/C/D/E, A/B/C, and A/B/D/E respectively. The fixture supplies every genetic pair among those taxa. Inspect Alignment View, Phylogenetic Tree, Table fields, or the saved calculation output as appropriate.</li>
+  <li>For Minimum spanning tree and Nearest neighbors, verify the scoped node IDs in the saved record. Preserve each algorithm's eligibility rules; an unsequenced or isolated node need not receive a calculated edge.</li>
+  <li>For Directionality, first use <code>03-imported-tree.microbetrace</code> with Full scope: its five loaded nodes match its five tree leaves. For a scoped test, use <code>02-configured.microbetrace</code>, set both Tree inference and Directionality to Cohort, run Tree inference, then Directionality. A missing or mismatched tree must produce an explanation; the six-node graph includes unsequenced F, so a five-taxon inferred tree does not satisfy Full directionality's six-node population.</li>
+  <li>For Threshold analysis, check Full/Visible/Cohort populations and Run. Inspect the analysis in global Settings → Filtering. Its sweep uses distance-backed inputs/range, including pairs above the current threshold; contact-only EF and imported-only AF do not affect genetic recommendations.</li>
+  <li>Repeat threshold analysis after enabling nearest-neighbor pruning or lowering the current threshold. The current display mask must not discard the sweep's candidate distances. Compare recorded inputs and sweep parameters, rather than expecting the normal graph's edge count.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> every successful operation records its own scope, eligible input IDs/checksum, parameters, software, timestamps, and output. Full/cohort ignore the North display subset; enabled layers still apply to graph/distance calculations. Changing one operation's scope does not change another operation's scope.</p>
+
+<h3><span class="check">□ M15</span> Patristic distances and matching bootstrap taxa</h3>
+<ol>
+  <li>Load <code>03-imported-tree.microbetrace</code>. Open <strong>View → Phylogenetic Tree</strong> and check five labelled tips A–E.</li>
+  <li>In Investigation Workspace, set Patristic distances to Full and Run. It should complete against the imported tree. Save/reopen and verify the completed result is retained.</li>
+  <li>Try Bootstrap support on this imported tree. Expect the explanation that this version supports bootstrap for sequence-derived trees only.</li>
+  <li>Load <code>02-configured.microbetrace</code>. Set Tree inference to Full and Run. Open Phylogenetic Tree and verify A–E. In the tree pane's Settings → Bootstrap → Calculate Bootstrap, set Replicates to <strong>10</strong> and disable early stopping. In Investigation Workspace set Bootstrap support to Full and Run. Inspect saved metadata and support values.</li>
+  <li>Leave the five-tip inferred tree in place. Set Bootstrap support to Cohort (A/B/D/E), then try Run. Its four scoped taxa do not match the five-tip base tree.</li>
+  <li>Set Tree inference to Cohort and Run to create an A/B/D/E tree. Then retry Bootstrap support in Cohort scope. Use the four-taxon cohort for a positive scoped bootstrap test; a three-tip tree may have no internal splits eligible for support.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> bootstrap uses a matching taxon set and a sequence-derived base tree. A mismatched base tree produces an explanation and preserves prior completed support. The four-taxon cohort run respects hidden members D/E. Patristic calculations require an imported Newick/Auspice source, rather than an inferred-only tree.</p>
+
+<h3><span class="check">□ M16</span> Missing sequence prerequisites and empty populations</h3>
+<ol>
+  <li>Load <code>05-no-sequence.microbetrace</code>. The 2D pane should show one small isolated node F on a white background, with zero links; the Table should contain one row. A solid blue network pane is a rendering defect, not the expected missing-sequence behavior. In Investigation Workspace inspect Sequence alignment, Consensus sequence, Genetic distances, and Bootstrap support. Try running a sequence operation.</li>
+  <li>Load <code>04-one-sequence.microbetrace</code>. Open Phylogenetic Tree and try tree inference/bootstrap.</li>
+  <li>Load <code>02-configured.microbetrace</code>, uncheck both cohorts, select Cohort scope for an analysis, and try Run.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> empty eligible populations or missing prerequisites produce an explanation. F is not treated as a valid sequence and no wider scope is substituted. A tree/bootstrap operation with insufficient taxa does not claim a successful supported tree.</p>
+
+<h3><span class="check">□ M17</span> Cancellation and late-response protection (optional)</h3>
+<ol>
+  <li>Load <code>02-configured.microbetrace</code>, set Tree inference to Full, and Run. Open Phylogenetic Tree. Set Bootstrap support to Full and complete a 10-replicate bootstrap first. Save the investigation so you have a known previous result.</li>
+  <li>Set Replicates to 1000. Use the tree pane's <strong>Calculate Bootstrap</strong>, then <strong>Cancel</strong> while the progress indicator is still running. Compare the prior completed support and saved result.</li>
+  <li>Start another long run. While it is running, load <code>02-configured.microbetrace</code>. Wait longer than the original run usually takes. Verify that the replacement graph and its saved cohort statistics stay intact.</li>
+  <li>If the tiny fixture finishes before you can cancel or replace it, record <strong>Not exercised — finished too quickly</strong>. Repeat with browser CPU throttling if available; do not count an unobserved interruption as a pass.</li>
+</ol>
+<p class="expected"><strong>Expected:</strong> cancellation leaves the earlier completed output intact. Late responses cannot overwrite a newer investigation or mark a cancelled run completed. The six-node replacement must never acquire support/results from the previous five-node run.</p>
+
+<h2>5. Record what happened</h2>
+<p>For each case, record browser/version, current build, Pass/Fail/Not exercised, actual counts, and a short explanation. Save the session plus the corresponding record bundle for any discrepancy, and include a screenshot when layout/visibility matters. <a href="manual-test-results.csv" download>The worksheet</a> has one row per case.</p>
+<p>Known failures from the earlier automated run concern dashboard resize/pane lifecycle, Map centering, and an OpenFreeMap bundle assertion. They also reproduced on the base revision. Record any manual reproduction separately from an investigation snapshot mismatch.</p>
+<div class="note"><strong>Validation of this kit:</strong> its snapshots were generated and checked with the branch's capture, restore-validation, scope-resolution, and statistics code. Expected scope counts, source eligibility, rejection fixtures, legacy provenance, and stale-result marking were checked programmatically. This checklist is for you to execute; its manual cases have not been marked as passed, and no additional Cypress run was performed to produce the kit.</div>
+</body>
+</html>

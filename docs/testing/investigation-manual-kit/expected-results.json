@@ -1,0 +1,241 @@
+{
+  "scope": {
+    "full": {
+      "nodeIds": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F"
+      ],
+      "edgeIds": [
+        "AB",
+        "AC",
+        "BC",
+        "CD",
+        "DE",
+        "EF",
+        "AF"
+      ],
+      "sequenceIds": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "summary": {
+        "nodeCount": 6,
+        "linkCount": 7,
+        "selectedNodeCount": 3,
+        "componentCount": 1,
+        "clusterCount": 1,
+        "singletonCount": 0,
+        "largestComponentSize": 6,
+        "componentMetrics": {
+          "nodeCount": 6,
+          "componentCount": 1,
+          "clusterCount": 1,
+          "singletonCount": 0,
+          "clusteredNodeCount": 6,
+          "largestClusterSize": 6,
+          "secondLargestClusterSize": 0,
+          "largestClusterFraction": 1,
+          "secondLargestClusterFraction": 0,
+          "clusteredFraction": 1,
+          "singletonFraction": 0,
+          "giniCoefficient": 0,
+          "meanClusterSize": 6,
+          "medianClusterSize": 6,
+          "largestToMeanClusterRatio": 1,
+          "largestToMedianClusterRatio": 1,
+          "l2ToL1Ratio": 0
+        },
+        "density": 0.4666666666666667,
+        "averageDegree": 2.3333333333333335,
+        "maxDegree": 3,
+        "averageLocalClusteringCoefficient": 0.27777777777777773,
+        "transitivity": 0.3,
+        "averagePathLength": 1.6,
+        "diameter": 3,
+        "approximateBetweenness": false,
+        "approximatePathMetrics": false,
+        "sampledSourceCount": 6,
+        "metricLabel": "distance",
+        "threshold": 3
+      }
+    },
+    "visible": {
+      "nodeIds": [
+        "A",
+        "B",
+        "C"
+      ],
+      "edgeIds": [
+        "AB",
+        "AC",
+        "BC"
+      ],
+      "sequenceIds": [
+        "A",
+        "B",
+        "C"
+      ],
+      "summary": {
+        "nodeCount": 3,
+        "linkCount": 3,
+        "selectedNodeCount": 2,
+        "componentCount": 1,
+        "clusterCount": 1,
+        "singletonCount": 0,
+        "largestComponentSize": 3,
+        "componentMetrics": {
+          "nodeCount": 3,
+          "componentCount": 1,
+          "clusterCount": 1,
+          "singletonCount": 0,
+          "clusteredNodeCount": 3,
+          "largestClusterSize": 3,
+          "secondLargestClusterSize": 0,
+          "largestClusterFraction": 1,
+          "secondLargestClusterFraction": 0,
+          "clusteredFraction": 1,
+          "singletonFraction": 0,
+          "giniCoefficient": 0,
+          "meanClusterSize": 3,
+          "medianClusterSize": 3,
+          "largestToMeanClusterRatio": 1,
+          "largestToMedianClusterRatio": 1,
+          "l2ToL1Ratio": 0
+        },
+        "density": 1,
+        "averageDegree": 2,
+        "maxDegree": 2,
+        "averageLocalClusteringCoefficient": 1,
+        "transitivity": 1,
+        "averagePathLength": 1,
+        "diameter": 1,
+        "approximateBetweenness": false,
+        "approximatePathMetrics": false,
+        "sampledSourceCount": 3,
+        "metricLabel": "distance",
+        "threshold": 3
+      }
+    },
+    "cohort": {
+      "nodeIds": [
+        "A",
+        "B",
+        "D",
+        "E"
+      ],
+      "edgeIds": [
+        "AB",
+        "DE"
+      ],
+      "sequenceIds": [
+        "A",
+        "B",
+        "D",
+        "E"
+      ],
+      "summary": {
+        "nodeCount": 4,
+        "linkCount": 2,
+        "selectedNodeCount": 3,
+        "componentCount": 2,
+        "clusterCount": 2,
+        "singletonCount": 0,
+        "largestComponentSize": 2,
+        "componentMetrics": {
+          "nodeCount": 4,
+          "componentCount": 2,
+          "clusterCount": 2,
+          "singletonCount": 0,
+          "clusteredNodeCount": 4,
+          "largestClusterSize": 2,
+          "secondLargestClusterSize": 2,
+          "largestClusterFraction": 0.5,
+          "secondLargestClusterFraction": 0.5,
+          "clusteredFraction": 1,
+          "singletonFraction": 0,
+          "giniCoefficient": 0,
+          "meanClusterSize": 2,
+          "medianClusterSize": 2,
+          "largestToMeanClusterRatio": 1,
+          "largestToMedianClusterRatio": 1,
+          "l2ToL1Ratio": 1
+        },
+        "density": 0.3333333333333333,
+        "averageDegree": 1,
+        "maxDegree": 1,
+        "averageLocalClusteringCoefficient": 0,
+        "transitivity": 0,
+        "averagePathLength": 1,
+        "diameter": 1,
+        "approximateBetweenness": false,
+        "approximatePathMetrics": false,
+        "sampledSourceCount": 4,
+        "metricLabel": "distance",
+        "threshold": 3
+      }
+    }
+  },
+  "layers": {
+    "disabled:Genetic Distance": [
+      "BC",
+      "CD",
+      "EF",
+      "AF"
+    ],
+    "disabled:Field contacts": [
+      "AB",
+      "AC",
+      "BC",
+      "DE",
+      "AF"
+    ],
+    "disabled:Imported relationships": [
+      "AB",
+      "AC",
+      "BC",
+      "CD",
+      "DE",
+      "EF"
+    ]
+  },
+  "threshold": {
+    "0": [
+      "BC",
+      "CD",
+      "EF",
+      "AF"
+    ],
+    "1": [
+      "AB",
+      "BC",
+      "CD",
+      "DE",
+      "EF",
+      "AF"
+    ],
+    "3": [
+      "AB",
+      "AC",
+      "BC",
+      "CD",
+      "DE",
+      "EF",
+      "AF"
+    ]
+  },
+  "sequences": {
+    "A": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+    "B": "TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+    "C": "AAATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+    "D": "ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+    "E": "ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT"
+  },
+  "note": "All counts use threshold 3 SNPs, no nearest-neighbor pruning, minimum cluster size 1. Exact memberships are part of each snapshot."
+}

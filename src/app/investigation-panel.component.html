@@ -1,9 +1,16 @@
 <div data-testid="investigation-panel">
-  <p>Save the investigation to preserve these settings, its data, and completed results.</p>
+  <div class="investigation-save">
+    <p><strong>Save everything together.</strong> All loaded data, settings, cohorts, relationship layers, notes, and completed results are included. No individual selections are needed.</p>
+    <button class="btn btn-primary" data-testid="investigation-save" (click)="saveInvestigation.emit()">Save investigation</button>
+  </div>
   @if (error) { <p role="alert" class="text-danger">{{ error }}</p> }
   @if (status) { <p role="status">{{ status }}</p> }
+  <details class="investigation-tools" data-testid="investigation-tools">
+    <summary>Optional tools</summary>
+    <p class="muted">Use these tools to edit your investigation or run an analysis. They do not choose what gets saved.</p>
+  <details data-testid="investigation-cohort-tools">
+    <summary id="investigation-cohorts-title">Edit cohorts</summary>
   <section aria-labelledby="investigation-cohorts-title">
-    <h3 id="investigation-cohorts-title">Cohorts</h3>
     <p class="muted">Create a fixed cohort from selected nodes. Checked cohorts form a union for cohort calculations; filters do not change membership.</p>
     <div class="row-actions">
       <input class="form-control name" aria-label="New cohort name" placeholder="Cohort name" [(ngModel)]="cohortName">
@@ -12,7 +19,7 @@
     @for (cohort of workspace.cohorts; track cohort) {
       <div class="entry">
         <div class="row-actions">
-          <input type="checkbox" [attr.aria-label]="'Use cohort ' + cohort.name" [checked]="workspace.selectedCohortIds.includes(cohort.id)" (change)="toggleCohort(cohort.id, $any($event.target).checked)">
+          <label><input type="checkbox" [attr.aria-label]="'Use cohort ' + cohort.name" [checked]="workspace.selectedCohortIds.includes(cohort.id)" (change)="toggleCohort(cohort.id, $any($event.target).checked)"> Use for calculations</label>
           <input class="form-control name" aria-label="Cohort name" [ngModel]="cohortNameDrafts.get(cohort) ?? cohort.name" (ngModelChange)="cohortNameDrafts.set(cohort, $event)" (blur)="renameCohort(cohort)" [attr.aria-invalid]="cohortNameErrors.has(cohort)" [attr.aria-describedby]="cohortNameErrors.has(cohort) ? 'cohort-name-error-' + cohort.id : null" required>
           <span>{{ cohort.nodeIds.length }} members</span>
           <button class="btn btn-light btn-sm" (click)="selectMembers(cohort)">Select members</button>
@@ -24,13 +31,15 @@
       </div>
     }
   </section>
+  </details>
+  <details data-testid="investigation-layer-tools">
+    <summary id="investigation-layers-title">Edit relationship layers</summary>
   <section aria-labelledby="investigation-layers-title">
-    <h3 id="investigation-layers-title">Relationship layers</h3>
     <p class="muted">Enabled sources contribute edges. Color and opacity overrides take precedence over view styling.</p>
     @for (layer of workspace.edgeLayers; track layer.id; let index = $index) {
       <div class="entry">
         <div class="row-actions">
-          <input type="checkbox" [attr.aria-label]="'Enable layer ' + layer.name" [(ngModel)]="layer.enabled" (change)="changed(true)">
+          <label><input type="checkbox" [attr.aria-label]="'Enable layer ' + layer.name" [(ngModel)]="layer.enabled" (change)="changed(true)"> Enabled</label>
           <input class="form-control name" aria-label="Layer name" [(ngModel)]="layer.name" (change)="changed()">
           <input type="color" [attr.aria-label]="'Color for ' + layer.name" [value]="layer.color || '#94a3b8'" (input)="layer.color = $any($event.target).value; changed(true)">
           <label>Opacity <input type="range" min="0" max="1" step="0.05" [value]="layer.opacity ?? 1" (change)="layerOpacity(layer, $any($event.target).value)"></label>
@@ -42,8 +51,10 @@
       </div>
     }
   </section>
+  </details>
+  <details data-testid="investigation-note-tools">
+    <summary id="investigation-notes-title">Edit notes</summary>
   <section aria-labelledby="investigation-notes-title">
-    <h3 id="investigation-notes-title">Annotations</h3>
     <div class="row-actions">
       <label>Target <select class="form-control" [(ngModel)]="noteTargetType"><option value="investigation">Investigation</option><option value="node">Node</option><option value="edge">Edge</option><option value="cohort">Cohort</option></select></label>
       @if (noteTargetType !== 'investigation') { <input class="form-control name" aria-label="Annotation target ID" placeholder="Target ID" [(ngModel)]="noteTargetId"> }
@@ -59,8 +70,10 @@
       </div>
     }
   </section>
+  </details>
+  <details data-testid="investigation-calculation-tools">
+    <summary id="investigation-calculations-title">Run or change calculations</summary>
   <section aria-labelledby="investigation-calculations-title">
-    <h3 id="investigation-calculations-title">Calculation scope</h3>
     <p class="muted">Full and cohort scopes ignore display filters and retain enabled relationship layers and applicable analysis settings. Visible scope uses the current filtered graph. Each run captures its inputs before starting.</p>
     @for (operation of operations; track operation.id) {
       <div class="scope-row">
@@ -71,5 +84,7 @@
       </div>
     }
   </section>
-  <div class="row-actions"><button class="btn btn-primary" (click)="downloadRecord.emit()">Download investigation record</button><small class="muted">Includes a readable record and machine-readable manifest. Save the session to preserve exact inputs and outputs.</small></div>
+  </details>
+  <div class="row-actions"><button class="btn btn-light" (click)="downloadRecord.emit()">Download investigation record</button><small class="muted">Includes a readable record and machine-readable manifest. Save the investigation to preserve exact inputs and outputs.</small></div>
+  </details>
 </div>

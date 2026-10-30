@@ -10,9 +10,10 @@ import {
   selector: 'app-investigation-panel', standalone: false,
   changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './investigation-panel.component.html',
-  styles: [`:host{display:block;color:var(--text-color,#23364b)}section{padding:12px 0;border-bottom:1px solid #ccd5df}h3{font-size:1.1rem}label{font-weight:500}.row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.entry{padding:10px 0;border-top:1px solid #e1e5eb}.name{flex:1;min-width:160px}.muted{font-size:.875rem;color:#55657a}.note{white-space:pre-wrap}.scope-row{display:grid;grid-template-columns:1fr 130px 1.4fr auto;gap:10px;align-items:center;padding:8px 0}select,input,textarea{max-width:100%}textarea{width:100%;min-height:70px}@media(max-width:600px){.scope-row{grid-template-columns:1fr 1fr}.scope-row small{grid-column:1/-1}}`],
+  styles: [`:host{display:block;color:var(--text-color,#23364b)}.investigation-save{padding:16px;border:1px solid #ccd5df;border-radius:6px;margin-bottom:16px}.investigation-save p{margin-bottom:12px}summary{cursor:pointer;font-weight:600;padding:12px 0}details details{border-top:1px solid #ccd5df}section{padding:0 0 12px}label{font-weight:500}.row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.entry{padding:10px 0;border-top:1px solid #e1e5eb}.name{flex:1;min-width:160px}.muted{font-size:.875rem;color:#55657a}.note{white-space:pre-wrap}.scope-row{display:grid;grid-template-columns:1fr 130px 1.4fr auto;gap:10px;align-items:center;padding:8px 0}select,input,textarea{max-width:100%}textarea{width:100%;min-height:70px}@media(max-width:600px){.scope-row{grid-template-columns:1fr 1fr}.scope-row small{grid-column:1/-1}}`],
 })
 export class InvestigationPanelComponent implements OnInit, OnDestroy {
+  @Output() saveInvestigation = new EventEmitter<void>();
   @Output() downloadRecord = new EventEmitter<void>();
   readonly operations = INVESTIGATION_OPERATIONS;
   cohortName = '';

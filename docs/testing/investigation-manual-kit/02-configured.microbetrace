@@ -1,0 +1,2140 @@
+{
+  "schemaVersion": 2,
+  "snapshotId": "8dd225ea-088e-4345-b36c-871c507e24fb",
+  "session": {
+    "data": {
+      "nodes": [
+        {
+          "_id": "A",
+          "index": 0,
+          "label": "Case A",
+          "Region": "North",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-01",
+          "Latitude": 33.74,
+          "Longitude": -84.4,
+          "seq": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": true,
+          "fixed": true,
+          "x": 120,
+          "y": 150
+        },
+        {
+          "_id": "B",
+          "index": 1,
+          "label": "Case B",
+          "Region": "North",
+          "Ward": "Ward 2",
+          "Collection_Date": "2026-01-02",
+          "Latitude": 33.755,
+          "Longitude": -84.388,
+          "seq": "TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": true,
+          "fixed": true,
+          "x": 300,
+          "y": 150
+        },
+        {
+          "_id": "C",
+          "index": 2,
+          "label": "Case C",
+          "Region": "North",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-03",
+          "Latitude": 33.77,
+          "Longitude": -84.376,
+          "seq": "AAATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": false,
+          "visible": true,
+          "fixed": true,
+          "x": 480,
+          "y": 150
+        },
+        {
+          "_id": "D",
+          "index": 3,
+          "label": "Case D",
+          "Region": "South",
+          "Ward": "Ward 2",
+          "Collection_Date": "2026-01-04",
+          "Latitude": 33.785000000000004,
+          "Longitude": -84.364,
+          "seq": "ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": false,
+          "fixed": true,
+          "x": 120,
+          "y": 330
+        },
+        {
+          "_id": "E",
+          "index": 4,
+          "label": "Case E",
+          "Region": "South",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-05",
+          "Latitude": 33.800000000000004,
+          "Longitude": -84.352,
+          "seq": "ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": false,
+          "visible": false,
+          "fixed": true,
+          "x": 300,
+          "y": 330
+        },
+        {
+          "_id": "F",
+          "index": 5,
+          "label": "Case F",
+          "Region": "South",
+          "Ward": "Ward 2",
+          "Collection_Date": "2026-01-06",
+          "Latitude": 33.815000000000005,
+          "Longitude": -84.34,
+          "seq": null,
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": false,
+          "visible": false,
+          "fixed": true,
+          "x": 480,
+          "y": 330
+        }
+      ],
+      "links": [
+        {
+          "id": "A-B",
+          "index": 0,
+          "source": "A",
+          "target": "B",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 1,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "A-C",
+          "index": 1,
+          "source": "A",
+          "target": "C",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 2,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "A-D",
+          "index": 2,
+          "source": "A",
+          "target": "D",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 6,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "A-E",
+          "index": 3,
+          "source": "A",
+          "target": "E",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 7,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "B-C",
+          "index": 4,
+          "source": "B",
+          "target": "C",
+          "origin": [
+            "Genetic Distance",
+            "Field contacts"
+          ],
+          "_originAll": [
+            "Genetic Distance",
+            "Field contacts"
+          ],
+          "distance": 3,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Contact and genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "B-D",
+          "index": 5,
+          "source": "B",
+          "target": "D",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 7,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "B-E",
+          "index": 6,
+          "source": "B",
+          "target": "E",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 8,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "C-D",
+          "index": 7,
+          "source": "C",
+          "target": "D",
+          "origin": [
+            "Genetic Distance",
+            "Field contacts"
+          ],
+          "_originAll": [
+            "Genetic Distance",
+            "Field contacts"
+          ],
+          "distance": 8,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Contact and genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "C-E",
+          "index": 8,
+          "source": "C",
+          "target": "E",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 9,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "D-E",
+          "index": 9,
+          "source": "D",
+          "target": "E",
+          "origin": [
+            "Genetic Distance"
+          ],
+          "_originAll": [
+            "Genetic Distance"
+          ],
+          "distance": 1,
+          "hasDistance": true,
+          "distanceOrigin": "Genetic Distance",
+          "distanceOrigins": [
+            "Genetic Distance"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "E-F",
+          "source": "E",
+          "target": "F",
+          "origin": [
+            "Field contacts"
+          ],
+          "_originAll": [
+            "Field contacts"
+          ],
+          "hasDistance": false,
+          "Relationship": "Household",
+          "directed": false,
+          "visible": false,
+          "index": 10
+        },
+        {
+          "id": "A-F",
+          "source": "A",
+          "target": "F",
+          "origin": [
+            "Imported relationships"
+          ],
+          "_originAll": [
+            "Imported relationships"
+          ],
+          "hasDistance": false,
+          "Relationship": "Shared venue",
+          "directed": false,
+          "visible": false,
+          "index": 11
+        }
+      ],
+      "clusters": [],
+      "nodeFields": [
+        "_id",
+        "index",
+        "label",
+        "Region",
+        "Ward",
+        "Collection_Date",
+        "Latitude",
+        "Longitude",
+        "seq",
+        "origin",
+        "selected",
+        "visible",
+        "fixed",
+        "x",
+        "y",
+        "cluster",
+        "degree"
+      ],
+      "linkFields": [
+        "id",
+        "index",
+        "source",
+        "target",
+        "origin",
+        "_originAll",
+        "distance",
+        "hasDistance",
+        "distanceOrigin",
+        "distanceOrigins",
+        "Relationship",
+        "directed",
+        "nn",
+        "visible"
+      ],
+      "clusterFields": [
+        "id",
+        "size"
+      ],
+      "nodeExclusions": [],
+      "reference": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+      "geoJSON": [],
+      "geoJSONLayerName": []
+    },
+    "files": [
+      {
+        "name": "nodes.csv",
+        "extension": "csv",
+        "contents": "_id,label,Region,Ward,Collection_Date,Latitude,Longitude,seq\nA,Case A,North,Ward 1,2026-01-01,33.74,-84.4,ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nB,Case B,North,Ward 2,2026-01-02,33.755,-84.388,TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nC,Case C,North,Ward 1,2026-01-03,33.77,-84.376,AAATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nD,Case D,South,Ward 2,2026-01-04,33.785000000000004,-84.364,ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nE,Case E,South,Ward 1,2026-01-05,33.800000000000004,-84.352,ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nF,Case F,South,Ward 2,2026-01-06,33.815000000000005,-84.34,\n"
+      },
+      {
+        "name": "genetic-distances.csv",
+        "extension": "csv",
+        "contents": "source,target,distance\nA,B,1\nA,C,2\nA,D,6\nA,E,7\nB,C,3\nB,D,7\nB,E,8\nC,D,8\nC,E,9\nD,E,1\n"
+      },
+      {
+        "name": "contacts.csv",
+        "extension": "csv",
+        "contents": "source,target,Relationship\nB,C,Interview\nC,D,Workplace\nE,F,Household\n"
+      },
+      {
+        "name": "imported-relationships.csv",
+        "extension": "csv",
+        "contents": "source,target,Relationship\nA,F,Shared venue\n"
+      }
+    ],
+    "state": {
+      "timeStart": 0,
+      "timeEnd": 1798761600000,
+      "timeTarget": null,
+      "networkSubsetFilter": {
+        "node": {
+          "enabled": true,
+          "field": "Region",
+          "operator": "equals",
+          "value": "North"
+        },
+        "link": {
+          "enabled": false,
+          "field": "None",
+          "operator": "equals",
+          "value": ""
+        }
+      }
+    },
+    "style": {
+      "linkAlphas": [
+        1,
+        1
+      ],
+      "linkColors": [
+        "#a6cee3",
+        "#1f78b4",
+        "#b2df8a",
+        "#33a02c",
+        "#fb9a99",
+        "#e31a1c",
+        "#fdbf6f",
+        "#ff7f00",
+        "#cab2d6",
+        "#6a3d9a",
+        "#ffff99",
+        "#b15928"
+      ],
+      "linkValueNames": {},
+      "nodeAlphas": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "nodeColors": [
+        "#3998f5",
+        "#f22020",
+        "#b732cc",
+        "#f47a22",
+        "#0ec434",
+        "#96341c",
+        "#8ad8e8",
+        "#f07cab",
+        "#235b54",
+        "#ffcba5",
+        "#772b9d",
+        "#29bdab",
+        "#ffc413",
+        "#d30b94",
+        "#201923",
+        "#7dfc00",
+        "#3750db",
+        "#946aa2",
+        "#edeff3",
+        "#fcff5d",
+        "#632819",
+        "#228c68",
+        "#277da7",
+        "#37294f",
+        "#991919",
+        "#e68f66",
+        "#c3a5b4",
+        "#2f2aa0",
+        "#c56133",
+        "#5d4c86"
+      ],
+      "nodeColorsTable": {},
+      "nodeColorsTableHistory": {},
+      "nodeColorsTableKeys": {},
+      "linkColorsTable": {},
+      "linkColorsTableKeys": {},
+      "nodeSymbols": [
+        "symbolCircle",
+        "symbolTriangle",
+        "symbolDiamond",
+        "symbolSquare",
+        "symbolStar",
+        "symbolCross",
+        "symbolWye",
+        "symbolTriangleDown",
+        "symbolTriangleLeft",
+        "symbolTriangleRight",
+        "symbolDiamondAlt",
+        "symbolDiamondSquare",
+        "symbolPentagon",
+        "symbolHexagon",
+        "symbolHexagonAlt",
+        "symbolOctagon",
+        "symbolOctagonAlt",
+        "symbolX"
+      ],
+      "nodeSymbolsTable": {},
+      "nodeSymbolsTableKeys": {},
+      "originalNodeSymbolValues": [
+        "Person",
+        "Place"
+      ],
+      "nodeSymbol": {},
+      "nodeValueNames": {},
+      "polygonAlphas": [
+        0.5
+      ],
+      "polygonColors": [
+        "#353cac",
+        "#fdbe3d",
+        "#41ba97",
+        "#9e0f1e",
+        "#303030",
+        "#62a5e4",
+        "#a13eda",
+        "#f4e41c",
+        "#75d054",
+        "#f22020"
+      ],
+      "polygonValueNames": {},
+      "overwrite": {},
+      "widgets": {
+        "3DNet-link-tooltip-variable": "None",
+        "3DNet-link-transparency": 0,
+        "3DNet-link-width": 1.6,
+        "3DNet-node-tooltip-variable": "_id",
+        "3DNet-node-radius": 4,
+        "3DNet-node-radius-variable": "None",
+        "align-sw": false,
+        "align-none": true,
+        "ambiguity-resolution-strategy": "AVERAGE",
+        "ambiguity-threshold": 0.015,
+        "background-color": "#ffffff",
+        "background-color-contrast": "#000000",
+        "bubble-x": "None",
+        "bubble-y": "None",
+        "bubble-charge": 1.5,
+        "bubble-size": 5,
+        "choropleth-aggregate-as": "states",
+        "choropleth-aggregate-on": "None",
+        "choropleth-basemap-show": false,
+        "choropleth-color-high": "#800026",
+        "choropleth-color-low": "#ffffcc",
+        "choropleth-color-medium": "#fd8d3c",
+        "choropleth-satellite-show": false,
+        "choropleth-transparency": 0.3,
+        "cluster-minimum-size": 1,
+        "default-distance-metric": "snps",
+        "default-view": "2d_network",
+        "filtering-epsilon": -8,
+        "flow-showNodes": "selected",
+        "globe-countries-show": false,
+        "globe-field-lat": "None",
+        "globe-field-lon": "None",
+        "globe-field-tract": "None",
+        "globe-field-zipcode": "None",
+        "globe-field-county": "None",
+        "globe-field-state": "None",
+        "globe-field-country": "None",
+        "globe-link-show": true,
+        "globe-link-transparency": 0,
+        "globe-node-jitter": -2,
+        "globe-node-show": true,
+        "globe-node-transparency": 0,
+        "globe-stars-show": true,
+        "heatmap-invertX": false,
+        "heatmap-invertY": false,
+        "heatmap-color-high": "#a50026",
+        "heatmap-color-medium": "#ffffbf",
+        "heatmap-color-low": "#313695",
+        "heatmap-axislabels-show": false,
+        "histogram-axis-x": true,
+        "histogram-scale-log": false,
+        "histogram-variable": "links-distance",
+        "infer-directionality-false": true,
+        "link-color": "#a6cee3",
+        "link-color-table-name-sort": "DESC",
+        "link-color-table-counts-sort": "DESC",
+        "link-color-table-counts": true,
+        "link-color-table-frequencies": false,
+        "link-color-variable": "origin",
+        "link-decimal-variable": 2,
+        "link-directed": false,
+        "link-bidirected": false,
+        "link-label-variable": "None",
+        "link-length": 0.125,
+        "link-opacity": 0,
+        "link-show-nn": false,
+        "link-sort-variable": "distance",
+        "link-threshold": 3,
+        "link-tooltip-variable": "None",
+        "link-width": 3,
+        "link-width-variable": "None",
+        "link-width-max": 27,
+        "link-width-min": 3,
+        "map-basemap-show": false,
+        "map-collapsing-on": true,
+        "map-counties-show": false,
+        "map-countries-show": true,
+        "map-field-lat": "Latitude",
+        "map-field-lon": "Longitude",
+        "map-field-tract": "None",
+        "map-field-zipcode": "None",
+        "map-field-county": "None",
+        "map-field-state": "None",
+        "map-field-country": "None",
+        "map-link-show": true,
+        "map-link-tooltip-variable": "None",
+        "map-link-transparency": 0,
+        "map-node-jitter": -2,
+        "map-node-show": true,
+        "map-node-tooltip-variable": "_id",
+        "map-node-transparency": 0,
+        "map-satellite-show": false,
+        "map-states-show": true,
+        "mst-computed": false,
+        "network-friction": 0.3,
+        "network-gravity": 0.05,
+        "network-link-strength": 0.125,
+        "node-border-width": 2,
+        "node-charge": 200,
+        "node-color": "#1f77b4",
+        "node-color-border": "#000000",
+        "node-color-table-name-sort": "DESC",
+        "node-color-table-counts-sort": "DESC",
+        "node-color-table-counts": true,
+        "node-color-table-frequencies": false,
+        "node-color-variable": "Region",
+        "node-highlight": false,
+        "node-label-size": 16,
+        "node-label-variable": "_id",
+        "node-radius": 20,
+        "node-radius-variable": "None",
+        "node-radius-min": 15,
+        "node-radius-max": 85,
+        "node-symbol": "symbolCircle",
+        "node-symbol-table-counts": true,
+        "node-symbol-table-frequencies": false,
+        "node-symbol-variable": "None",
+        "node-timeline-variable": "None",
+        "node-tooltip-variable": "_id",
+        "physics-tree-branch-type": "Straight",
+        "physics-tree-branch-length": 50,
+        "physics-tree-charge": 30,
+        "physics-tree-friction": 0.05,
+        "physics-tree-gravity": 0.05,
+        "physics-tree-lateral-strength": 0.025,
+        "physics-tree-layout": "Horizontal",
+        "physics-tree-node-label-variable": "None",
+        "physics-tree-tooltip": "id",
+        "physics-tree-type": "tree",
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": true,
+        "polygons-label-size": 16,
+        "polygons-show": true,
+        "reference-source-file": true,
+        "reference-source-first": false,
+        "reference-source-consensus": false,
+        "scatterplot-xVar": "index",
+        "scatterplot-yVar": "distance",
+        "scatterplot-logScale": false,
+        "scatterplot-showNodes": false,
+        "search-field": "_id",
+        "search-case-sensitive": false,
+        "search-whole-word": false,
+        "selected-color": "#ff8300",
+        "selected-color-contrast": "#000000",
+        "timeline-date-field": "None",
+        "epi-timeline-date-field": "Collection_Date",
+        "timeline-noncumulative": true,
+        "tree-animation-on": true,
+        "tree-branch-distances-hide": true,
+        "tree-branch-distance-size": 12,
+        "tree-branch-nodes-show": false,
+        "tree-horizontal-stretch": 1,
+        "tree-layout-vertical": false,
+        "tree-layout-horizontal": true,
+        "tree-layout-circular": false,
+        "tree-labels-align": false,
+        "tree-labels-show": false,
+        "tree-leaf-label-show": true,
+        "tree-leaf-label-size": 12,
+        "tree-leaf-node-radius-variable": "None",
+        "tree-leaf-node-show": true,
+        "tree-leaf-node-size": 5,
+        "tree-mode-square": true,
+        "tree-mode-smooth": false,
+        "tree-mode-straight": false,
+        "tree-round-true": false,
+        "tree-ruler-show": true,
+        "tree-tooltip-show": true,
+        "tree-type": "weighted",
+        "tree-vertical-stretch": 1,
+        "triangulate-false": true,
+        "loaded": true,
+        "network-node-collapse-enabled": false,
+        "link-origin-array-order": [
+          "Genetic Distance",
+          "Field contacts",
+          "Imported relationships"
+        ],
+        "node-color-table-show": "Hide",
+        "node-shape-table-show": "Hide",
+        "tree-bootstrap-custom-replicates": 10,
+        "tree-bootstrap-stop-when-stable": false
+      }
+    },
+    "layout": {
+      "type": "stack",
+      "content": [
+        {
+          "type": "2D Network"
+        }
+      ]
+    },
+    "timeline": 0,
+    "warnings": [],
+    "messages": [],
+    "meta": {
+      "anySequences": true
+    },
+    "network": {
+      "allPinned": true,
+      "timelinePinned": false
+    }
+  },
+  "tabs": [
+    {
+      "label": "2D Network",
+      "tabTitle": "2D Network",
+      "isActive": true
+    },
+    {
+      "label": "Table",
+      "tabTitle": "Table",
+      "isActive": false
+    }
+  ],
+  "dashboardLayout": {
+    "root": {
+      "type": "row",
+      "content": [
+        {
+          "type": "stack",
+          "size": "50%",
+          "activeItemIndex": 0,
+          "content": [
+            {
+              "type": "component",
+              "componentType": "2D Network",
+              "title": "2D Network"
+            }
+          ]
+        },
+        {
+          "type": "stack",
+          "size": "50%",
+          "activeItemIndex": 0,
+          "content": [
+            {
+              "type": "component",
+              "componentType": "Table",
+              "title": "Table"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "investigation": {
+    "cohorts": [
+      {
+        "id": "cohort-left",
+        "name": "Left review",
+        "nodeIds": [
+          "A",
+          "B",
+          "D"
+        ]
+      },
+      {
+        "id": "cohort-right",
+        "name": "Right review",
+        "nodeIds": [
+          "B",
+          "D",
+          "E"
+        ]
+      }
+    ],
+    "selectedCohortIds": [
+      "cohort-left",
+      "cohort-right"
+    ],
+    "edgeLayers": [
+      {
+        "id": "source:Genetic Distance",
+        "source": "Genetic Distance",
+        "name": "Genetic Distance",
+        "enabled": true
+      },
+      {
+        "id": "source:Field contacts",
+        "source": "Field contacts",
+        "name": "Field contacts",
+        "enabled": true,
+        "color": "#e45756",
+        "opacity": 0.6
+      },
+      {
+        "id": "source:Imported relationships",
+        "source": "Imported relationships",
+        "name": "Imported relationships",
+        "enabled": true
+      }
+    ],
+    "annotations": [
+      {
+        "id": "note-investigation",
+        "target": {
+          "type": "investigation"
+        },
+        "text": "Synthetic methods note: <check sources>. All people, events and relationships are fictional.",
+        "createdAt": "2026-10-27T13:03:46.288Z",
+        "updatedAt": "2026-10-27T13:03:46.288Z"
+      },
+      {
+        "id": "note-node-A",
+        "target": {
+          "type": "node",
+          "id": "A"
+        },
+        "text": "Review case A.",
+        "createdAt": "2026-10-27T13:03:46.288Z",
+        "updatedAt": "2026-10-27T13:03:46.288Z"
+      },
+      {
+        "id": "note-edge-CD",
+        "target": {
+          "type": "edge",
+          "id": "C-D"
+        },
+        "text": "CD remains eligible through field contacts above the genetic threshold.",
+        "createdAt": "2026-10-27T13:03:46.288Z",
+        "updatedAt": "2026-10-27T13:03:46.288Z"
+      },
+      {
+        "id": "note-orphan",
+        "target": {
+          "type": "cohort",
+          "id": "deleted-review-cohort"
+        },
+        "text": "Retained note for a deleted synthetic review cohort.",
+        "createdAt": "2026-10-27T13:03:46.288Z",
+        "updatedAt": "2026-10-27T13:03:46.288Z"
+      }
+    ],
+    "scopes": {
+      "network-statistics": "cohort"
+    },
+    "calculations": {
+      "network-statistics": {
+        "id": "fee38044-ae4d-4ce1-967f-106802bee858",
+        "operation": "network-statistics",
+        "scope": "cohort",
+        "cohortIds": [
+          "cohort-left",
+          "cohort-right"
+        ],
+        "nodeIds": [
+          "A",
+          "B",
+          "D",
+          "E"
+        ],
+        "edgeIds": [
+          "A-B",
+          "D-E"
+        ],
+        "parameters": {
+          "operation": "network-statistics",
+          "default-distance-metric": "snps",
+          "filtering-epsilon": -8,
+          "link-show-nn": false,
+          "link-sort-variable": "distance",
+          "link-threshold": 3,
+          "disabledSources": [],
+          "selectedNodeIds": [
+            "A",
+            "B",
+            "D"
+          ],
+          "__scopeOptions": {
+            "sequence": false,
+            "sweep": false,
+            "unpruned": false,
+            "parameters": {}
+          }
+        },
+        "inputs": {
+          "nodes": [
+            {
+              "_id": "A",
+              "index": 0,
+              "label": "Case A",
+              "Region": "North",
+              "Ward": "Ward 1",
+              "Collection_Date": "2026-01-01",
+              "Latitude": 33.74,
+              "Longitude": -84.4,
+              "seq": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+              "origin": [
+                "nodes.csv"
+              ],
+              "selected": true,
+              "visible": true,
+              "fixed": true,
+              "x": 120,
+              "y": 150
+            },
+            {
+              "_id": "B",
+              "index": 1,
+              "label": "Case B",
+              "Region": "North",
+              "Ward": "Ward 2",
+              "Collection_Date": "2026-01-02",
+              "Latitude": 33.755,
+              "Longitude": -84.388,
+              "seq": "TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+              "origin": [
+                "nodes.csv"
+              ],
+              "selected": true,
+              "visible": true,
+              "fixed": true,
+              "x": 300,
+              "y": 150
+            },
+            {
+              "_id": "D",
+              "index": 2,
+              "label": "Case D",
+              "Region": "South",
+              "Ward": "Ward 2",
+              "Collection_Date": "2026-01-04",
+              "Latitude": 33.785000000000004,
+              "Longitude": -84.364,
+              "seq": "ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+              "origin": [
+                "nodes.csv"
+              ],
+              "selected": true,
+              "visible": false,
+              "fixed": true,
+              "x": 120,
+              "y": 330
+            },
+            {
+              "_id": "E",
+              "index": 3,
+              "label": "Case E",
+              "Region": "South",
+              "Ward": "Ward 1",
+              "Collection_Date": "2026-01-05",
+              "Latitude": 33.800000000000004,
+              "Longitude": -84.352,
+              "seq": "ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+              "origin": [
+                "nodes.csv"
+              ],
+              "selected": false,
+              "visible": false,
+              "fixed": true,
+              "x": 300,
+              "y": 330
+            }
+          ],
+          "links": [
+            {
+              "id": "A-B",
+              "index": 0,
+              "source": "A",
+              "target": "B",
+              "origin": [
+                "Genetic Distance"
+              ],
+              "_originAll": [
+                "Genetic Distance"
+              ],
+              "distance": 1,
+              "hasDistance": true,
+              "distanceOrigin": "Genetic Distance",
+              "distanceOrigins": [
+                "Genetic Distance"
+              ],
+              "Relationship": "Genetic",
+              "directed": false,
+              "nn": false,
+              "visible": true
+            },
+            {
+              "id": "D-E",
+              "index": 9,
+              "source": "D",
+              "target": "E",
+              "origin": [
+                "Genetic Distance"
+              ],
+              "_originAll": [
+                "Genetic Distance"
+              ],
+              "distance": 1,
+              "hasDistance": true,
+              "distanceOrigin": "Genetic Distance",
+              "distanceOrigins": [
+                "Genetic Distance"
+              ],
+              "Relationship": "Genetic",
+              "directed": false,
+              "nn": false,
+              "visible": true
+            }
+          ]
+        },
+        "inputChecksum": "28d64b4899fdb29734201d061c21d8c37b04f8c4d6d5d0dfce389edbb854b24a",
+        "currentInputKey": "514:1683316445:2460626115",
+        "startedAt": "2026-10-27T13:03:46.293Z",
+        "completedAt": "2026-10-27T13:03:46.293Z",
+        "software": {
+          "name": "MicrobeTrace",
+          "version": "2.4.0",
+          "commit": "development",
+          "buildDate": "2026-10-27T13:03:46.187Z"
+        },
+        "status": "completed",
+        "output": {
+          "sampledSourceNodeIds": [
+            "A",
+            "B",
+            "D",
+            "E"
+          ],
+          "summary": {
+            "nodeCount": 4,
+            "linkCount": 2,
+            "selectedNodeCount": 3,
+            "componentCount": 2,
+            "clusterCount": 2,
+            "singletonCount": 0,
+            "largestComponentSize": 2,
+            "componentMetrics": {
+              "nodeCount": 4,
+              "componentCount": 2,
+              "clusterCount": 2,
+              "singletonCount": 0,
+              "clusteredNodeCount": 4,
+              "largestClusterSize": 2,
+              "secondLargestClusterSize": 2,
+              "largestClusterFraction": 0.5,
+              "secondLargestClusterFraction": 0.5,
+              "clusteredFraction": 1,
+              "singletonFraction": 0,
+              "giniCoefficient": 0,
+              "meanClusterSize": 2,
+              "medianClusterSize": 2,
+              "largestToMeanClusterRatio": 1,
+              "largestToMedianClusterRatio": 1,
+              "l2ToL1Ratio": 1
+            },
+            "density": 0.3333333333333333,
+            "averageDegree": 1,
+            "maxDegree": 1,
+            "averageLocalClusteringCoefficient": 0,
+            "transitivity": 0,
+            "averagePathLength": 1,
+            "diameter": 1,
+            "approximateBetweenness": false,
+            "approximatePathMetrics": false,
+            "sampledSourceCount": 4,
+            "metricLabel": "distance",
+            "threshold": 3
+          },
+          "degreeDistribution": [
+            {
+              "degree": 1,
+              "nodeCount": 4,
+              "fraction": 1
+            }
+          ],
+          "centrality": [
+            {
+              "nodeId": "A",
+              "degree": 1,
+              "normalizedDegree": 0.3333333333333333,
+              "betweenness": 0,
+              "normalizedBetweenness": 0,
+              "componentId": 0
+            },
+            {
+              "nodeId": "B",
+              "degree": 1,
+              "normalizedDegree": 0.3333333333333333,
+              "betweenness": 0,
+              "normalizedBetweenness": 0,
+              "componentId": 0
+            },
+            {
+              "nodeId": "D",
+              "degree": 1,
+              "normalizedDegree": 0.3333333333333333,
+              "betweenness": 0,
+              "normalizedBetweenness": 0,
+              "componentId": 1
+            },
+            {
+              "nodeId": "E",
+              "degree": 1,
+              "normalizedDegree": 0.3333333333333333,
+              "betweenness": 0,
+              "normalizedBetweenness": 0,
+              "componentId": 1
+            }
+          ],
+          "components": [
+            {
+              "componentId": 0,
+              "nodeCount": 2,
+              "linkCount": 1,
+              "density": 1,
+              "averageDegree": 1,
+              "maxDegree": 1,
+              "diameter": 1,
+              "diameterApproximate": false,
+              "memberIds": [
+                "A",
+                "B"
+              ]
+            },
+            {
+              "componentId": 1,
+              "nodeCount": 2,
+              "linkCount": 1,
+              "density": 1,
+              "averageDegree": 1,
+              "maxDegree": 1,
+              "diameter": 1,
+              "diameterApproximate": false,
+              "memberIds": [
+                "D",
+                "E"
+              ]
+            }
+          ],
+          "generatedAtIso": "2026-10-27T13:03:46.293Z",
+          "exactNodeLimit": 2000,
+          "exactLinkLimit": 10000
+        }
+      }
+    },
+    "viewStates": {},
+    "threshold": {
+      "value": 3,
+      "metric": "distance",
+      "distanceMetric": "snps",
+      "displayFormat": "decimal",
+      "nearestNeighbor": false
+    },
+    "filters": {
+      "state": {
+        "timeStart": 0,
+        "timeEnd": 1798761600000,
+        "timeTarget": null,
+        "networkSubsetFilter": {
+          "node": {
+            "enabled": true,
+            "field": "Region",
+            "operator": "equals",
+            "value": "North"
+          },
+          "link": {
+            "enabled": false,
+            "field": "None",
+            "operator": "equals",
+            "value": ""
+          }
+        }
+      },
+      "exclusions": [],
+      "minimumClusterSize": 1,
+      "tables": {}
+    },
+    "layout": {
+      "tabs": [
+        {
+          "label": "2D Network",
+          "tabTitle": "2D Network",
+          "isActive": true
+        },
+        {
+          "label": "Table",
+          "tabTitle": "Table",
+          "isActive": false
+        }
+      ],
+      "dashboardLayout": {
+        "root": {
+          "type": "row",
+          "content": [
+            {
+              "type": "stack",
+              "size": "50%",
+              "activeItemIndex": 0,
+              "content": [
+                {
+                  "type": "component",
+                  "componentType": "2D Network",
+                  "title": "2D Network"
+                }
+              ]
+            },
+            {
+              "type": "stack",
+              "size": "50%",
+              "activeItemIndex": 0,
+              "content": [
+                {
+                  "type": "component",
+                  "componentType": "Table",
+                  "title": "Table"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "legacyLayout": {
+        "type": "stack",
+        "content": [
+          {
+            "type": "2D Network"
+          }
+        ]
+      },
+      "camera": null,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 120,
+          "y": 150,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "B",
+          "x": 300,
+          "y": 150,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "C",
+          "x": 480,
+          "y": 150,
+          "fixed": true,
+          "selected": false
+        },
+        {
+          "id": "D",
+          "x": 120,
+          "y": 330,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "E",
+          "x": 300,
+          "y": 330,
+          "fixed": true,
+          "selected": false
+        },
+        {
+          "id": "F",
+          "x": 480,
+          "y": 330,
+          "fixed": true,
+          "selected": false
+        }
+      ],
+      "widgets": {
+        "3DNet-link-tooltip-variable": "None",
+        "3DNet-link-transparency": 0,
+        "3DNet-link-width": 1.6,
+        "3DNet-node-tooltip-variable": "_id",
+        "3DNet-node-radius": 4,
+        "3DNet-node-radius-variable": "None",
+        "align-sw": false,
+        "align-none": true,
+        "ambiguity-resolution-strategy": "AVERAGE",
+        "ambiguity-threshold": 0.015,
+        "background-color": "#ffffff",
+        "background-color-contrast": "#000000",
+        "bubble-x": "None",
+        "bubble-y": "None",
+        "bubble-charge": 1.5,
+        "bubble-size": 5,
+        "choropleth-aggregate-as": "states",
+        "choropleth-aggregate-on": "None",
+        "choropleth-basemap-show": false,
+        "choropleth-color-high": "#800026",
+        "choropleth-color-low": "#ffffcc",
+        "choropleth-color-medium": "#fd8d3c",
+        "choropleth-satellite-show": false,
+        "choropleth-transparency": 0.3,
+        "cluster-minimum-size": 1,
+        "default-distance-metric": "snps",
+        "default-view": "2d_network",
+        "filtering-epsilon": -8,
+        "flow-showNodes": "selected",
+        "globe-countries-show": false,
+        "globe-field-lat": "None",
+        "globe-field-lon": "None",
+        "globe-field-tract": "None",
+        "globe-field-zipcode": "None",
+        "globe-field-county": "None",
+        "globe-field-state": "None",
+        "globe-field-country": "None",
+        "globe-link-show": true,
+        "globe-link-transparency": 0,
+        "globe-node-jitter": -2,
+        "globe-node-show": true,
+        "globe-node-transparency": 0,
+        "globe-stars-show": true,
+        "heatmap-invertX": false,
+        "heatmap-invertY": false,
+        "heatmap-color-high": "#a50026",
+        "heatmap-color-medium": "#ffffbf",
+        "heatmap-color-low": "#313695",
+        "heatmap-axislabels-show": false,
+        "histogram-axis-x": true,
+        "histogram-scale-log": false,
+        "histogram-variable": "links-distance",
+        "infer-directionality-false": true,
+        "link-color": "#a6cee3",
+        "link-color-table-name-sort": "DESC",
+        "link-color-table-counts-sort": "DESC",
+        "link-color-table-counts": true,
+        "link-color-table-frequencies": false,
+        "link-color-variable": "origin",
+        "link-decimal-variable": 2,
+        "link-directed": false,
+        "link-bidirected": false,
+        "link-label-variable": "None",
+        "link-length": 0.125,
+        "link-opacity": 0,
+        "link-show-nn": false,
+        "link-sort-variable": "distance",
+        "link-threshold": 3,
+        "link-tooltip-variable": "None",
+        "link-width": 3,
+        "link-width-variable": "None",
+        "link-width-max": 27,
+        "link-width-min": 3,
+        "map-basemap-show": false,
+        "map-collapsing-on": true,
+        "map-counties-show": false,
+        "map-countries-show": true,
+        "map-field-lat": "Latitude",
+        "map-field-lon": "Longitude",
+        "map-field-tract": "None",
+        "map-field-zipcode": "None",
+        "map-field-county": "None",
+        "map-field-state": "None",
+        "map-field-country": "None",
+        "map-link-show": true,
+        "map-link-tooltip-variable": "None",
+        "map-link-transparency": 0,
+        "map-node-jitter": -2,
+        "map-node-show": true,
+        "map-node-tooltip-variable": "_id",
+        "map-node-transparency": 0,
+        "map-satellite-show": false,
+        "map-states-show": true,
+        "mst-computed": false,
+        "network-friction": 0.3,
+        "network-gravity": 0.05,
+        "network-link-strength": 0.125,
+        "node-border-width": 2,
+        "node-charge": 200,
+        "node-color": "#1f77b4",
+        "node-color-border": "#000000",
+        "node-color-table-name-sort": "DESC",
+        "node-color-table-counts-sort": "DESC",
+        "node-color-table-counts": true,
+        "node-color-table-frequencies": false,
+        "node-color-variable": "Region",
+        "node-highlight": false,
+        "node-label-size": 16,
+        "node-label-variable": "_id",
+        "node-radius": 20,
+        "node-radius-variable": "None",
+        "node-radius-min": 15,
+        "node-radius-max": 85,
+        "node-symbol": "symbolCircle",
+        "node-symbol-table-counts": true,
+        "node-symbol-table-frequencies": false,
+        "node-symbol-variable": "None",
+        "node-timeline-variable": "None",
+        "node-tooltip-variable": "_id",
+        "physics-tree-branch-type": "Straight",
+        "physics-tree-branch-length": 50,
+        "physics-tree-charge": 30,
+        "physics-tree-friction": 0.05,
+        "physics-tree-gravity": 0.05,
+        "physics-tree-lateral-strength": 0.025,
+        "physics-tree-layout": "Horizontal",
+        "physics-tree-node-label-variable": "None",
+        "physics-tree-tooltip": "id",
+        "physics-tree-type": "tree",
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": true,
+        "polygons-label-size": 16,
+        "polygons-show": true,
+        "reference-source-file": true,
+        "reference-source-first": false,
+        "reference-source-consensus": false,
+        "scatterplot-xVar": "index",
+        "scatterplot-yVar": "distance",
+        "scatterplot-logScale": false,
+        "scatterplot-showNodes": false,
+        "search-field": "_id",
+        "search-case-sensitive": false,
+        "search-whole-word": false,
+        "selected-color": "#ff8300",
+        "selected-color-contrast": "#000000",
+        "timeline-date-field": "None",
+        "epi-timeline-date-field": "Collection_Date",
+        "timeline-noncumulative": true,
+        "tree-animation-on": true,
+        "tree-branch-distances-hide": true,
+        "tree-branch-distance-size": 12,
+        "tree-branch-nodes-show": false,
+        "tree-horizontal-stretch": 1,
+        "tree-layout-vertical": false,
+        "tree-layout-horizontal": true,
+        "tree-layout-circular": false,
+        "tree-labels-align": false,
+        "tree-labels-show": false,
+        "tree-leaf-label-show": true,
+        "tree-leaf-label-size": 12,
+        "tree-leaf-node-radius-variable": "None",
+        "tree-leaf-node-show": true,
+        "tree-leaf-node-size": 5,
+        "tree-mode-square": true,
+        "tree-mode-smooth": false,
+        "tree-mode-straight": false,
+        "tree-round-true": false,
+        "tree-ruler-show": true,
+        "tree-tooltip-show": true,
+        "tree-type": "weighted",
+        "tree-vertical-stretch": 1,
+        "triangulate-false": true,
+        "loaded": true,
+        "network-node-collapse-enabled": false,
+        "link-origin-array-order": [
+          "Genetic Distance",
+          "Field contacts",
+          "Imported relationships"
+        ],
+        "node-color-table-show": "Hide",
+        "node-shape-table-show": "Hide",
+        "tree-bootstrap-custom-replicates": 10,
+        "tree-bootstrap-stop-when-stable": false
+      },
+      "network": {
+        "allPinned": true,
+        "timelinePinned": false
+      }
+    },
+    "grouping": {
+      "widgets": {
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": true,
+        "polygons-label-size": 16,
+        "polygons-show": true,
+        "network-node-collapse-enabled": false
+      },
+      "groups": [
+        {
+          "id": "mt-group:North",
+          "label": "North",
+          "field": "Region",
+          "nodeIds": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        {
+          "id": "mt-group:South",
+          "label": "South",
+          "field": "Region",
+          "nodeIds": [
+            "D",
+            "E",
+            "F"
+          ]
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "schemaVersion": 2,
+    "snapshotId": "8dd225ea-088e-4345-b36c-871c507e24fb",
+    "capturedAt": "2026-10-27T13:03:46.294Z",
+    "stateChecksum": "cda1c870a9fc104a7680cdea34e5a52667563d87b71f5d279265eb0a9dd0bcc0",
+    "software": {
+      "name": "MicrobeTrace",
+      "version": "2.4.0",
+      "commit": "development",
+      "buildDate": "2026-10-27T13:03:46.187Z"
+    },
+    "sources": [
+      {
+        "name": "nodes.csv",
+        "sha256": "625efce18482e64b6790e37a5cd94991a3817c3be92ab7c6e4375ce42227d487",
+        "representation": "canonical saved content (including binary encoding)"
+      },
+      {
+        "name": "genetic-distances.csv",
+        "sha256": "d83bfbbfda555e8e229744aa7806d2fc28b2635c43452baf6448b39e2fb78751",
+        "representation": "canonical saved content (including binary encoding)"
+      },
+      {
+        "name": "contacts.csv",
+        "sha256": "8268f45b22d2ec71475131262e0995150a4a9797d8dc4d814fdd403c1b5583fc",
+        "representation": "canonical saved content (including binary encoding)"
+      },
+      {
+        "name": "imported-relationships.csv",
+        "sha256": "f7f566faf31b53510e1a9c9f32d7a2d6669e153a5387421d93860de5286d4d42",
+        "representation": "canonical saved content (including binary encoding)"
+      }
+    ],
+    "counts": {
+      "nodes": 6,
+      "edges": 12,
+      "visibleNodes": 3,
+      "visibleEdges": 3
+    },
+    "investigation": {
+      "cohorts": [
+        {
+          "id": "cohort-left",
+          "name": "Left review",
+          "nodeIds": [
+            "A",
+            "B",
+            "D"
+          ]
+        },
+        {
+          "id": "cohort-right",
+          "name": "Right review",
+          "nodeIds": [
+            "B",
+            "D",
+            "E"
+          ]
+        }
+      ],
+      "selectedCohortIds": [
+        "cohort-left",
+        "cohort-right"
+      ],
+      "edgeLayers": [
+        {
+          "id": "source:Genetic Distance",
+          "source": "Genetic Distance",
+          "name": "Genetic Distance",
+          "enabled": true
+        },
+        {
+          "id": "source:Field contacts",
+          "source": "Field contacts",
+          "name": "Field contacts",
+          "enabled": true,
+          "color": "#e45756",
+          "opacity": 0.6
+        },
+        {
+          "id": "source:Imported relationships",
+          "source": "Imported relationships",
+          "name": "Imported relationships",
+          "enabled": true
+        }
+      ],
+      "annotations": [
+        {
+          "id": "note-investigation",
+          "target": {
+            "type": "investigation"
+          },
+          "text": "Synthetic methods note: <check sources>. All people, events and relationships are fictional.",
+          "createdAt": "2026-10-27T13:03:46.288Z",
+          "updatedAt": "2026-10-27T13:03:46.288Z"
+        },
+        {
+          "id": "note-node-A",
+          "target": {
+            "type": "node",
+            "id": "A"
+          },
+          "text": "Review case A.",
+          "createdAt": "2026-10-27T13:03:46.288Z",
+          "updatedAt": "2026-10-27T13:03:46.288Z"
+        },
+        {
+          "id": "note-edge-CD",
+          "target": {
+            "type": "edge",
+            "id": "C-D"
+          },
+          "text": "CD remains eligible through field contacts above the genetic threshold.",
+          "createdAt": "2026-10-27T13:03:46.288Z",
+          "updatedAt": "2026-10-27T13:03:46.288Z"
+        },
+        {
+          "id": "note-orphan",
+          "target": {
+            "type": "cohort",
+            "id": "deleted-review-cohort"
+          },
+          "text": "Retained note for a deleted synthetic review cohort.",
+          "createdAt": "2026-10-27T13:03:46.288Z",
+          "updatedAt": "2026-10-27T13:03:46.288Z"
+        }
+      ],
+      "scopes": {
+        "network-statistics": "cohort"
+      },
+      "calculations": {
+        "network-statistics": {
+          "id": "fee38044-ae4d-4ce1-967f-106802bee858",
+          "operation": "network-statistics",
+          "scope": "cohort",
+          "cohortIds": [
+            "cohort-left",
+            "cohort-right"
+          ],
+          "nodeIds": [
+            "A",
+            "B",
+            "D",
+            "E"
+          ],
+          "edgeIds": [
+            "A-B",
+            "D-E"
+          ],
+          "parameters": {
+            "operation": "network-statistics",
+            "default-distance-metric": "snps",
+            "filtering-epsilon": -8,
+            "link-show-nn": false,
+            "link-sort-variable": "distance",
+            "link-threshold": 3,
+            "disabledSources": [],
+            "selectedNodeIds": [
+              "A",
+              "B",
+              "D"
+            ],
+            "__scopeOptions": {
+              "sequence": false,
+              "sweep": false,
+              "unpruned": false,
+              "parameters": {}
+            }
+          },
+          "inputChecksum": "28d64b4899fdb29734201d061c21d8c37b04f8c4d6d5d0dfce389edbb854b24a",
+          "currentInputKey": "514:1683316445:2460626115",
+          "startedAt": "2026-10-27T13:03:46.293Z",
+          "completedAt": "2026-10-27T13:03:46.293Z",
+          "software": {
+            "name": "MicrobeTrace",
+            "version": "2.4.0",
+            "commit": "development",
+            "buildDate": "2026-10-27T13:03:46.187Z"
+          },
+          "status": "completed",
+          "outputChecksum": "e443db623a05caa69df6caac20932809930144f9db355329046c802bd158d41c"
+        }
+      },
+      "viewStates": {},
+      "threshold": {
+        "value": 3,
+        "metric": "distance",
+        "distanceMetric": "snps",
+        "displayFormat": "decimal",
+        "nearestNeighbor": false
+      },
+      "filters": {
+        "state": {
+          "timeStart": 0,
+          "timeEnd": 1798761600000,
+          "timeTarget": null,
+          "networkSubsetFilter": {
+            "node": {
+              "enabled": true,
+              "field": "Region",
+              "operator": "equals",
+              "value": "North"
+            },
+            "link": {
+              "enabled": false,
+              "field": "None",
+              "operator": "equals",
+              "value": ""
+            }
+          }
+        },
+        "exclusions": [],
+        "minimumClusterSize": 1,
+        "tables": {}
+      },
+      "layout": {
+        "tabs": [
+          {
+            "label": "2D Network",
+            "tabTitle": "2D Network",
+            "isActive": true
+          },
+          {
+            "label": "Table",
+            "tabTitle": "Table",
+            "isActive": false
+          }
+        ],
+        "dashboardLayout": {
+          "root": {
+            "type": "row",
+            "content": [
+              {
+                "type": "stack",
+                "size": "50%",
+                "activeItemIndex": 0,
+                "content": [
+                  {
+                    "type": "component",
+                    "componentType": "2D Network",
+                    "title": "2D Network"
+                  }
+                ]
+              },
+              {
+                "type": "stack",
+                "size": "50%",
+                "activeItemIndex": 0,
+                "content": [
+                  {
+                    "type": "component",
+                    "componentType": "Table",
+                    "title": "Table"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "legacyLayout": {
+          "type": "stack",
+          "content": [
+            {
+              "type": "2D Network"
+            }
+          ]
+        },
+        "camera": null,
+        "nodes": [
+          {
+            "id": "A",
+            "x": 120,
+            "y": 150,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "B",
+            "x": 300,
+            "y": 150,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "C",
+            "x": 480,
+            "y": 150,
+            "fixed": true,
+            "selected": false
+          },
+          {
+            "id": "D",
+            "x": 120,
+            "y": 330,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "E",
+            "x": 300,
+            "y": 330,
+            "fixed": true,
+            "selected": false
+          },
+          {
+            "id": "F",
+            "x": 480,
+            "y": 330,
+            "fixed": true,
+            "selected": false
+          }
+        ],
+        "widgets": {
+          "3DNet-link-tooltip-variable": "None",
+          "3DNet-link-transparency": 0,
+          "3DNet-link-width": 1.6,
+          "3DNet-node-tooltip-variable": "_id",
+          "3DNet-node-radius": 4,
+          "3DNet-node-radius-variable": "None",
+          "align-sw": false,
+          "align-none": true,
+          "ambiguity-resolution-strategy": "AVERAGE",
+          "ambiguity-threshold": 0.015,
+          "background-color": "#ffffff",
+          "background-color-contrast": "#000000",
+          "bubble-x": "None",
+          "bubble-y": "None",
+          "bubble-charge": 1.5,
+          "bubble-size": 5,
+          "choropleth-aggregate-as": "states",
+          "choropleth-aggregate-on": "None",
+          "choropleth-basemap-show": false,
+          "choropleth-color-high": "#800026",
+          "choropleth-color-low": "#ffffcc",
+          "choropleth-color-medium": "#fd8d3c",
+          "choropleth-satellite-show": false,
+          "choropleth-transparency": 0.3,
+          "cluster-minimum-size": 1,
+          "default-distance-metric": "snps",
+          "default-view": "2d_network",
+          "filtering-epsilon": -8,
+          "flow-showNodes": "selected",
+          "globe-countries-show": false,
+          "globe-field-lat": "None",
+          "globe-field-lon": "None",
+          "globe-field-tract": "None",
+          "globe-field-zipcode": "None",
+          "globe-field-county": "None",
+          "globe-field-state": "None",
+          "globe-field-country": "None",
+          "globe-link-show": true,
+          "globe-link-transparency": 0,
+          "globe-node-jitter": -2,
+          "globe-node-show": true,
+          "globe-node-transparency": 0,
+          "globe-stars-show": true,
+          "heatmap-invertX": false,
+          "heatmap-invertY": false,
+          "heatmap-color-high": "#a50026",
+          "heatmap-color-medium": "#ffffbf",
+          "heatmap-color-low": "#313695",
+          "heatmap-axislabels-show": false,
+          "histogram-axis-x": true,
+          "histogram-scale-log": false,
+          "histogram-variable": "links-distance",
+          "infer-directionality-false": true,
+          "link-color": "#a6cee3",
+          "link-color-table-name-sort": "DESC",
+          "link-color-table-counts-sort": "DESC",
+          "link-color-table-counts": true,
+          "link-color-table-frequencies": false,
+          "link-color-variable": "origin",
+          "link-decimal-variable": 2,
+          "link-directed": false,
+          "link-bidirected": false,
+          "link-label-variable": "None",
+          "link-length": 0.125,
+          "link-opacity": 0,
+          "link-show-nn": false,
+          "link-sort-variable": "distance",
+          "link-threshold": 3,
+          "link-tooltip-variable": "None",
+          "link-width": 3,
+          "link-width-variable": "None",
+          "link-width-max": 27,
+          "link-width-min": 3,
+          "map-basemap-show": false,
+          "map-collapsing-on": true,
+          "map-counties-show": false,
+          "map-countries-show": true,
+          "map-field-lat": "Latitude",
+          "map-field-lon": "Longitude",
+          "map-field-tract": "None",
+          "map-field-zipcode": "None",
+          "map-field-county": "None",
+          "map-field-state": "None",
+          "map-field-country": "None",
+          "map-link-show": true,
+          "map-link-tooltip-variable": "None",
+          "map-link-transparency": 0,
+          "map-node-jitter": -2,
+          "map-node-show": true,
+          "map-node-tooltip-variable": "_id",
+          "map-node-transparency": 0,
+          "map-satellite-show": false,
+          "map-states-show": true,
+          "mst-computed": false,
+          "network-friction": 0.3,
+          "network-gravity": 0.05,
+          "network-link-strength": 0.125,
+          "node-border-width": 2,
+          "node-charge": 200,
+          "node-color": "#1f77b4",
+          "node-color-border": "#000000",
+          "node-color-table-name-sort": "DESC",
+          "node-color-table-counts-sort": "DESC",
+          "node-color-table-counts": true,
+          "node-color-table-frequencies": false,
+          "node-color-variable": "Region",
+          "node-highlight": false,
+          "node-label-size": 16,
+          "node-label-variable": "_id",
+          "node-radius": 20,
+          "node-radius-variable": "None",
+          "node-radius-min": 15,
+          "node-radius-max": 85,
+          "node-symbol": "symbolCircle",
+          "node-symbol-table-counts": true,
+          "node-symbol-table-frequencies": false,
+          "node-symbol-variable": "None",
+          "node-timeline-variable": "None",
+          "node-tooltip-variable": "_id",
+          "physics-tree-branch-type": "Straight",
+          "physics-tree-branch-length": 50,
+          "physics-tree-charge": 30,
+          "physics-tree-friction": 0.05,
+          "physics-tree-gravity": 0.05,
+          "physics-tree-lateral-strength": 0.025,
+          "physics-tree-layout": "Horizontal",
+          "physics-tree-node-label-variable": "None",
+          "physics-tree-tooltip": "id",
+          "physics-tree-type": "tree",
+          "polygon-color": "#bbccee",
+          "polygon-color-table-name-sort": "DESC",
+          "polygon-color-table-counts-sort": "DESC",
+          "polygon-color-table-counts": true,
+          "polygon-color-table-frequencies": false,
+          "polygons-color-show": false,
+          "polygons-foci": "Region",
+          "polygons-gather-force": 0,
+          "polygons-label-show": true,
+          "polygons-label-size": 16,
+          "polygons-show": true,
+          "reference-source-file": true,
+          "reference-source-first": false,
+          "reference-source-consensus": false,
+          "scatterplot-xVar": "index",
+          "scatterplot-yVar": "distance",
+          "scatterplot-logScale": false,
+          "scatterplot-showNodes": false,
+          "search-field": "_id",
+          "search-case-sensitive": false,
+          "search-whole-word": false,
+          "selected-color": "#ff8300",
+          "selected-color-contrast": "#000000",
+          "timeline-date-field": "None",
+          "epi-timeline-date-field": "Collection_Date",
+          "timeline-noncumulative": true,
+          "tree-animation-on": true,
+          "tree-branch-distances-hide": true,
+          "tree-branch-distance-size": 12,
+          "tree-branch-nodes-show": false,
+          "tree-horizontal-stretch": 1,
+          "tree-layout-vertical": false,
+          "tree-layout-horizontal": true,
+          "tree-layout-circular": false,
+          "tree-labels-align": false,
+          "tree-labels-show": false,
+          "tree-leaf-label-show": true,
+          "tree-leaf-label-size": 12,
+          "tree-leaf-node-radius-variable": "None",
+          "tree-leaf-node-show": true,
+          "tree-leaf-node-size": 5,
+          "tree-mode-square": true,
+          "tree-mode-smooth": false,
+          "tree-mode-straight": false,
+          "tree-round-true": false,
+          "tree-ruler-show": true,
+          "tree-tooltip-show": true,
+          "tree-type": "weighted",
+          "tree-vertical-stretch": 1,
+          "triangulate-false": true,
+          "loaded": true,
+          "network-node-collapse-enabled": false,
+          "link-origin-array-order": [
+            "Genetic Distance",
+            "Field contacts",
+            "Imported relationships"
+          ],
+          "node-color-table-show": "Hide",
+          "node-shape-table-show": "Hide",
+          "tree-bootstrap-custom-replicates": 10,
+          "tree-bootstrap-stop-when-stable": false
+        },
+        "network": {
+          "allPinned": true,
+          "timelinePinned": false
+        }
+      },
+      "grouping": {
+        "widgets": {
+          "polygon-color": "#bbccee",
+          "polygon-color-table-name-sort": "DESC",
+          "polygon-color-table-counts-sort": "DESC",
+          "polygon-color-table-counts": true,
+          "polygon-color-table-frequencies": false,
+          "polygons-color-show": false,
+          "polygons-foci": "Region",
+          "polygons-gather-force": 0,
+          "polygons-label-show": true,
+          "polygons-label-size": 16,
+          "polygons-show": true,
+          "network-node-collapse-enabled": false
+        },
+        "groups": [
+          {
+            "id": "mt-group:North",
+            "label": "North",
+            "field": "Region",
+            "nodeIds": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          {
+            "id": "mt-group:South",
+            "label": "South",
+            "field": "Region",
+            "nodeIds": [
+              "D",
+              "E",
+              "F"
+            ]
+          }
+        ]
+      }
+    },
+    "historicalProvenance": "recorded"
+  }
+}

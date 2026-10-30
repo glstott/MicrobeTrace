@@ -1,0 +1,1538 @@
+{
+  "schemaVersion": 2,
+  "snapshotId": "345bf7ac-1f3e-4458-a83f-a4c893c212f0",
+  "session": {
+    "data": {
+      "nodes": [
+        {
+          "_id": "A",
+          "index": 0,
+          "label": "Case A",
+          "Region": "North",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-01",
+          "Latitude": 33.74,
+          "Longitude": -84.4,
+          "seq": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": true,
+          "fixed": true,
+          "x": 120,
+          "y": 150
+        },
+        {
+          "_id": "B",
+          "index": 1,
+          "label": "Case B",
+          "Region": "North",
+          "Ward": "Ward 2",
+          "Collection_Date": "2026-01-02",
+          "Latitude": 33.755,
+          "Longitude": -84.388,
+          "seq": "TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": true,
+          "fixed": true,
+          "x": 300,
+          "y": 150
+        },
+        {
+          "_id": "C",
+          "index": 2,
+          "label": "Case C",
+          "Region": "North",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-03",
+          "Latitude": 33.77,
+          "Longitude": -84.376,
+          "seq": "AAATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": false,
+          "visible": true,
+          "fixed": true,
+          "x": 480,
+          "y": 150
+        },
+        {
+          "_id": "D",
+          "index": 3,
+          "label": "Case D",
+          "Region": "South",
+          "Ward": "Ward 2",
+          "Collection_Date": "2026-01-04",
+          "Latitude": 33.785000000000004,
+          "Longitude": -84.364,
+          "seq": "ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": true,
+          "visible": true,
+          "fixed": true,
+          "x": 120,
+          "y": 330
+        },
+        {
+          "_id": "E",
+          "index": 4,
+          "label": "Case E",
+          "Region": "South",
+          "Ward": "Ward 1",
+          "Collection_Date": "2026-01-05",
+          "Latitude": 33.800000000000004,
+          "Longitude": -84.352,
+          "seq": "ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+          "origin": [
+            "nodes.csv"
+          ],
+          "selected": false,
+          "visible": true,
+          "fixed": true,
+          "x": 300,
+          "y": 330
+        }
+      ],
+      "links": [
+        {
+          "id": "A-B",
+          "index": 0,
+          "source": "A",
+          "target": "B",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 1,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "A-C",
+          "index": 1,
+          "source": "A",
+          "target": "C",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 2,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "A-D",
+          "index": 2,
+          "source": "A",
+          "target": "D",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "A-E",
+          "index": 3,
+          "source": "A",
+          "target": "E",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "B-C",
+          "index": 4,
+          "source": "B",
+          "target": "C",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 2,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Contact and genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        },
+        {
+          "id": "B-D",
+          "index": 5,
+          "source": "B",
+          "target": "D",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "B-E",
+          "index": 6,
+          "source": "B",
+          "target": "E",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "C-D",
+          "index": 7,
+          "source": "C",
+          "target": "D",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Contact and genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "C-E",
+          "index": 8,
+          "source": "C",
+          "target": "E",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 6.5,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": false
+        },
+        {
+          "id": "D-E",
+          "index": 9,
+          "source": "D",
+          "target": "E",
+          "origin": [
+            "tree.nwk"
+          ],
+          "_originAll": [
+            "tree.nwk"
+          ],
+          "distance": 1,
+          "hasDistance": true,
+          "distanceOrigin": "tree.nwk",
+          "distanceOrigins": [
+            "tree.nwk"
+          ],
+          "Relationship": "Genetic",
+          "directed": false,
+          "nn": false,
+          "visible": true
+        }
+      ],
+      "clusters": [],
+      "nodeFields": [
+        "_id",
+        "index",
+        "label",
+        "Region",
+        "Ward",
+        "Collection_Date",
+        "Latitude",
+        "Longitude",
+        "seq",
+        "origin",
+        "selected",
+        "visible",
+        "fixed",
+        "x",
+        "y",
+        "cluster",
+        "degree"
+      ],
+      "linkFields": [
+        "id",
+        "index",
+        "source",
+        "target",
+        "origin",
+        "_originAll",
+        "distance",
+        "hasDistance",
+        "distanceOrigin",
+        "distanceOrigins",
+        "Relationship",
+        "directed",
+        "nn",
+        "visible"
+      ],
+      "clusterFields": [
+        "id",
+        "size"
+      ],
+      "nodeExclusions": [],
+      "reference": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+      "geoJSON": [],
+      "geoJSONLayerName": [],
+      "newickString": "((A:0.5,B:0.5):0.5,C:1,(D:0.5,E:0.5):5);",
+      "newickSource": "newick"
+    },
+    "files": [
+      {
+        "name": "tree.nwk",
+        "extension": "nwk",
+        "contents": "((A:0.5,B:0.5):0.5,C:1,(D:0.5,E:0.5):5);\n"
+      },
+      {
+        "name": "nodes.csv",
+        "extension": "csv",
+        "contents": "_id,label,Region,Ward,Collection_Date,Latitude,Longitude,seq\nA,Case A,North,Ward 1,2026-01-01,33.74,-84.4,ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nB,Case B,North,Ward 2,2026-01-02,33.755,-84.388,TCGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nC,Case C,North,Ward 1,2026-01-03,33.77,-84.376,AAATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nD,Case D,South,Ward 2,2026-01-04,33.785000000000004,-84.364,ACGTACGTCGTACGGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nE,Case E,South,Ward 1,2026-01-05,33.800000000000004,-84.352,ACGTACGTCGTACGATACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT\nF,Case F,South,Ward 2,2026-01-06,33.815000000000005,-84.34,\n"
+      }
+    ],
+    "state": {
+      "timeStart": 0,
+      "timeEnd": 1798761600000,
+      "timeTarget": null,
+      "networkSubsetFilter": {
+        "node": {
+          "enabled": false,
+          "field": "None",
+          "operator": "equals",
+          "value": ""
+        },
+        "link": {
+          "enabled": false,
+          "field": "None",
+          "operator": "equals",
+          "value": ""
+        }
+      }
+    },
+    "style": {
+      "linkAlphas": [
+        1,
+        1
+      ],
+      "linkColors": [
+        "#a6cee3",
+        "#1f78b4",
+        "#b2df8a",
+        "#33a02c",
+        "#fb9a99",
+        "#e31a1c",
+        "#fdbf6f",
+        "#ff7f00",
+        "#cab2d6",
+        "#6a3d9a",
+        "#ffff99",
+        "#b15928"
+      ],
+      "linkValueNames": {},
+      "nodeAlphas": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "nodeColors": [
+        "#3998f5",
+        "#f22020",
+        "#b732cc",
+        "#f47a22",
+        "#0ec434",
+        "#96341c",
+        "#8ad8e8",
+        "#f07cab",
+        "#235b54",
+        "#ffcba5",
+        "#772b9d",
+        "#29bdab",
+        "#ffc413",
+        "#d30b94",
+        "#201923",
+        "#7dfc00",
+        "#3750db",
+        "#946aa2",
+        "#edeff3",
+        "#fcff5d",
+        "#632819",
+        "#228c68",
+        "#277da7",
+        "#37294f",
+        "#991919",
+        "#e68f66",
+        "#c3a5b4",
+        "#2f2aa0",
+        "#c56133",
+        "#5d4c86"
+      ],
+      "nodeColorsTable": {},
+      "nodeColorsTableHistory": {},
+      "nodeColorsTableKeys": {},
+      "linkColorsTable": {},
+      "linkColorsTableKeys": {},
+      "nodeSymbols": [
+        "symbolCircle",
+        "symbolTriangle",
+        "symbolDiamond",
+        "symbolSquare",
+        "symbolStar",
+        "symbolCross",
+        "symbolWye",
+        "symbolTriangleDown",
+        "symbolTriangleLeft",
+        "symbolTriangleRight",
+        "symbolDiamondAlt",
+        "symbolDiamondSquare",
+        "symbolPentagon",
+        "symbolHexagon",
+        "symbolHexagonAlt",
+        "symbolOctagon",
+        "symbolOctagonAlt",
+        "symbolX"
+      ],
+      "nodeSymbolsTable": {},
+      "nodeSymbolsTableKeys": {},
+      "originalNodeSymbolValues": [
+        "Person",
+        "Place"
+      ],
+      "nodeSymbol": {},
+      "nodeValueNames": {},
+      "polygonAlphas": [
+        0.5
+      ],
+      "polygonColors": [
+        "#353cac",
+        "#fdbe3d",
+        "#41ba97",
+        "#9e0f1e",
+        "#303030",
+        "#62a5e4",
+        "#a13eda",
+        "#f4e41c",
+        "#75d054",
+        "#f22020"
+      ],
+      "polygonValueNames": {},
+      "overwrite": {},
+      "widgets": {
+        "3DNet-link-tooltip-variable": "None",
+        "3DNet-link-transparency": 0,
+        "3DNet-link-width": 1.6,
+        "3DNet-node-tooltip-variable": "_id",
+        "3DNet-node-radius": 4,
+        "3DNet-node-radius-variable": "None",
+        "align-sw": false,
+        "align-none": true,
+        "ambiguity-resolution-strategy": "AVERAGE",
+        "ambiguity-threshold": 0.015,
+        "background-color": "#ffffff",
+        "background-color-contrast": "#000000",
+        "bubble-x": "None",
+        "bubble-y": "None",
+        "bubble-charge": 1.5,
+        "bubble-size": 5,
+        "choropleth-aggregate-as": "states",
+        "choropleth-aggregate-on": "None",
+        "choropleth-basemap-show": false,
+        "choropleth-color-high": "#800026",
+        "choropleth-color-low": "#ffffcc",
+        "choropleth-color-medium": "#fd8d3c",
+        "choropleth-satellite-show": false,
+        "choropleth-transparency": 0.3,
+        "cluster-minimum-size": 1,
+        "default-distance-metric": "snps",
+        "default-view": "2d_network",
+        "filtering-epsilon": -8,
+        "flow-showNodes": "selected",
+        "globe-countries-show": false,
+        "globe-field-lat": "None",
+        "globe-field-lon": "None",
+        "globe-field-tract": "None",
+        "globe-field-zipcode": "None",
+        "globe-field-county": "None",
+        "globe-field-state": "None",
+        "globe-field-country": "None",
+        "globe-link-show": true,
+        "globe-link-transparency": 0,
+        "globe-node-jitter": -2,
+        "globe-node-show": true,
+        "globe-node-transparency": 0,
+        "globe-stars-show": true,
+        "heatmap-invertX": false,
+        "heatmap-invertY": false,
+        "heatmap-color-high": "#a50026",
+        "heatmap-color-medium": "#ffffbf",
+        "heatmap-color-low": "#313695",
+        "heatmap-axislabels-show": false,
+        "histogram-axis-x": true,
+        "histogram-scale-log": false,
+        "histogram-variable": "links-distance",
+        "infer-directionality-false": true,
+        "link-color": "#a6cee3",
+        "link-color-table-name-sort": "DESC",
+        "link-color-table-counts-sort": "DESC",
+        "link-color-table-counts": true,
+        "link-color-table-frequencies": false,
+        "link-color-variable": "origin",
+        "link-decimal-variable": 2,
+        "link-directed": false,
+        "link-bidirected": false,
+        "link-label-variable": "None",
+        "link-length": 0.125,
+        "link-opacity": 0,
+        "link-show-nn": false,
+        "link-sort-variable": "distance",
+        "link-threshold": 3,
+        "link-tooltip-variable": "None",
+        "link-width": 3,
+        "link-width-variable": "None",
+        "link-width-max": 27,
+        "link-width-min": 3,
+        "map-basemap-show": false,
+        "map-collapsing-on": true,
+        "map-counties-show": false,
+        "map-countries-show": true,
+        "map-field-lat": "Latitude",
+        "map-field-lon": "Longitude",
+        "map-field-tract": "None",
+        "map-field-zipcode": "None",
+        "map-field-county": "None",
+        "map-field-state": "None",
+        "map-field-country": "None",
+        "map-link-show": true,
+        "map-link-tooltip-variable": "None",
+        "map-link-transparency": 0,
+        "map-node-jitter": -2,
+        "map-node-show": true,
+        "map-node-tooltip-variable": "_id",
+        "map-node-transparency": 0,
+        "map-satellite-show": false,
+        "map-states-show": true,
+        "mst-computed": false,
+        "network-friction": 0.3,
+        "network-gravity": 0.05,
+        "network-link-strength": 0.125,
+        "node-border-width": 2,
+        "node-charge": 200,
+        "node-color": "#1f77b4",
+        "node-color-border": "#000000",
+        "node-color-table-name-sort": "DESC",
+        "node-color-table-counts-sort": "DESC",
+        "node-color-table-counts": true,
+        "node-color-table-frequencies": false,
+        "node-color-variable": "Region",
+        "node-highlight": false,
+        "node-label-size": 16,
+        "node-label-variable": "_id",
+        "node-radius": 20,
+        "node-radius-variable": "None",
+        "node-radius-min": 15,
+        "node-radius-max": 85,
+        "node-symbol": "symbolCircle",
+        "node-symbol-table-counts": true,
+        "node-symbol-table-frequencies": false,
+        "node-symbol-variable": "None",
+        "node-timeline-variable": "None",
+        "node-tooltip-variable": "_id",
+        "physics-tree-branch-type": "Straight",
+        "physics-tree-branch-length": 50,
+        "physics-tree-charge": 30,
+        "physics-tree-friction": 0.05,
+        "physics-tree-gravity": 0.05,
+        "physics-tree-lateral-strength": 0.025,
+        "physics-tree-layout": "Horizontal",
+        "physics-tree-node-label-variable": "None",
+        "physics-tree-tooltip": "id",
+        "physics-tree-type": "tree",
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": false,
+        "polygons-label-size": 16,
+        "polygons-show": false,
+        "reference-source-file": true,
+        "reference-source-first": false,
+        "reference-source-consensus": false,
+        "scatterplot-xVar": "index",
+        "scatterplot-yVar": "distance",
+        "scatterplot-logScale": false,
+        "scatterplot-showNodes": false,
+        "search-field": "_id",
+        "search-case-sensitive": false,
+        "search-whole-word": false,
+        "selected-color": "#ff8300",
+        "selected-color-contrast": "#000000",
+        "timeline-date-field": "None",
+        "epi-timeline-date-field": "Collection_Date",
+        "timeline-noncumulative": true,
+        "tree-animation-on": true,
+        "tree-branch-distances-hide": true,
+        "tree-branch-distance-size": 12,
+        "tree-branch-nodes-show": false,
+        "tree-horizontal-stretch": 1,
+        "tree-layout-vertical": false,
+        "tree-layout-horizontal": true,
+        "tree-layout-circular": false,
+        "tree-labels-align": false,
+        "tree-labels-show": false,
+        "tree-leaf-label-show": true,
+        "tree-leaf-label-size": 12,
+        "tree-leaf-node-radius-variable": "None",
+        "tree-leaf-node-show": true,
+        "tree-leaf-node-size": 5,
+        "tree-mode-square": true,
+        "tree-mode-smooth": false,
+        "tree-mode-straight": false,
+        "tree-round-true": false,
+        "tree-ruler-show": true,
+        "tree-tooltip-show": true,
+        "tree-type": "weighted",
+        "tree-vertical-stretch": 1,
+        "triangulate-false": true,
+        "loaded": true,
+        "network-node-collapse-enabled": false,
+        "link-origin-array-order": [
+          "tree.nwk"
+        ],
+        "node-color-table-show": "Hide",
+        "node-shape-table-show": "Hide",
+        "tree-bootstrap-custom-replicates": 10,
+        "tree-bootstrap-stop-when-stable": false
+      }
+    },
+    "layout": {
+      "type": "stack",
+      "content": [
+        {
+          "type": "2D Network"
+        }
+      ]
+    },
+    "timeline": 0,
+    "warnings": [],
+    "messages": [],
+    "meta": {
+      "anySequences": true
+    },
+    "network": {
+      "allPinned": true,
+      "timelinePinned": false
+    }
+  },
+  "tabs": [
+    {
+      "label": "2D Network",
+      "tabTitle": "2D Network",
+      "isActive": true
+    },
+    {
+      "label": "Table",
+      "tabTitle": "Table",
+      "isActive": false
+    }
+  ],
+  "dashboardLayout": {
+    "root": {
+      "type": "row",
+      "content": [
+        {
+          "type": "stack",
+          "size": "50%",
+          "activeItemIndex": 0,
+          "content": [
+            {
+              "type": "component",
+              "componentType": "2D Network",
+              "title": "2D Network"
+            }
+          ]
+        },
+        {
+          "type": "stack",
+          "size": "50%",
+          "activeItemIndex": 0,
+          "content": [
+            {
+              "type": "component",
+              "componentType": "Table",
+              "title": "Table"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "investigation": {
+    "cohorts": [],
+    "selectedCohortIds": [],
+    "edgeLayers": [
+      {
+        "id": "source:tree.nwk",
+        "source": "tree.nwk",
+        "name": "tree.nwk",
+        "enabled": true
+      }
+    ],
+    "annotations": [],
+    "scopes": {},
+    "calculations": {},
+    "viewStates": {},
+    "threshold": {
+      "value": 3,
+      "metric": "distance",
+      "distanceMetric": "snps",
+      "displayFormat": "decimal",
+      "nearestNeighbor": false
+    },
+    "filters": {
+      "state": {
+        "timeStart": 0,
+        "timeEnd": 1798761600000,
+        "timeTarget": null,
+        "networkSubsetFilter": {
+          "node": {
+            "enabled": false,
+            "field": "None",
+            "operator": "equals",
+            "value": ""
+          },
+          "link": {
+            "enabled": false,
+            "field": "None",
+            "operator": "equals",
+            "value": ""
+          }
+        }
+      },
+      "exclusions": [],
+      "minimumClusterSize": 1,
+      "tables": {}
+    },
+    "layout": {
+      "tabs": [
+        {
+          "label": "2D Network",
+          "tabTitle": "2D Network",
+          "isActive": true
+        },
+        {
+          "label": "Table",
+          "tabTitle": "Table",
+          "isActive": false
+        }
+      ],
+      "dashboardLayout": {
+        "root": {
+          "type": "row",
+          "content": [
+            {
+              "type": "stack",
+              "size": "50%",
+              "activeItemIndex": 0,
+              "content": [
+                {
+                  "type": "component",
+                  "componentType": "2D Network",
+                  "title": "2D Network"
+                }
+              ]
+            },
+            {
+              "type": "stack",
+              "size": "50%",
+              "activeItemIndex": 0,
+              "content": [
+                {
+                  "type": "component",
+                  "componentType": "Table",
+                  "title": "Table"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "legacyLayout": {
+        "type": "stack",
+        "content": [
+          {
+            "type": "2D Network"
+          }
+        ]
+      },
+      "camera": null,
+      "nodes": [
+        {
+          "id": "A",
+          "x": 120,
+          "y": 150,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "B",
+          "x": 300,
+          "y": 150,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "C",
+          "x": 480,
+          "y": 150,
+          "fixed": true,
+          "selected": false
+        },
+        {
+          "id": "D",
+          "x": 120,
+          "y": 330,
+          "fixed": true,
+          "selected": true
+        },
+        {
+          "id": "E",
+          "x": 300,
+          "y": 330,
+          "fixed": true,
+          "selected": false
+        }
+      ],
+      "widgets": {
+        "3DNet-link-tooltip-variable": "None",
+        "3DNet-link-transparency": 0,
+        "3DNet-link-width": 1.6,
+        "3DNet-node-tooltip-variable": "_id",
+        "3DNet-node-radius": 4,
+        "3DNet-node-radius-variable": "None",
+        "align-sw": false,
+        "align-none": true,
+        "ambiguity-resolution-strategy": "AVERAGE",
+        "ambiguity-threshold": 0.015,
+        "background-color": "#ffffff",
+        "background-color-contrast": "#000000",
+        "bubble-x": "None",
+        "bubble-y": "None",
+        "bubble-charge": 1.5,
+        "bubble-size": 5,
+        "choropleth-aggregate-as": "states",
+        "choropleth-aggregate-on": "None",
+        "choropleth-basemap-show": false,
+        "choropleth-color-high": "#800026",
+        "choropleth-color-low": "#ffffcc",
+        "choropleth-color-medium": "#fd8d3c",
+        "choropleth-satellite-show": false,
+        "choropleth-transparency": 0.3,
+        "cluster-minimum-size": 1,
+        "default-distance-metric": "snps",
+        "default-view": "2d_network",
+        "filtering-epsilon": -8,
+        "flow-showNodes": "selected",
+        "globe-countries-show": false,
+        "globe-field-lat": "None",
+        "globe-field-lon": "None",
+        "globe-field-tract": "None",
+        "globe-field-zipcode": "None",
+        "globe-field-county": "None",
+        "globe-field-state": "None",
+        "globe-field-country": "None",
+        "globe-link-show": true,
+        "globe-link-transparency": 0,
+        "globe-node-jitter": -2,
+        "globe-node-show": true,
+        "globe-node-transparency": 0,
+        "globe-stars-show": true,
+        "heatmap-invertX": false,
+        "heatmap-invertY": false,
+        "heatmap-color-high": "#a50026",
+        "heatmap-color-medium": "#ffffbf",
+        "heatmap-color-low": "#313695",
+        "heatmap-axislabels-show": false,
+        "histogram-axis-x": true,
+        "histogram-scale-log": false,
+        "histogram-variable": "links-distance",
+        "infer-directionality-false": true,
+        "link-color": "#a6cee3",
+        "link-color-table-name-sort": "DESC",
+        "link-color-table-counts-sort": "DESC",
+        "link-color-table-counts": true,
+        "link-color-table-frequencies": false,
+        "link-color-variable": "origin",
+        "link-decimal-variable": 2,
+        "link-directed": false,
+        "link-bidirected": false,
+        "link-label-variable": "None",
+        "link-length": 0.125,
+        "link-opacity": 0,
+        "link-show-nn": false,
+        "link-sort-variable": "distance",
+        "link-threshold": 3,
+        "link-tooltip-variable": "None",
+        "link-width": 3,
+        "link-width-variable": "None",
+        "link-width-max": 27,
+        "link-width-min": 3,
+        "map-basemap-show": false,
+        "map-collapsing-on": true,
+        "map-counties-show": false,
+        "map-countries-show": true,
+        "map-field-lat": "Latitude",
+        "map-field-lon": "Longitude",
+        "map-field-tract": "None",
+        "map-field-zipcode": "None",
+        "map-field-county": "None",
+        "map-field-state": "None",
+        "map-field-country": "None",
+        "map-link-show": true,
+        "map-link-tooltip-variable": "None",
+        "map-link-transparency": 0,
+        "map-node-jitter": -2,
+        "map-node-show": true,
+        "map-node-tooltip-variable": "_id",
+        "map-node-transparency": 0,
+        "map-satellite-show": false,
+        "map-states-show": true,
+        "mst-computed": false,
+        "network-friction": 0.3,
+        "network-gravity": 0.05,
+        "network-link-strength": 0.125,
+        "node-border-width": 2,
+        "node-charge": 200,
+        "node-color": "#1f77b4",
+        "node-color-border": "#000000",
+        "node-color-table-name-sort": "DESC",
+        "node-color-table-counts-sort": "DESC",
+        "node-color-table-counts": true,
+        "node-color-table-frequencies": false,
+        "node-color-variable": "Region",
+        "node-highlight": false,
+        "node-label-size": 16,
+        "node-label-variable": "_id",
+        "node-radius": 20,
+        "node-radius-variable": "None",
+        "node-radius-min": 15,
+        "node-radius-max": 85,
+        "node-symbol": "symbolCircle",
+        "node-symbol-table-counts": true,
+        "node-symbol-table-frequencies": false,
+        "node-symbol-variable": "None",
+        "node-timeline-variable": "None",
+        "node-tooltip-variable": "_id",
+        "physics-tree-branch-type": "Straight",
+        "physics-tree-branch-length": 50,
+        "physics-tree-charge": 30,
+        "physics-tree-friction": 0.05,
+        "physics-tree-gravity": 0.05,
+        "physics-tree-lateral-strength": 0.025,
+        "physics-tree-layout": "Horizontal",
+        "physics-tree-node-label-variable": "None",
+        "physics-tree-tooltip": "id",
+        "physics-tree-type": "tree",
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": false,
+        "polygons-label-size": 16,
+        "polygons-show": false,
+        "reference-source-file": true,
+        "reference-source-first": false,
+        "reference-source-consensus": false,
+        "scatterplot-xVar": "index",
+        "scatterplot-yVar": "distance",
+        "scatterplot-logScale": false,
+        "scatterplot-showNodes": false,
+        "search-field": "_id",
+        "search-case-sensitive": false,
+        "search-whole-word": false,
+        "selected-color": "#ff8300",
+        "selected-color-contrast": "#000000",
+        "timeline-date-field": "None",
+        "epi-timeline-date-field": "Collection_Date",
+        "timeline-noncumulative": true,
+        "tree-animation-on": true,
+        "tree-branch-distances-hide": true,
+        "tree-branch-distance-size": 12,
+        "tree-branch-nodes-show": false,
+        "tree-horizontal-stretch": 1,
+        "tree-layout-vertical": false,
+        "tree-layout-horizontal": true,
+        "tree-layout-circular": false,
+        "tree-labels-align": false,
+        "tree-labels-show": false,
+        "tree-leaf-label-show": true,
+        "tree-leaf-label-size": 12,
+        "tree-leaf-node-radius-variable": "None",
+        "tree-leaf-node-show": true,
+        "tree-leaf-node-size": 5,
+        "tree-mode-square": true,
+        "tree-mode-smooth": false,
+        "tree-mode-straight": false,
+        "tree-round-true": false,
+        "tree-ruler-show": true,
+        "tree-tooltip-show": true,
+        "tree-type": "weighted",
+        "tree-vertical-stretch": 1,
+        "triangulate-false": true,
+        "loaded": true,
+        "network-node-collapse-enabled": false,
+        "link-origin-array-order": [
+          "tree.nwk"
+        ],
+        "node-color-table-show": "Hide",
+        "node-shape-table-show": "Hide",
+        "tree-bootstrap-custom-replicates": 10,
+        "tree-bootstrap-stop-when-stable": false
+      },
+      "network": {
+        "allPinned": true,
+        "timelinePinned": false
+      }
+    },
+    "grouping": {
+      "widgets": {
+        "polygon-color": "#bbccee",
+        "polygon-color-table-name-sort": "DESC",
+        "polygon-color-table-counts-sort": "DESC",
+        "polygon-color-table-counts": true,
+        "polygon-color-table-frequencies": false,
+        "polygons-color-show": false,
+        "polygons-foci": "Region",
+        "polygons-gather-force": 0,
+        "polygons-label-show": false,
+        "polygons-label-size": 16,
+        "polygons-show": false,
+        "network-node-collapse-enabled": false
+      },
+      "groups": [
+        {
+          "id": "mt-group:North",
+          "label": "North",
+          "field": "Region",
+          "nodeIds": [
+            "A",
+            "B",
+            "C"
+          ]
+        },
+        {
+          "id": "mt-group:South",
+          "label": "South",
+          "field": "Region",
+          "nodeIds": [
+            "D",
+            "E"
+          ]
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "schemaVersion": 2,
+    "snapshotId": "345bf7ac-1f3e-4458-a83f-a4c893c212f0",
+    "capturedAt": "2026-10-27T13:03:46.325Z",
+    "stateChecksum": "403095cf437b66854ebba91fe0c2162c23ed9d50d52f4932aba3f644821e519e",
+    "software": {
+      "name": "MicrobeTrace",
+      "version": "2.4.0",
+      "commit": "development",
+      "buildDate": "2026-10-27T13:03:46.187Z"
+    },
+    "sources": [
+      {
+        "name": "tree.nwk",
+        "sha256": "8b34e8a96aaf317a8dafdabbf0d1ec7be86799c71934345d85f2154c789b0de4",
+        "representation": "canonical saved content (including binary encoding)"
+      },
+      {
+        "name": "nodes.csv",
+        "sha256": "625efce18482e64b6790e37a5cd94991a3817c3be92ab7c6e4375ce42227d487",
+        "representation": "canonical saved content (including binary encoding)"
+      }
+    ],
+    "counts": {
+      "nodes": 5,
+      "edges": 10,
+      "visibleNodes": 5,
+      "visibleEdges": 4
+    },
+    "investigation": {
+      "cohorts": [],
+      "selectedCohortIds": [],
+      "edgeLayers": [
+        {
+          "id": "source:tree.nwk",
+          "source": "tree.nwk",
+          "name": "tree.nwk",
+          "enabled": true
+        }
+      ],
+      "annotations": [],
+      "scopes": {},
+      "calculations": {},
+      "viewStates": {},
+      "threshold": {
+        "value": 3,
+        "metric": "distance",
+        "distanceMetric": "snps",
+        "displayFormat": "decimal",
+        "nearestNeighbor": false
+      },
+      "filters": {
+        "state": {
+          "timeStart": 0,
+          "timeEnd": 1798761600000,
+          "timeTarget": null,
+          "networkSubsetFilter": {
+            "node": {
+              "enabled": false,
+              "field": "None",
+              "operator": "equals",
+              "value": ""
+            },
+            "link": {
+              "enabled": false,
+              "field": "None",
+              "operator": "equals",
+              "value": ""
+            }
+          }
+        },
+        "exclusions": [],
+        "minimumClusterSize": 1,
+        "tables": {}
+      },
+      "layout": {
+        "tabs": [
+          {
+            "label": "2D Network",
+            "tabTitle": "2D Network",
+            "isActive": true
+          },
+          {
+            "label": "Table",
+            "tabTitle": "Table",
+            "isActive": false
+          }
+        ],
+        "dashboardLayout": {
+          "root": {
+            "type": "row",
+            "content": [
+              {
+                "type": "stack",
+                "size": "50%",
+                "activeItemIndex": 0,
+                "content": [
+                  {
+                    "type": "component",
+                    "componentType": "2D Network",
+                    "title": "2D Network"
+                  }
+                ]
+              },
+              {
+                "type": "stack",
+                "size": "50%",
+                "activeItemIndex": 0,
+                "content": [
+                  {
+                    "type": "component",
+                    "componentType": "Table",
+                    "title": "Table"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "legacyLayout": {
+          "type": "stack",
+          "content": [
+            {
+              "type": "2D Network"
+            }
+          ]
+        },
+        "camera": null,
+        "nodes": [
+          {
+            "id": "A",
+            "x": 120,
+            "y": 150,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "B",
+            "x": 300,
+            "y": 150,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "C",
+            "x": 480,
+            "y": 150,
+            "fixed": true,
+            "selected": false
+          },
+          {
+            "id": "D",
+            "x": 120,
+            "y": 330,
+            "fixed": true,
+            "selected": true
+          },
+          {
+            "id": "E",
+            "x": 300,
+            "y": 330,
+            "fixed": true,
+            "selected": false
+          }
+        ],
+        "widgets": {
+          "3DNet-link-tooltip-variable": "None",
+          "3DNet-link-transparency": 0,
+          "3DNet-link-width": 1.6,
+          "3DNet-node-tooltip-variable": "_id",
+          "3DNet-node-radius": 4,
+          "3DNet-node-radius-variable": "None",
+          "align-sw": false,
+          "align-none": true,
+          "ambiguity-resolution-strategy": "AVERAGE",
+          "ambiguity-threshold": 0.015,
+          "background-color": "#ffffff",
+          "background-color-contrast": "#000000",
+          "bubble-x": "None",
+          "bubble-y": "None",
+          "bubble-charge": 1.5,
+          "bubble-size": 5,
+          "choropleth-aggregate-as": "states",
+          "choropleth-aggregate-on": "None",
+          "choropleth-basemap-show": false,
+          "choropleth-color-high": "#800026",
+          "choropleth-color-low": "#ffffcc",
+          "choropleth-color-medium": "#fd8d3c",
+          "choropleth-satellite-show": false,
+          "choropleth-transparency": 0.3,
+          "cluster-minimum-size": 1,
+          "default-distance-metric": "snps",
+          "default-view": "2d_network",
+          "filtering-epsilon": -8,
+          "flow-showNodes": "selected",
+          "globe-countries-show": false,
+          "globe-field-lat": "None",
+          "globe-field-lon": "None",
+          "globe-field-tract": "None",
+          "globe-field-zipcode": "None",
+          "globe-field-county": "None",
+          "globe-field-state": "None",
+          "globe-field-country": "None",
+          "globe-link-show": true,
+          "globe-link-transparency": 0,
+          "globe-node-jitter": -2,
+          "globe-node-show": true,
+          "globe-node-transparency": 0,
+          "globe-stars-show": true,
+          "heatmap-invertX": false,
+          "heatmap-invertY": false,
+          "heatmap-color-high": "#a50026",
+          "heatmap-color-medium": "#ffffbf",
+          "heatmap-color-low": "#313695",
+          "heatmap-axislabels-show": false,
+          "histogram-axis-x": true,
+          "histogram-scale-log": false,
+          "histogram-variable": "links-distance",
+          "infer-directionality-false": true,
+          "link-color": "#a6cee3",
+          "link-color-table-name-sort": "DESC",
+          "link-color-table-counts-sort": "DESC",
+          "link-color-table-counts": true,
+          "link-color-table-frequencies": false,
+          "link-color-variable": "origin",
+          "link-decimal-variable": 2,
+          "link-directed": false,
+          "link-bidirected": false,
+          "link-label-variable": "None",
+          "link-length": 0.125,
+          "link-opacity": 0,
+          "link-show-nn": false,
+          "link-sort-variable": "distance",
+          "link-threshold": 3,
+          "link-tooltip-variable": "None",
+          "link-width": 3,
+          "link-width-variable": "None",
+          "link-width-max": 27,
+          "link-width-min": 3,
+          "map-basemap-show": false,
+          "map-collapsing-on": true,
+          "map-counties-show": false,
+          "map-countries-show": true,
+          "map-field-lat": "Latitude",
+          "map-field-lon": "Longitude",
+          "map-field-tract": "None",
+          "map-field-zipcode": "None",
+          "map-field-county": "None",
+          "map-field-state": "None",
+          "map-field-country": "None",
+          "map-link-show": true,
+          "map-link-tooltip-variable": "None",
+          "map-link-transparency": 0,
+          "map-node-jitter": -2,
+          "map-node-show": true,
+          "map-node-tooltip-variable": "_id",
+          "map-node-transparency": 0,
+          "map-satellite-show": false,
+          "map-states-show": true,
+          "mst-computed": false,
+          "network-friction": 0.3,
+          "network-gravity": 0.05,
+          "network-link-strength": 0.125,
+          "node-border-width": 2,
+          "node-charge": 200,
+          "node-color": "#1f77b4",
+          "node-color-border": "#000000",
+          "node-color-table-name-sort": "DESC",
+          "node-color-table-counts-sort": "DESC",
+          "node-color-table-counts": true,
+          "node-color-table-frequencies": false,
+          "node-color-variable": "Region",
+          "node-highlight": false,
+          "node-label-size": 16,
+          "node-label-variable": "_id",
+          "node-radius": 20,
+          "node-radius-variable": "None",
+          "node-radius-min": 15,
+          "node-radius-max": 85,
+          "node-symbol": "symbolCircle",
+          "node-symbol-table-counts": true,
+          "node-symbol-table-frequencies": false,
+          "node-symbol-variable": "None",
+          "node-timeline-variable": "None",
+          "node-tooltip-variable": "_id",
+          "physics-tree-branch-type": "Straight",
+          "physics-tree-branch-length": 50,
+          "physics-tree-charge": 30,
+          "physics-tree-friction": 0.05,
+          "physics-tree-gravity": 0.05,
+          "physics-tree-lateral-strength": 0.025,
+          "physics-tree-layout": "Horizontal",
+          "physics-tree-node-label-variable": "None",
+          "physics-tree-tooltip": "id",
+          "physics-tree-type": "tree",
+          "polygon-color": "#bbccee",
+          "polygon-color-table-name-sort": "DESC",
+          "polygon-color-table-counts-sort": "DESC",
+          "polygon-color-table-counts": true,
+          "polygon-color-table-frequencies": false,
+          "polygons-color-show": false,
+          "polygons-foci": "Region",
+          "polygons-gather-force": 0,
+          "polygons-label-show": false,
+          "polygons-label-size": 16,
+          "polygons-show": false,
+          "reference-source-file": true,
+          "reference-source-first": false,
+          "reference-source-consensus": false,
+          "scatterplot-xVar": "index",
+          "scatterplot-yVar": "distance",
+          "scatterplot-logScale": false,
+          "scatterplot-showNodes": false,
+          "search-field": "_id",
+          "search-case-sensitive": false,
+          "search-whole-word": false,
+          "selected-color": "#ff8300",
+          "selected-color-contrast": "#000000",
+          "timeline-date-field": "None",
+          "epi-timeline-date-field": "Collection_Date",
+          "timeline-noncumulative": true,
+          "tree-animation-on": true,
+          "tree-branch-distances-hide": true,
+          "tree-branch-distance-size": 12,
+          "tree-branch-nodes-show": false,
+          "tree-horizontal-stretch": 1,
+          "tree-layout-vertical": false,
+          "tree-layout-horizontal": true,
+          "tree-layout-circular": false,
+          "tree-labels-align": false,
+          "tree-labels-show": false,
+          "tree-leaf-label-show": true,
+          "tree-leaf-label-size": 12,
+          "tree-leaf-node-radius-variable": "None",
+          "tree-leaf-node-show": true,
+          "tree-leaf-node-size": 5,
+          "tree-mode-square": true,
+          "tree-mode-smooth": false,
+          "tree-mode-straight": false,
+          "tree-round-true": false,
+          "tree-ruler-show": true,
+          "tree-tooltip-show": true,
+          "tree-type": "weighted",
+          "tree-vertical-stretch": 1,
+          "triangulate-false": true,
+          "loaded": true,
+          "network-node-collapse-enabled": false,
+          "link-origin-array-order": [
+            "tree.nwk"
+          ],
+          "node-color-table-show": "Hide",
+          "node-shape-table-show": "Hide",
+          "tree-bootstrap-custom-replicates": 10,
+          "tree-bootstrap-stop-when-stable": false
+        },
+        "network": {
+          "allPinned": true,
+          "timelinePinned": false
+        }
+      },
+      "grouping": {
+        "widgets": {
+          "polygon-color": "#bbccee",
+          "polygon-color-table-name-sort": "DESC",
+          "polygon-color-table-counts-sort": "DESC",
+          "polygon-color-table-counts": true,
+          "polygon-color-table-frequencies": false,
+          "polygons-color-show": false,
+          "polygons-foci": "Region",
+          "polygons-gather-force": 0,
+          "polygons-label-show": false,
+          "polygons-label-size": 16,
+          "polygons-show": false,
+          "network-node-collapse-enabled": false
+        },
+        "groups": [
+          {
+            "id": "mt-group:North",
+            "label": "North",
+            "field": "Region",
+            "nodeIds": [
+              "A",
+              "B",
+              "C"
+            ]
+          },
+          {
+            "id": "mt-group:South",
+            "label": "South",
+            "field": "Region",
+            "nodeIds": [
+              "D",
+              "E"
+            ]
+          }
+        ]
+      }
+    },
+    "historicalProvenance": "recorded"
+  }
+}

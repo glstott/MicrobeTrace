@@ -26,6 +26,30 @@ describe('Investigation text editing', () => {
   });
   afterEach(() => fixture?.destroy());
 
+  it('offers one save action with all editing and calculation controls collapsed', () => {
+    const tools = fixture.nativeElement.querySelector('[data-testid="investigation-tools"]') as HTMLDetailsElement;
+    expect(tools.open).toBeFalse();
+    expect(fixture.nativeElement.textContent).toContain('No individual selections are needed.');
+    const button = fixture.nativeElement.querySelector('[data-testid="investigation-save"]') as HTMLButtonElement;
+    expect(button.textContent.trim()).toBe('Save investigation');
+    for (const control of fixture.nativeElement.querySelectorAll('input[type="checkbox"], .scope-row select')) {
+      expect((control as HTMLElement).closest('[data-testid="investigation-tools"]')).toBe(tools);
+    }
+  });
+
+  it('requests a complete save without opening tools or changing existing investigation state', async () => {
+    const before = JSON.stringify(common.session);
+    const save = jasmine.createSpy('save');
+    fixture.componentInstance.saveInvestigation.subscribe(save);
+    fixture.nativeElement.querySelector('[data-testid="investigation-save"]').click();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(common.session)).toBe(before);
+    const captured = await common.investigationSessions.capture({ session: common.session, tabs: [] });
+    expect(captured.investigation.cohorts).toEqual(common.session.investigation.cohorts);
+    expect(captured.investigation.annotations).toEqual(common.session.investigation.annotations);
+    expect(captured.investigation.scopes).toEqual(common.session.investigation.scopes);
+  });
+
   async function edit(selector: string, value: string, commit = true) {
     const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
     input.value = value;

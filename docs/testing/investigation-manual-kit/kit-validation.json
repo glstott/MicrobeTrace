@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-10-28T13:38:08.702Z",
+  "manualCases": 17,
+  "manualCasesExecuted": false,
+  "cypressRunForKit": false,
+  "checkedWith": [
+    "InvestigationSessionService.capture / prepare",
+    "resolveInvestigationInputs",
+    "InvestigationCalculationService.run / refreshStatus",
+    "computeNetworkStatistics"
+  ],
+  "checks": [
+    "Five versioned valid snapshots validated on capture and prepare",
+    "Five invalid snapshots rejected for their stated reasons",
+    "Legacy session migrates with not recorded historical provenance",
+    "Full / visible / overlapping cohort memberships, counts and statistics agree",
+    "Mixed origins and disabled-source eligibility agree",
+    "Completed result remains completed after restore and marks stale after input change",
+    "All guide links resolve to supplied files",
+    "17 checklist cases match the results worksheet"
+  ],
+  "limitations": [
+    "Fixtures were validated programmatically; the manual checklist has not been executed",
+    "The outer ZIP is a distribution kit; 02-configured.zip is the app-loadable session bundle"
+  ]
+}
