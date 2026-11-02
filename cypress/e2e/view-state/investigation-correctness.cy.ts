@@ -126,13 +126,17 @@ describe('Investigation correctness regressions', () => {
       expect(investigation.cohorts[0].name).to.equal('Left review');
       expect(investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Review case A.');
     });
-    cy.contains('button', 'Download investigation record').click();
+    cy.contains('button', 'Export reproducibility report').click();
     const recordPath = `${Cypress.config('downloadsFolder')}/investigation-focused-record.zip`;
     writeCapturedDownloadToDisk('investigation-record.zip', recordPath);
     cy.readFile(recordPath, 'base64').then(async encoded => {
       const zip = await JSZip.loadAsync(encoded, { base64: true });
       const manifest = JSON.parse(await zip.file('investigation-manifest.json')!.async('text'));
-      expect(manifest.schemaVersion).to.equal(2);
+      const sessionEntry = Object.values(zip.files).find(entry => entry.name.endsWith('.microbetrace'))!;
+      const saved = JSON.parse(await sessionEntry.async('text'));
+      expect(saved.snapshotId).to.equal(manifest.snapshotId);
+      expect(saved.provenance.stateChecksum).to.equal(manifest.stateChecksum);
+      expect(manifest.schemaVersion).to.equal(3);
       expect(manifest.investigation.cohorts[0].name).to.equal('Left review');
       expect(manifest.investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Review case A.');
     });
@@ -147,7 +151,7 @@ describe('Investigation correctness regressions', () => {
     writeCapturedDownloadToDisk(`${name}.microbetrace`, sessionPath);
     cy.readFile(sessionPath).then(raw => {
       const saved = JSON.parse(String(raw));
-      expect(saved.schemaVersion).to.equal(2);
+      expect(saved.schemaVersion).to.equal(3);
       expect(saved.investigation.cohorts[0].name).to.equal('Revised left review');
       expect(saved.investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Revised case A note');
     });
@@ -170,5 +174,84 @@ describe('Investigation correctness regressions', () => {
       expect(investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Revised case A note');
       expect(investigation.selectedCohortIds).to.deep.equal(['cohort-left', 'cohort-right']);
     });
+  });
+  it('explains report-only and damaged ZIPs without replacing the open investigation', () => {
+    loadKit();
+    let current: any;
+    cy.window().then((win: any) => current = win.commonService.session);
+    cy.get('[data-testid="app-file-menu-button"]').click();
+    cy.contains('button[mat-menu-item]', 'Add Data').click();
+    cy.then(async () => {
+      const zip = new JSZip(); zip.file('investigation-record.html', '<h1>Older report</h1>');
+      return zip.generateAsync({ type: 'uint8array' });
+    }).then(bytes => {
+      cy.get('#data-files1').selectFile({ contents: Cypress.Buffer.from(bytes), fileName: 'older-report.zip', mimeType: 'application/zip' }, { force: true });
+    });
+    cy.get('[data-testid="investigation-load-error"]').should('contain', 'no portable MicrobeTrace session');
+    cy.window().should((win: any) => expect(win.commonService.session).to.equal(current));
+    cy.get('#data-files1').selectFile({ contents: Cypress.Buffer.from('damaged zip'), fileName: 'damaged.zip', mimeType: 'application/zip' }, { force: true });
+    cy.get('[data-testid="investigation-load-error"]').should('contain', 'Unable to open session ZIP');
+    cy.window().should((win: any) => {
+      expect(win.commonService.session).to.equal(current);
+      expect(current.investigation.selectedCohortIds).to.deep.equal(['cohort-left', 'cohort-right']);
+    });
+  });
+  it('exports a reopenable report bundle and renders its HTML on narrow screens and paper', () => {
+    loadKit(); installSaveAsCaptureHook(); openPanel();
+    cy.contains('button', 'Export reproducibility report').click();
+    const path = `${Cypress.config('downloadsFolder')}/report-paired.zip`;
+    writeCapturedDownloadToDisk('investigation-record.zip', path);
+    let snapshotId: string, html: string;
+    cy.readFile(path, 'base64').then(async encoded => {
+      const zip = await JSZip.loadAsync(encoded, { base64: true });
+      const entry = Object.values(zip.files).find(file => file.name.endsWith('.microbetrace'))!;
+      const session = JSON.parse(await entry.async('text'));
+      const manifest = JSON.parse(await zip.file('investigation-manifest.json')!.async('text'));
+      html = await zip.file('investigation-record.html')!.async('text'); snapshotId = session.snapshotId;
+      expect(manifest.snapshotId).to.equal(snapshotId);
+      expect(manifest.stateChecksum).to.equal(session.provenance.stateChecksum);
+      expect(html).to.contain(snapshotId).and.contain(manifest.stateChecksum);
+    });
+    cy.visit('/?skipEula=1&skipDemoSession=1'); cy.get('#fileDropRef').selectFile(path, { force: true });
+    cy.window({ timeout: 30000 }).should((win: any) => {
+      expect(win.commonService.session.investigation.cohorts[0].name).to.equal('Left review');
+      expect(win.commonService.session.network.isFullyLoaded).to.equal(true);
+    });
+    cy.then(() => cy.intercept('GET', '**/__reproducibility-report.html', { headers: { 'content-type': 'text/html' }, body: html }));
+    cy.visit('/__reproducibility-report.html');
+    cy.viewport(375, 812);
+    cy.document().should(doc => expect(doc.documentElement.scrollWidth).to.be.at.most(375));
+    cy.get('#cohorts details').first().click(); cy.get('#cohorts .members').first().should('be.visible');
+    cy.then(() => Cypress.automation('remote:debugger:protocol', { command: 'Emulation.setEmulatedMedia', params: { media: 'print' } }));
+    cy.get('nav').should('not.be.visible');
+    cy.get('#integrity .reference').first().should('be.visible');
+    cy.then(() => Cypress.automation('remote:debugger:protocol', { command: 'Emulation.setEmulatedMedia', params: { media: '' } }));
+  });
+  it('revalidates Bootstrap inputs after a visibility change during confirmation', () => {
+    loadKit();
+    cy.window().then({ timeout: 30000 }, async (win: any) => {
+      const common = win.commonService;
+      common.session.data.nodes.forEach((node: any) => { node.visible = true; });
+      common.session.data.newickString = await common.computeTree();
+    });
+    cy.get('[data-testid="app-view-menu-button"]').click();
+    cy.contains('button[mat-menu-item]', 'Phylogenetic Tree').click();
+    cy.window({ timeout: 30000 }).should((win: any) => expect(win.commonService.visuals.phylogenetic?.tree?.data).to.exist);
+    let completion: Promise<void>;
+    cy.window().then((win: any) => {
+      const common = win.commonService;
+      common.session.investigation.scopes.bootstrap = 'visible';
+      common.session.data.nodes.forEach((node: any) => { node.visible = true; });
+      completion = common.visuals.phylogenetic.calculateBootstrapSupport();
+    });
+    cy.contains('.p-confirmdialog', 'Visible network: 5 eligible sequences').should('be.visible');
+    cy.window().then((win: any) => {
+      win.commonService.session.data.nodes[4].visible = false;
+      cy.spy(win.commonService.workerComputeService, 'computePhylogeneticBootstrap').as('bootstrapWorker');
+    });
+    cy.contains('.p-confirmdialog button', 'Confirm').click();
+    cy.then(() => completion);
+    cy.get('@bootstrapWorker').should('not.have.been.called');
+    cy.window().should((win: any) => expect(win.commonService.visuals.phylogenetic.BootstrapStatusMessage).to.contain('base tree matching the calculation scope'));
   });
 });

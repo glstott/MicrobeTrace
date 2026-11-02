@@ -144,6 +144,9 @@ export class AlignmentViewComponent extends BaseComponentDirective implements On
   AlignmentExportFileTypeData: string = "fasta";
 
   private destroy$ = new Subject<void>();
+  private viewportRestored = false;
+  private destroyed = false;
+  private viewportSession: any;
 
   constructor(injector: Injector,
     public commonService: CommonService,
@@ -158,6 +161,7 @@ export class AlignmentViewComponent extends BaseComponentDirective implements On
     this.visuals = commonService.visuals;
     this.commonService.visuals.alignment = this;
     this.widgets = this.commonService.session.style.widgets;
+    this.viewportSession = this.commonService.session;
   }
 
   ngOnInit(): void {
@@ -247,6 +251,9 @@ export class AlignmentViewComponent extends BaseComponentDirective implements On
   }
 
   ngOnDestroy(): void {
+    const viewport = this.captureInvestigationViewState();
+    if (viewport) this.commonService.session.investigation.viewStates['Alignment View'] = viewport;
+    this.destroyed = true;
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -405,13 +412,35 @@ export class AlignmentViewComponent extends BaseComponentDirective implements On
 
   private syncLayoutAfterRender(releaseProcessingModal = false): void {
     setTimeout(() => {
+      if (this.destroyed || this.viewportSession !== this.commonService.session) return;
       this.goldenLayoutComponentResize();
       this.cdref.detectChanges();
+      this.restoreInvestigationViewState();
 
       if (releaseProcessingModal && this.commonService.session.data.nodes.length > 0) {
         this.store.setNetworkRendered(true);
       }
     }, 50);
+  }
+
+  captureInvestigationViewState(): any {
+    const holder = document.querySelector<HTMLElement>('#msa-viewer .canvasHolder');
+    if (!holder || this.viewportSession !== this.commonService.session) return undefined;
+    return { scrollLeft: holder.scrollLeft, scrollTop: holder.scrollTop };
+  }
+
+  private restoreInvestigationViewState(): void {
+    if (this.viewportRestored) return;
+    const saved = this.commonService.session.investigation?.viewStates?.['Alignment View'];
+    const holder = document.querySelector<HTMLElement>('#msa-viewer .canvasHolder');
+    if (!holder?.querySelector('canvas') || !saved || ![saved.scrollLeft, saved.scrollTop].every(value => Number.isFinite(value) && value >= 0)) return;
+    holder.scrollLeft = saved.scrollLeft;
+    holder.scrollTop = saved.scrollTop;
+    const labels = document.querySelector<HTMLElement>('#msa-viewer .canvasLabels');
+    const top = document.getElementById('alignmentTop');
+    if (labels) labels.scrollTop = holder.scrollTop;
+    if (top) top.scrollLeft = holder.scrollLeft;
+    this.viewportRestored = true;
   }
 
   // Mini Map

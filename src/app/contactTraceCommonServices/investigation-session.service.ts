@@ -2,13 +2,15 @@ import { Injectable } from '@angular/core';
 import { buildDate, commitHash, version } from '../../environments/version';
 import type { StashObjects } from '../helperClasses/interfaces';
 import { buildNetworkGroupingModel } from './network-grouping.model';
+import { readableInvestigationRecord } from './investigation-record';
 import {
   createInvestigationWorkspace, investigationCopy, investigationChecksum, investigationNodeId,
   investigationEdgeId, investigationOrigins, InvestigationManifest, InvestigationSoftware,
   InvestigationState, InvestigationWorkspace, INVESTIGATION_OPERATIONS, reviveInvestigationBinary, canonicalInvestigationJson,
+  investigationOutputSummary, investigationAnnotationResolved,
 } from './investigation-state';
 
-export const INVESTIGATION_SCHEMA_VERSION = 2;
+export const INVESTIGATION_SCHEMA_VERSION = 3;
 export function investigationSoftware(): InvestigationSoftware {
   return { name: 'MicrobeTrace', version, commit: commitHash, buildDate };
 }
@@ -65,7 +67,7 @@ export class InvestigationSessionService {
     for (const [operation, calculation] of Object.entries(workspace.calculations)) {
       if (!calculation) continue;
       const { inputs, output, ...summary } = calculation;
-      summaries[operation] = { ...summary, outputChecksum: await investigationChecksum(output) };
+      summaries[operation] = { ...summary, outputChecksum: await investigationChecksum(output), outputSummary: investigationOutputSummary(calculation.operation, output) };
     }
     const sources = await Promise.all((session.files || []).map(async (file: any) => {
       const contents = file.contents ?? file.content ?? file.data;
@@ -79,6 +81,7 @@ export class InvestigationSessionService {
       software: investigationSoftware(),
       sources,
       counts: this.counts(session),
+      annotationResolution: this.annotationResolution(session, workspace),
       investigation: investigationCopy({ ...result.investigation, calculations: summaries }),
       historicalProvenance: stash.session.investigationHistoricalProvenance === 'not recorded' ? 'not recorded' : 'recorded',
     };
@@ -119,7 +122,7 @@ export class InvestigationSessionService {
       tabs: stash.tabs, dashboardLayout: stash.dashboardLayout, dashboardState: stash.dashboardState, investigation: stash.investigation };
     // Schema 1 checksummed only state. Schema 2 also binds every provenance field,
     // excluding the checksum itself to avoid a circular digest.
-    if (stash.schemaVersion === 2) {
+    if (stash.schemaVersion >= 2) {
       const { stateChecksum, ...provenance } = stash.provenance;
       return { ...state, provenance };
     }
@@ -132,6 +135,10 @@ export class InvestigationSessionService {
       visibleNodes: session.data.nodes.filter(node => node.visible !== false).length,
       visibleEdges: session.data.links.filter(link => link.visible !== false).length,
     };
+  }
+
+  private annotationResolution(session: any, workspace: InvestigationWorkspace): Record<string, boolean> {
+    return Object.fromEntries(workspace.annotations.map(note => [note.id, investigationAnnotationResolved(note, session, workspace)]));
   }
 
   private validateProvenance(stash: StashObjects): void {
@@ -159,12 +166,17 @@ export class InvestigationSessionService {
     this.validate(stash);
     if (stash.schemaVersion !== undefined) {
       this.validateProvenance(stash);
+      if (stash.schemaVersion >= 3 && canonicalInvestigationJson(stash.provenance.annotationResolution)
+        !== canonicalInvestigationJson(this.annotationResolution(stash.session, stash.investigation))) {
+        throw new Error('The annotation target resolution does not match the saved network.');
+      }
       const summaries: InvestigationManifest['investigation']['calculations'] = {};
       for (const [operation, run] of Object.entries(stash.investigation.calculations)) {
         const { inputs, output, ...summary } = run;
         const { __scopeOptions, ...parameters } = run.parameters;
         if (await investigationChecksum({ inputs, parameters }) !== run.inputChecksum) throw new Error('A calculation input checksum does not match its recorded inputs.');
-        summaries[operation] = { ...summary, outputChecksum: await investigationChecksum(output) };
+        summaries[operation] = { ...summary, outputChecksum: await investigationChecksum(output),
+          ...(stash.schemaVersion >= 3 ? { outputSummary: investigationOutputSummary(run.operation, output) } : {}) };
       }
       if (canonicalInvestigationJson({ ...stash.investigation, calculations: summaries }) !== canonicalInvestigationJson(stash.provenance.investigation)) {
         throw new Error('The investigation manifest does not match the saved settings and results.');
@@ -216,7 +228,7 @@ export class InvestigationSessionService {
   }
 
   validate(stash: StashObjects): void {
-    if (stash.schemaVersion !== undefined && ![1, INVESTIGATION_SCHEMA_VERSION].includes(stash.schemaVersion)) throw new Error(`Unsupported investigation schema version: ${stash.schemaVersion}.`);
+    if (stash.schemaVersion !== undefined && ![1, 2, INVESTIGATION_SCHEMA_VERSION].includes(stash.schemaVersion)) throw new Error(`Unsupported investigation schema version: ${stash.schemaVersion}.`);
     const session = stash.session;
     if (!session?.data || !Array.isArray(session.data.nodes) || !Array.isArray(session.data.links)
       || !session.style?.widgets || typeof session.style.widgets !== 'object') throw new Error('The saved session does not contain a valid network and settings.');
@@ -238,9 +250,21 @@ export class InvestigationSessionService {
     const state = stash.investigation;
     if (typeof stash.snapshotId !== 'string' || !state || !Array.isArray(state.cohorts) || !Array.isArray(state.edgeLayers)
       || !Array.isArray(state.annotations) || !Array.isArray(state.selectedCohortIds) || !state.scopes || !state.calculations || !state.viewStates
+      || typeof state.viewStates !== 'object' || Array.isArray(state.viewStates)
       || !state.threshold || !Number.isFinite(state.threshold.value) || !state.filters?.state || !Array.isArray(state.filters.exclusions)
       || !state.filters.tables || !state.layout?.widgets || !Array.isArray(state.layout.nodes) || !Array.isArray(state.layout.tabs)
       || !state.grouping?.widgets || !Array.isArray(state.grouping.groups)) throw new Error('The investigation state is incomplete.');
+    const treeViewport = state.viewStates['Phylogenetic Tree'];
+    if (treeViewport !== undefined && (!treeViewport || !['x', 'y', 'k'].every(key => Number.isFinite(treeViewport[key])) || treeViewport.k <= 0)) throw new Error('The saved tree viewport is invalid.');
+    const alignmentViewport = state.viewStates['Alignment View'];
+    if (alignmentViewport !== undefined && (!alignmentViewport || !['scrollLeft', 'scrollTop'].every(key => Number.isFinite(alignmentViewport[key]) && alignmentViewport[key] >= 0))) throw new Error('The saved alignment viewport is invalid.');
+    const heatmapViewport = state.viewStates.Heatmap;
+    if (heatmapViewport !== undefined && (!heatmapViewport || !['xaxis', 'yaxis'].every(key => {
+      const axis = heatmapViewport[key];
+      return axis && [true, false, 'reversed'].includes(axis.autorange)
+        && (axis.range === undefined || (Array.isArray(axis.range) && axis.range.length === 2
+          && axis.range.every(value => typeof value === 'string' || Number.isFinite(value))));
+    }))) throw new Error('The saved Heatmap viewport is invalid.');
     const cohortIds = new Set<string>();
     for (const cohort of state.cohorts) {
       if (!cohort.id || cohortIds.has(cohort.id) || typeof cohort.name !== 'string' || !cohort.name.trim()
@@ -280,9 +304,6 @@ export class InvestigationSessionService {
   }
 
   readableRecord(manifest: InvestigationManifest): string {
-    const escape = (value: any) => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-    const section = (title: string, value: any) => `<section><h2>${escape(title)}</h2><pre>${escape(JSON.stringify(value, null, 2))}</pre></section>`;
-    const state = manifest.investigation;
-    return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>MicrobeTrace investigation record</title><style>body{font:16px system-ui;max-width:1000px;margin:2rem auto;padding:0 1rem;color:#172b4d}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f8;padding:1rem}h2{margin-top:2rem}</style><h1>MicrobeTrace investigation record</h1><p>Snapshot ${escape(manifest.snapshotId)} · ${escape(manifest.capturedAt)}</p><p>State SHA-256: ${escape(manifest.stateChecksum)}</p>${section('Software', manifest.software)}${section('Input sources', manifest.sources)}${section('Network counts', manifest.counts)}${section('Threshold', state.threshold)}${section('Filters', state.filters)}${section('Layout', state.layout)}${section('Grouping', state.grouping)}${section('Cohorts', { cohorts: state.cohorts, selectedCohortIds: state.selectedCohortIds })}${section('Relationship layers', state.edgeLayers)}${section('Annotations', state.annotations)}${section('Calculation scopes and completed results', { scopes: state.scopes, calculations: state.calculations })}<p>Historical provenance: ${escape(manifest.historicalProvenance)}. Exact analytical inputs and completed outputs are retained in the accompanying session.</p></html>`;
+    return readableInvestigationRecord(manifest);
   }
 }

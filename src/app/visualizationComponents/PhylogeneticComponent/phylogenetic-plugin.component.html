@@ -295,6 +295,7 @@
         <div class="form-group row">
           <div class="col-12">
             <button pButton type="button" id="calculate-bootstrap" class="ui-button-raised" [disabled]="!isBootstrapCalculationAvailable() || BootstrapRunning" (click)="calculateBootstrapSupport()"><span class="p-button-label">Calculate Bootstrap</span></button>
+            <small class="d-block text-muted" data-testid="bootstrap-scope-summary">{{ bootstrapScopeSummary() }}</small>
             @if (BootstrapRunning) {
               <button pButton type="button" id="cancel-bootstrap" class="ui-button-secondary ml-2" (click)="cancelBootstrapSupport()"><span class="p-button-label">Cancel</span></button>
             }

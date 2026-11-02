@@ -57,7 +57,7 @@
           <!-- <button mat-menu-item (click)="FileClick('Stash Session')">Stash</button> -->
           <!-- <button mat-menu-item (click)="FileClick('Recall Session')">Recall</button> -->
           <button mat-menu-item (click)="FileClick('Save Session')">Save</button>
-          <button data-testid="app-file-menu-investigation" mat-menu-item (click)="investigationOpen = true" title="Manage cohorts, relationship layers, notes, and calculation scope">Investigation Workspace</button>
+          <button data-testid="app-file-menu-investigation" mat-menu-item (click)="investigationOpen = true" title="Save investigations and export reproducibility reports">Reproducibility Report</button>
           <button data-testid="app-file-menu-export-dashboard" mat-menu-item (click)="OpenExportDashboard()">Export Dashboard</button>
           <button mat-menu-item (click)="OpenExportTables()">Export Tables</button>
           <button data-testid="app-file-menu-export-graphml" mat-menu-item (click)="ExportGraphML()">Export GraphML</button>
@@ -541,7 +541,7 @@
                       <div class="threshold-stability-panel" data-testid="threshold-stability-panel">
                         <div class="threshold-stability-panel__hint">
                           @if (commonService.session.investigation.calculations['threshold-analysis']?.status === 'stale') {
-                            <p role="status">Saved threshold analysis is stale. Open File → Investigation Workspace and run Threshold analysis to refresh it.</p>
+                            <p role="status">Saved threshold analysis is stale. Open File → Reproducibility Report and run Threshold analysis to refresh it.</p>
                           }
                           Genetic-link analysis only.
                           <i
@@ -1232,7 +1232,7 @@
   <!-- /.modal-dialog -->
 </p-dialog>
 
-<p-dialog header="Investigation Workspace" [(visible)]="investigationOpen" [modal]="false" appendTo="body" [style]="{ width: '780px', maxWidth: '95vw' }" [baseZIndex]="1500">
+<p-dialog header="Reproducibility Report" [(visible)]="investigationOpen" [modal]="false" appendTo="body" [style]="{ width: '780px', maxWidth: '95vw' }" [baseZIndex]="1500">
   @if (investigationOpen) {
     <app-investigation-panel (saveInvestigation)="investigationOpen = false; FileClick('Save Session')" (downloadRecord)="downloadInvestigationRecord()"></app-investigation-panel>
   }

@@ -2341,7 +2341,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
           if (!isCurrentLoad()) return;
           const activeThreshold = Number(this.commonService.session.style.widgets['link-threshold']);
           const requeryStart = Date.now();
-          const patristicResult = await this.commonService.ensurePatristicEdgesForThreshold(activeThreshold);
+          const patristicResult = await this.commonService.ensurePatristicEdgesForThreshold(activeThreshold, { initialImport: true });
 
           if (!isCurrentLoad()) return;
 
@@ -2663,7 +2663,7 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         const sessionEntry = sessionEntries.find(entry => entry.name.toLowerCase().endsWith('.microbetrace')) || sessionEntries[0];
 
         if (!sessionEntry) {
-          throw new Error('No MicrobeTrace session file found in zip archive.');
+          throw new Error('This archive has no portable MicrobeTrace session. For an older report-only archive, open its matching .microbetrace file or a complete session ZIP.');
         }
 
         const entryExtension = sessionEntry.name.split('.').pop()?.toLowerCase();
@@ -2677,7 +2677,10 @@ export class FilesComponent extends BaseComponentDirective implements OnInit {
         }));
       })
       .then(({ contents, entryExtension }) => this.applySerializedSession(contents, entryExtension))
-      .catch(error => console.error('Unable to load compressed MicrobeTrace session file.', error));
+      .catch(error => {
+        this.commonService.sessionLoadError = `Unable to open session ZIP. ${error instanceof Error ? error.message : 'The archive is invalid or damaged.'}`;
+        this.refreshTemplateState();
+      });
   }
 
   /**

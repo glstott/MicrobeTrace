@@ -1,6 +1,6 @@
 import {
   createInvestigationWorkspace, resolveInvestigationInputs, eligibleInvestigationOrigins,
-  investigationCopy, investigationChecksum, investigationAnnotationResolved, investigationInputKey,
+  investigationCopy, investigationChecksum, investigationAnnotationResolved, investigationInputKey, investigationOutputSummary,
 } from './investigation-state';
 import { InvestigationSessionService } from './investigation-session.service';
 import { InvestigationCalculationService } from './investigation-calculation.service';
@@ -158,6 +158,32 @@ describe('Investigation scope contract', () => {
 
 describe('Investigation portable sessions', () => {
   const sessions = new InvestigationSessionService();
+  it('round-trips validated tree, heatmap and alignment viewports and captures missing edge targets', async () => {
+    const session = investigationFixture();
+    session.investigation.viewStates = { 'Phylogenetic Tree': { x: -150, y: 60, k: 2.5 },
+      Heatmap: { xaxis: { autorange: false, range: [0.5, 2.5] }, yaxis: { autorange: 'reversed', range: [3, 1] } },
+      'Alignment View': { scrollLeft: 80, scrollTop: 20 } };
+    session.investigation.annotations[0].target.id = 'deleted-edge';
+    const saved = await sessions.capture({ session, tabs: [] });
+    expect(saved.provenance.annotationResolution).toEqual({ note: false });
+    expect((await sessions.prepare(JSON.parse(JSON.stringify(saved)))).session.investigation.viewStates).toEqual(session.investigation.viewStates);
+    for (const [key, value] of [['Phylogenetic Tree', { x: 0, y: 0, k: -1 }], ['Heatmap', { xaxis: { autorange: false, range: [0] } }], ['Alignment View', { scrollLeft: -1, scrollTop: 0 }]]) {
+      const broken = investigationCopy(saved); broken.investigation.viewStates[key as string] = value;
+      await expectAsync(sessions.prepare(broken)).toBeRejectedWithError(/viewport/);
+    }
+    saved.provenance.annotationResolution.note = true;
+    await expectAsync(sessions.prepare(saved)).toBeRejectedWithError(/target resolution/);
+  });
+  it('loads a schema-2 manifest without new publication metadata and upgrades on capture', async () => {
+    const saved = await sessions.capture({ session: investigationFixture(), tabs: [] });
+    saved.schemaVersion = saved.provenance.schemaVersion = 2;
+    delete saved.provenance.annotationResolution;
+    const { stateChecksum, ...provenance } = saved.provenance;
+    saved.provenance.stateChecksum = await investigationChecksum({ schemaVersion: 2, snapshotId: saved.snapshotId, session: saved.session,
+      tabs: saved.tabs, dashboardLayout: saved.dashboardLayout, dashboardState: saved.dashboardState, investigation: saved.investigation, provenance });
+    const loaded = await sessions.prepare(saved);
+    expect((await sessions.capture(loaded)).schemaVersion).toBe(3);
+  });
   it('round-trips all state categories through JSON, preserving styles and stable membership', async () => {
     const session = investigationFixture();
     const computations = new InvestigationCalculationService(sessions);
@@ -252,9 +278,9 @@ describe('Investigation portable sessions', () => {
       await expectAsync(sessions.prepare(changed)).toBeRejectedWithError(/provenance metadata/);
     }
   });
-  it('binds valid publication metadata values to the schema-2 checksum', async () => {
+  it('binds valid publication metadata values to the current schema checksum', async () => {
     const saved = await sessions.capture({ session: investigationFixture(), tabs: [] });
-    expect(saved.schemaVersion).toBe(2);
+    expect(saved.schemaVersion).toBe(3);
     for (const change of [
       (manifest: any) => manifest.capturedAt = '2020-01-01T00:00:00.000Z',
       (manifest: any) => manifest.software.version = 'different version',
@@ -278,7 +304,7 @@ describe('Investigation portable sessions', () => {
       dashboardLayout: saved.dashboardLayout, dashboardState: saved.dashboardState, investigation: saved.investigation });
     const loaded = await sessions.prepare(saved);
     expect(loaded.session.data.nodes.length).toBe(4);
-    expect((await sessions.capture(loaded)).schemaVersion).toBe(2);
+    expect((await sessions.capture(loaded)).schemaVersion).toBe(3);
     saved.provenance.counts.nodes = 999;
     await expectAsync(sessions.prepare(saved)).toBeRejectedWithError(/counts do not match/);
   });
@@ -286,6 +312,32 @@ describe('Investigation portable sessions', () => {
 
 describe('Investigation calculation transactions', () => {
   const snapshots = new InvestigationSessionService();
+  it('shares identical pending matrix reads without superseding work and permits a later retry', async () => {
+    const service = new InvestigationCalculationService(snapshots), session = investigationFixture();
+    let finish: (value: any) => void;
+    const work = jasmine.createSpy('matrix').and.callFake(() => new Promise(resolve => finish = resolve));
+    const first = service.shareRead(session, 'distance-matrix', work);
+    const second = service.shareRead(session, 'distance-matrix', work);
+    expect(second).toBe(first);
+    expect(work).toHaveBeenCalledTimes(1);
+    finish({ dm: [[0]], labels: ['A'] });
+    await Promise.all([first, second]);
+    const next = service.shareRead(session, 'distance-matrix', async () => 'next');
+    expect(await next).toBe('next');
+  });
+  it('preserves sparse matrix dimensions while copying serializable results', () => {
+    const matrix = new Array(4); matrix[0] = new Array(4); matrix[0][0] = 0;
+    const copied = investigationCopy(matrix);
+    expect(copied.length).toBe(4); expect(copied[0].length).toBe(4);
+    expect(JSON.parse(JSON.stringify(copied))).toEqual([[0, null, null, null], null, null, null]);
+  });
+  it('records actual bootstrap batches/seeds and statistics approximations in publication summaries', () => {
+    const sampling = { batchSize: 10, workerCount: 2, batches: [{ batchId: 0, seed: 42, replicates: 10, completed: true }], completedBatchOrder: [0] };
+    const summary = investigationOutputSummary('bootstrap', { requestedReplicates: 100, completedReplicates: 10, stoppedEarly: true, stable: true, supportBySplitKey: { AB: 90 }, sampling });
+    expect(summary.completedReplicates).toBe(10); expect(summary.sampling).toEqual(sampling);
+    expect(summary.sampling).not.toBe(sampling); expect(summary.counts['supported splits']).toBe(1);
+    expect(investigationOutputSummary('network-statistics', { summary: { nodeCount: 5, linkCount: 4, componentCount: 1, approximateBetweenness: true, approximatePathMetrics: true, sampledSourceCount: 2 }, sampledSourceNodeIds: ['A', 'C'], exactNodeLimit: 3, exactLinkLimit: 10 }).approximation.sampledSourceNodeIds).toEqual(['A', 'C']);
+  });
   it('captures isolated input rows and preserves a completed output and its provenance', async () => {
     const service = new InvestigationCalculationService(snapshots);
     const session = investigationFixture();

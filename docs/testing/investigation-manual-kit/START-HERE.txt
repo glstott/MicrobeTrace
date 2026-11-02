@@ -4,7 +4,7 @@ MicrobeTrace investigation snapshots: synthetic manual test kit
 2. Open manual-testing.html in your browser for the full step-by-step checklist.
 3. Open the MicrobeTrace build containing the investigation feature.
 4. In MicrobeTrace, use File > Add Data to load 02-configured.microbetrace.
-5. Open File > Investigation Workspace and follow case M01. Use 01-start.microbetrace for authoring.
+5. Open File > Reproducibility Report and follow case M01. Use 01-start.microbetrace for authoring.
 6. Record Pass / Fail / Not exercised in manual-test-results.csv.
 
 Save investigation includes everything without individual feature selections.

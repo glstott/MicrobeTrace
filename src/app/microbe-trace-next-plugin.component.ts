@@ -5356,10 +5356,16 @@ ${warnings.join('\n')}`,
         const tableView = this.commonService.visuals.tableComp?.captureInvestigationViewState?.();
         const mapView = this.commonService.visuals.gisMap?.captureInvestigationViewState?.();
         const statisticsView = this.commonService.visuals.networkStatistics?.captureInvestigationViewState?.();
+        const treeView = this.commonService.visuals.phylogenetic?.captureInvestigationViewState?.();
+        const heatmapView = this.commonService.visuals.heatmap?.captureInvestigationViewState?.();
+        const alignmentView = this.commonService.visuals.alignment?.captureInvestigationViewState?.();
         const viewStates = { ...current.investigation.viewStates,
             ...(captured ? { '2D Network': captured.viewState } : {}),
             ...(tableView ? { Table: tableView } : {}), ...(mapView ? { Map: mapView } : {}),
-            ...(statisticsView ? { 'Network Statistics': statisticsView } : {}) };
+            ...(statisticsView ? { 'Network Statistics': statisticsView } : {}),
+            ...(treeView ? { 'Phylogenetic Tree': treeView } : {}),
+            ...(heatmapView ? { Heatmap: heatmapView } : {}),
+            ...(alignmentView ? { 'Alignment View': alignmentView } : {}) };
         const tableSettings = Object.fromEntries((tableView?.tables || []).flatMap(table => [
             [`${table.type}Filter`, table.filter], [`${table.type}TableColumns`, table.columns] ]));
         const positionById = new Map<string, any>((captured?.nodes || []).map(node => [node.id, node]));
@@ -5611,6 +5617,7 @@ ${warnings.join('\n')}`,
         try {
             const stash = await this.buildSessionStash();
             const zip = new JSZip();
+            zip.file(`${this.saveFileName || 'investigation'}.microbetrace`, JSON.stringify(stash));
             zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
             zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
             this.saveGeneratedFile(await zip.generateAsync({ type: 'blob' }), `${this.saveFileName || 'investigation'}-record.zip`);

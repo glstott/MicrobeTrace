@@ -15,6 +15,7 @@
           <span style="font-size: 1.25rem; padding-left: 15px; padding-top: 10px;">Current Distance Metric: {{this.heatmapMetric}}</span>
         </div>
         <div class="m-portlet__body" style="height: 100%; overflow: auto">
+            @if (heatmapError) { <p role="alert" class="text-muted">{{ heatmapError }}</p> }
             <div #heatmapContainer id="heatmap">
           </div>
         </div>

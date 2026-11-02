@@ -848,6 +848,21 @@ TidyTree.prototype.recenter = function () {
   return this;
 };
 
+TidyTree.prototype.captureViewport = function () {
+  const svg = this.parent && this.parent.select('svg').node();
+  if (!svg) return undefined;
+  const transform = d3.zoomTransform(svg);
+  return { x: transform.x, y: transform.y, k: transform.k };
+};
+
+TidyTree.prototype.restoreViewport = function (viewport) {
+  if (!viewport || ![viewport.x, viewport.y, viewport.k].every(Number.isFinite) || viewport.k <= 0) return false;
+  const svg = this.parent && this.parent.select('svg');
+  if (!svg || svg.empty()) return false;
+  svg.interrupt().call(this.zoom.transform, d3.zoomIdentity.translate(viewport.x, viewport.y).scale(viewport.k));
+  return true;
+};
+
 /**
  * Set the TidyTree's layout
  * @param {String} newLayout The new layout

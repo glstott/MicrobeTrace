@@ -1,11 +1,21 @@
 /// <reference types="cypress" />
 import JSZip from 'jszip';
 import { expandInvestigationTools } from '../../support/investigation-helpers';
-import { assertPhyloTreeReady, goToPhyloTreeView, installSaveAsCaptureHook, saveSessionFromFileMenu,
+import { assertPhyloTreeReady, assertHeatmapReady, goToPhyloTreeView, installSaveAsCaptureHook, saveSessionFromFileMenu,
   waitForProcessingDialogToClear, writeCapturedDownloadToDisk } from '../../support/journey-helpers';
 import { INVESTIGATION_OPERATIONS } from '../../../src/app/contactTraceCommonServices/investigation-state';
 
 type RestoreMonitor = { runs?: ReturnType<typeof Cypress.sinon.spy>; messages?: ReturnType<typeof Cypress.sinon.spy> };
+
+function openViewportView(name: string) {
+  // Viewports belong to the active pane. Forced menu clicks can leave the new
+  // tab behind another pane in a restored multi-pane dashboard.
+  cy.get('[data-testid="app-view-menu-button"]').should('be.visible').click();
+  cy.contains('button[mat-menu-item]', name).should('be.visible').click();
+  cy.window().its('commonService.session.tabLoaded').should('equal', true);
+  cy.contains('.lm_tab', name).should('be.visible').click();
+  cy.contains('.lm_tab', name).should('have.class', 'lm_active');
+}
 
 // Install before the application exposes CommonService: local links start loading
 // during initialization, before a cy.window() callback could attach its spies.
@@ -87,6 +97,75 @@ function prepareAllCompletedResults() {
 }
 
 describe('Investigation snapshots', () => {
+  for (const format of ['file', 'compressed', 'local-link'] as const) {
+    it(`restores Tree, Heatmap and Alignment viewports through ${format}`, () => {
+      const name = `viewports_${format}_${Date.now()}`, path = `${Cypress.config('downloadsFolder')}/${name}.${format === 'compressed' ? 'zip' : 'microbetrace'}`;
+      let expected: any;
+      cy.visit('/?skipEula=1&skipDemoSession=1');
+      cy.get('#fileDropRef').selectFile('cypress/fixtures/investigation/03-imported-tree.microbetrace', { force: true });
+      cy.window({ timeout: 30000 }).should((win: any) => {
+        expect(win.commonService.session.data.nodes).to.have.length(5);
+        expect(win.commonService.session.network.isFullyLoaded).to.equal(true);
+        expect(win.commonService.session.tabLoaded, 'dashboard restoration finished').to.equal(true);
+      });
+      waitForProcessingDialogToClear(60000);
+      cy.window().then((win: any) => win.commonService.session.data.nodes.forEach((node: any) => node.seq = node.seq.repeat(30)));
+      openViewportView('Phylogenetic Tree'); assertPhyloTreeReady();
+      cy.window().then((win: any) => win.commonService.visuals.phylogenetic.tree.restoreViewport({ x: -120, y: 45, k: 2.25 }));
+      openViewportView('Heatmap'); assertHeatmapReady();
+      cy.get('#heatmap .heatmaplayer').should('exist');
+      cy.window().then((win: any) => {
+        const graph = win.document.getElementById('heatmap');
+        graph.layout.xaxis = { ...graph.layout.xaxis, autorange: false, range: [0.25, 2.75] };
+        graph.layout.yaxis = { ...graph.layout.yaxis, autorange: false, range: [3.5, 0.5] };
+        win.commonService.visuals.heatmap.redrawHeatmap();
+      });
+      openViewportView('Alignment View');
+      cy.get('#msa-viewer .canvasHolder canvas').should('be.visible');
+      cy.get('#msa-viewer .canvasHolder').scrollTo(120, 0);
+      cy.window().then((win: any) => {
+        const visuals = win.commonService.visuals;
+        expected = { 'Phylogenetic Tree': visuals.phylogenetic.captureInvestigationViewState(), Heatmap: visuals.heatmap.captureInvestigationViewState(), 'Alignment View': visuals.alignment.captureInvestigationViewState() };
+        expect(expected['Alignment View'].scrollLeft).to.equal(120);
+      });
+      installSaveAsCaptureHook();
+      if (format === 'local-link') {
+        cy.get('[data-testid="app-file-menu-button"]').click(); cy.contains('button[mat-menu-item]', 'Save').click();
+        cy.get('#stash-name').type(name); cy.get('#session-stash-modal p-select').click();
+        cy.contains('li[role="option"]', 'Local link').click(); cy.get('#stash-data').click();
+        cy.get('#local-session-link-url').invoke('val').then(value => {
+          cy.visit(String(value));
+          // Production links omit test-only startup flags. Continue dismisses
+          // the welcome screen without replacing the restored investigation.
+          cy.get('body').then($body => {
+            if ($body.find('[data-testid="app-sample-dataset-button"]:visible').length) {
+              cy.get('[data-testid="app-sample-dataset-button"]').click();
+            }
+          });
+          cy.get('#overlay').should('not.be.visible');
+        });
+      } else {
+        saveSessionFromFileMenu(name, { compress: format === 'compressed' });
+        writeCapturedDownloadToDisk(`${name}.${format === 'compressed' ? 'zip' : 'microbetrace'}`, path);
+        cy.visit('/?skipEula=1&skipDemoSession=1'); cy.get('#fileDropRef').selectFile(path, { force: true });
+      }
+      cy.window({ timeout: 30000 }).should((win: any) => {
+        for (const key of Object.keys(expected)) expect(win.commonService.session.investigation.viewStates[key], key).to.deep.equal(expected[key]);
+        expect(win.commonService.session.network.isFullyLoaded).to.equal(true);
+        expect(win.commonService.session.tabLoaded, 'dashboard restoration finished').to.equal(true);
+      });
+      waitForProcessingDialogToClear(60000);
+      openViewportView('Phylogenetic Tree'); assertPhyloTreeReady();
+      cy.window().should((win: any) => expect(win.commonService.visuals.phylogenetic.captureInvestigationViewState()).to.deep.equal(expected['Phylogenetic Tree']));
+      openViewportView('Heatmap'); assertHeatmapReady();
+      cy.get('#heatmap').should(($graph: any) => {
+        expect($graph[0]._fullLayout.xaxis.range).to.deep.equal(expected.Heatmap.xaxis.range);
+        expect($graph[0]._fullLayout.yaxis.range).to.deep.equal(expected.Heatmap.yaxis.range);
+      });
+      openViewportView('Alignment View');
+      cy.get('#msa-viewer .canvasHolder').should($holder => expect($holder[0].scrollLeft).to.be.closeTo(120, 1));
+    });
+  }
   it('restores cohorts, layers, notes, scopes and completed results from a portable audit bundle', () => {
     const name = `investigation_roundtrip_${Date.now()}`;
     const filename = `${name}.zip`, path = `${Cypress.config('downloadsFolder')}/${filename}`;
@@ -126,7 +205,7 @@ describe('Investigation snapshots', () => {
       const saved = JSON.parse(await zip.file(`${name}.microbetrace`)!.async('text'));
       const manifest = JSON.parse(await zip.file('investigation-manifest.json')!.async('text'));
       const html = await zip.file('investigation-record.html')!.async('text');
-      expect(saved.schemaVersion).to.equal(2);
+      expect(saved.schemaVersion).to.equal(3);
       expect(manifest.snapshotId).to.equal(saved.snapshotId);
       expect(manifest.stateChecksum).to.equal(saved.provenance.stateChecksum);
       expect(html).to.include(saved.snapshotId).and.include('&lt;check sources&gt;');

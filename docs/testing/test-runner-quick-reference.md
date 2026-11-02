@@ -8,6 +8,37 @@ This repo already supports targeted test runs. You do not need to run the full s
 - Cypress E2E runs through `npx cypress run`, which supports `--spec`.
 - Most maintained coverage in this repo is Cypress-based, so view-specific validation will usually mean running one or a few Cypress specs rather than the entire suite.
 
+## Complete Standard Regression
+
+The normal `e2e:journeys:all:local:chrome` command now discovers all standard ingestion/journey, view-state, and contract specs. It uses alphabetical batches of at most 25 specs, with a 45-minute timeout per batch, against one server on port 4210. Chrome is preferred; missing Chrome automatically substitutes Electron. Performance, stress, dedicated parity captures and the five dedicated large-data journeys remain separate.
+
+In PowerShell, start each Cypress-related command with the environment cleanup below. Use `npm.cmd` rather than `npm.ps1`:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+npm.cmd run start:local-cypress
+```
+
+In another terminal:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+npm.cmd run e2e:journeys:all:local:chrome
+```
+
+`npm.cmd run e2e` owns the server for the whole run and stops it afterward. The direct local commands reuse an existing server, leaving it running for its owner. The runner clears only previous-date test processes associated with this checkout or Cypress; it preserves unrelated same-day processes.
+
+Each batch retains complete logs and Cypress JSON results under a dated `tmp/cypress-regression-*` directory, plus a checkpointed `report.json` with passed, failed, pending, skipped, duration and retry information. Every final failing spec is rerun in isolation; retry-only passes and isolation passes are distinguished from persistent failures. Attribution to branch changes still requires reviewing the diff and, where uncertain, comparing the base revision. An incomplete batch is reported as incomplete coverage.
+
+If a process or browser is interrupted, restart the same application server, then resume with the original output directory. Completed batches are retained, incomplete batches are rerun, and the interruption remains recorded:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+node scripts/run-cypress-regression.js --suite all --output tmp/cypress-regression-YOUR-RUN --resume
+```
+
+The corresponding `flows`, `view-state` and `contracts` scripts use the same discovery and reporting. `npm.cmd run test:regression-plan` checks discovery without running Cypress.
+
 ## Run One Unit Spec
 
 ```bash

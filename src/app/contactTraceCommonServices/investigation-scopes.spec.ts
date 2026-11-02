@@ -192,6 +192,48 @@ describe('Investigation calculation scope matrix (real workers)', () => {
       expect(common.session.investigation.calculations.bootstrap).toBeUndefined();
     });
   }
+  it('rechecks visible bootstrap taxa when confirmation is accepted, without recording different worker inputs', async () => {
+    common.session.investigation.scopes.bootstrap = 'visible';
+    const view = bootstrapView(common, populations.visible);
+    let confirmation: any;
+    view.confirmationService = { confirm: options => confirmation = options };
+    const worker = spyOn(common.workerComputeService, 'computePhylogeneticBootstrap').and.callThrough();
+    const pending = view.calculateBootstrapSupport();
+    expect(confirmation.message).toContain('Visible network: 4 eligible sequences');
+    common.session.data.nodes.find(node => node._id === 'D').visible = false;
+    confirmation.accept(); await pending;
+    expect(worker).not.toHaveBeenCalled();
+    expect(common.session.investigation.calculations.bootstrap).toBeUndefined();
+    expect(view.BootstrapStatusMessage).toContain('base tree matching the calculation scope');
+  });
+  it('does not launch bootstrap for a replacement investigation after confirmation', async () => {
+    const view = bootstrapView(common, sequenceTaxa('full'));
+    let confirmation: any;
+    view.confirmationService = { confirm: options => confirmation = options };
+    const worker = spyOn(common.workerComputeService, 'computePhylogeneticBootstrap').and.callThrough();
+    const pending = view.calculateBootstrapSupport();
+    common.session = { ...common.session, investigation: createInvestigationWorkspace() };
+    confirmation.accept(); await pending;
+    expect(worker).not.toHaveBeenCalled();
+    expect(view.BootstrapStatusMessage).toContain('investigation changed');
+  });
+  it('does not launch background patristic work until the initial import is complete', async () => {
+    common.session.network = { isFullyLoaded: false };
+    const worker = spyOn(common.workerComputeService, 'computePatristicEdges').and.callThrough();
+    expect(await common.ensurePatristicEdgesForThreshold(100)).toBeNull();
+    expect(worker).not.toHaveBeenCalled();
+    expect(common.session.investigation.calculations.patristic).toBeUndefined();
+  });
+  it('gives concurrent matrix readers independent copies of one completed calculation', async () => {
+    const compute = spyOn(common.investigationCalculations, 'run').and.callThrough();
+    const [first, second] = await Promise.all([common.getDM(), common.getDM()]);
+    first.dm[0].reverse(); first.labels.reverse();
+    expect(second.labels).toEqual(sequenceTaxa('full'));
+    expect(second.dm[0]).toEqual(sequenceTaxa('full').map(id => distance('A', id)));
+    expect(compute).toHaveBeenCalledTimes(1);
+    const record = common.session.investigation.calculations['distance-matrix'];
+    expect(record.output.value.labels).toEqual(second.labels);
+  });
   for (const operation of sequenceOperations.filter(id => id !== 'bootstrap') as InvestigationOperation[]) {
     it(`${operation}: explains an empty eligible sequence population without widening scope`, async () => {
       common.session.data.nodes.forEach(node => { if (populations.visible.includes(node._id)) delete node.seq; });

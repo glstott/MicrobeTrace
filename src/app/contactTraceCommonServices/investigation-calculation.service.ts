@@ -18,6 +18,7 @@ export interface InvestigationRunOptions {
 @Injectable({ providedIn: 'root' })
 export class InvestigationCalculationService {
   private readonly jobs = new WeakMap<object, Map<string, string>>();
+  private readonly reads = new WeakMap<object, Map<string, { key: string; promise: Promise<any> }>>();
   private readonly pending = new Set<Promise<any>>();
   constructor(private readonly snapshots: InvestigationSessionService) {}
 
@@ -59,7 +60,24 @@ export class InvestigationCalculationService {
   }
 
   async flush(): Promise<void> { await Promise.all(Array.from(this.pending)); }
-  cancelSession(session: object): void { this.jobs.set(session, new Map()); }
+  cancelSession(session: object): void { this.jobs.set(session, new Map()); this.reads.delete(session); }
+
+  /** Render consumers share identical work; reading a matrix must not supersede another reader. */
+  shareRead<T>(session: any, operation: InvestigationOperation, work: () => Promise<T>, options: InvestigationRunOptions = {}): Promise<T> {
+    let key: string;
+    try { key = this.key(session, operation, options); } catch (error) { return Promise.reject(error); }
+    if (!this.reads.has(session)) this.reads.set(session, new Map());
+    const reads = this.reads.get(session);
+    const existing = reads.get(operation);
+    if (existing?.key === key) return existing.promise;
+    let promise: Promise<T>;
+    try { promise = work(); } catch (error) { return Promise.reject(error); }
+    const entry = { key, promise };
+    reads.set(operation, entry);
+    const clear = () => { if (reads.get(operation) === entry) reads.delete(operation); };
+    void promise.then(clear, clear);
+    return promise;
+  }
 
   rebaseAfterApply(session: any, operation: InvestigationOperation): void {
     const run = this.snapshots.workspace(session).calculations[operation];

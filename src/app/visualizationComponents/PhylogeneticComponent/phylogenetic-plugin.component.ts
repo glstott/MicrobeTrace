@@ -205,6 +205,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   private treeRenderRecoveryFrame: number | null = null;
   private treeRenderRecoveryAttempts = 0;
   private readonly maxTreeRenderRecoveryAttempts = 180;
+  private viewportSession: any;
 
   private visuals: MicrobeTraceNextVisuals;
   private destroy$ = new Subject<void>();
@@ -236,6 +237,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   }
 
   openTree = async () => {
+    this.viewportSession = this.commonService.session;
     /*
     if (this.visuals.phylogenetic.commonService.session.data.newickString) {
       this.tree = new TidyTree(this.visuals.phylogenetic.commonService.session.data.tree,
@@ -276,6 +278,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     }
     this.hasNewickFile = this.commonService.session.files.some(file => file.format == 'newick');
     this.applyStoredBootstrapSupport(true);
+    this.restoreInvestigationViewState();
     if (this.ensureTreeRenderedInCanvas()) {
       this.markTreeRendered();
     }
@@ -370,6 +373,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     );
     this.tree = tree;
     this.commonService.visuals.phylogenetic.tree = tree;
+    this.restoreInvestigationViewState(tree);
     this.originalTreeData = tree.data?.clone ? tree.data.clone() : tree.data;
     this.hasTreeBeenModifiedFromOriginal = false;
 
@@ -817,7 +821,17 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       this.getTreeOptions(),
       this.getTreeHandlers(),
     );
+    this.restoreInvestigationViewState(tree);
     return tree;
+  }
+
+  captureInvestigationViewState(): any {
+    if (this.viewportSession !== this.commonService.session) return undefined;
+    return this.tree?.captureViewport?.();
+  }
+
+  private restoreInvestigationViewState(tree: any = this.tree): boolean {
+    return !!tree?.restoreViewport?.(this.commonService.session.investigation?.viewStates?.['Phylogenetic Tree']);
   }
 
   getTreeOptions = () => {
@@ -869,8 +883,10 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
     this.openTree();
 
     this.container.on('resize', () => {
+      const viewport = this.captureInvestigationViewState();
       this.goldenLayoutComponentResize();
-      this.openCenter()
+      this.tree?.redraw();
+      if (viewport) this.tree?.restoreViewport?.(viewport);
     })
     this.container.on('hide', () => {
       this.viewActive = false;
@@ -895,6 +911,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   }
 
   ngOnDestroy(): void {
+    const viewport = this.captureInvestigationViewState();
+    if (viewport) this.commonService.session.investigation.viewStates['Phylogenetic Tree'] = viewport;
     this.cancelTreeRenderRecovery();
     this.destroy$.next();
     this.destroy$.complete();
@@ -1438,7 +1456,12 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
     try {
       const session = this.commonService.session;
-      const result = await this.commonService.investigationCalculations.run(session, 'bootstrap', async () => this.workerComputeService.computePhylogeneticBootstrap({
+      const result = await this.commonService.investigationCalculations.run(session, 'bootstrap', async resolved => {
+        const sequences = new Map(resolved.nodes.map(node => [String(node._id ?? node.id), String(node.seq ?? '').trim().toUpperCase()]));
+        if (sequences.size !== input.labels.length || input.labels.some((id, index) => sequences.get(id) !== input.sequences[index])) {
+          throw new Error('Bootstrap inputs changed. Check the scope and matching base tree, then run again.');
+        }
+        return this.workerComputeService.computePhylogeneticBootstrap({
         labels: input.labels,
         sequences: input.sequences,
         baseSplitKeys: input.baseSplitKeys,
@@ -1448,7 +1471,8 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         stabilityWindow: 100,
         stabilityTolerancePercent: BOOTSTRAP_DEFAULT_STABILITY_TOLERANCE_PERCENT,
         onProgress: progress => this.updateBootstrapProgress(progress),
-      }), result => {
+        });
+      }, result => {
         this.storeBootstrapResult(result, input.labels, input.baseSplitKeys);
       }, { sequence: true, parameters: { labels: input.labels, sequences: input.sequences, baseSplitKeys: input.baseSplitKeys,
         replicates, stopWhenStable: this.SelectedBootstrapStopWhenStable, batchSize: 10,
@@ -1478,20 +1502,26 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
       return Promise.resolve();
     }
 
-    const bootstrapInput = {
-      labels: input.labels || [],
-      sequences: input.sequences || [],
-      baseSplitKeys: input.baseSplitKeys || [],
+    const session = this.commonService.session;
+    const runCalculation = () => {
+      if (this.commonService.session !== session) {
+        this.BootstrapStatusMessage = 'The investigation changed. Start Bootstrap again for the current investigation.';
+        return Promise.resolve();
+      }
+      const current = this.getBootstrapInput();
+      if (!current.available) {
+        this.BootstrapStatusMessage = current.reason || 'Bootstrap is unavailable for the current scope and tree.';
+        return Promise.resolve();
+      }
+      return this.runBootstrapSupportCalculation({ labels: [...current.labels], sequences: [...current.sequences], baseSplitKeys: [...current.baseSplitKeys] });
     };
-
-    const runCalculation = () => this.runBootstrapSupportCalculation(bootstrapInput);
     if (options.skipConfirmation) {
       return runCalculation();
     }
 
     return new Promise<void>((resolve) => {
       this.confirmationService.confirm({
-        message: `Bootstrap support generates replicate trees by resampling columns from the alignment. It will not work with tree or distance matrix inputs.
+        message: `${this.bootstrapScopeSummary()}. Bootstrap support generates replicate trees by resampling columns from the alignment. It will not work with tree or distance matrix inputs.
          Are you sure that you want to proceed?`,
         closable: false,
         closeOnEscape: false,
@@ -1510,6 +1540,15 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
         },
       });
     });
+  }
+
+  bootstrapScopeSummary(): string {
+    const scope = this.commonService.session.investigation?.scopes?.bootstrap || 'full';
+    const label = { full: 'Full network', visible: 'Visible network', cohort: 'Selected cohorts' }[scope];
+    try {
+      const inputs = this.commonService.investigationCalculations.resolve(this.commonService.session, 'bootstrap', { sequence: true, allowEmpty: true });
+      return `${label}: ${inputs.nodes.length} eligible sequences`;
+    } catch (error) { return `${label}: ${(error as Error).message}`; }
   }
 
   onCloseExport() {
@@ -1881,11 +1920,13 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
   }
 
   // Final redraw
+  const viewport = this.captureInvestigationViewState();
   this.styleTree();
   if (this.SelectedLeafNodeUseGlobalShapesVariable) {
     this.ensureGlobalNodeShapeTableVisible();
   }
-  this.openCenter()
+  if (viewport) this.tree.restoreViewport?.(viewport);
+  else this.openCenter();
 }
 
   updateVisualization() { console.warn('updatevisualization')}

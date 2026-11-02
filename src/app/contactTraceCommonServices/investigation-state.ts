@@ -71,7 +71,13 @@ export interface InvestigationWorkspace {
   annotations: InvestigationAnnotation[];
   scopes: Partial<Record<InvestigationOperation, CalculationScope>>;
   calculations: Partial<Record<InvestigationOperation, InvestigationCalculation>>;
-  viewStates: Record<string, any>;
+  viewStates: InvestigationViewStates;
+}
+export interface InvestigationViewStates {
+  [view: string]: any;
+  'Phylogenetic Tree'?: { x: number; y: number; k: number };
+  Heatmap?: Record<'xaxis' | 'yaxis', { autorange: boolean | 'reversed'; range?: Array<number | string> }>;
+  'Alignment View'?: { scrollLeft: number; scrollTop: number };
 }
 export interface InvestigationState extends InvestigationWorkspace {
   threshold: { value: number; metric: string; distanceMetric: string; displayFormat: string; nearestNeighbor: boolean };
@@ -84,17 +90,57 @@ export interface InvestigationState extends InvestigationWorkspace {
   grouping: { widgets: Record<string, any>; groups: Array<{ id: string; label?: string; field?: string; nodeIds: string[] }> };
 }
 export interface InvestigationManifest {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   snapshotId: string;
   capturedAt: string;
   stateChecksum: string;
   software: InvestigationSoftware;
   sources: Array<{ name: string; sha256: string; representation: string }>;
   counts: { nodes: number; edges: number; visibleNodes: number; visibleEdges: number };
+  /** Resolution at capture time, including edge targets omitted from this compact manifest. */
+  annotationResolution?: Record<string, boolean>;
   investigation: Omit<InvestigationState, 'calculations'> & {
-    calculations: Partial<Record<InvestigationOperation, Omit<InvestigationCalculation, 'inputs' | 'output'> & { outputChecksum: string }>>;
+    calculations: Partial<Record<InvestigationOperation, Omit<InvestigationCalculation, 'inputs' | 'output'> & { outputChecksum: string; outputSummary?: InvestigationOutputSummary }>>;
   };
   historicalProvenance: 'recorded' | 'not recorded';
+}
+
+export interface InvestigationOutputSummary {
+  counts: Record<string, number>;
+  requestedReplicates?: number;
+  completedReplicates?: number;
+  stoppedEarly?: boolean;
+  stable?: boolean;
+  sampling?: { batchSize: number; workerCount: number; batches: Array<{ batchId: number; seed: number; replicates: number; completed: boolean }>; completedBatchOrder: number[] };
+  approximation?: { betweenness: boolean; pathMetrics: boolean; sampledSourceCount: number; sampledSourceNodeIds: string[]; exactNodeLimit: number; exactLinkLimit: number };
+}
+
+/** Compact, operation-aware publication metadata. Exact outputs remain in the portable session. */
+export function investigationOutputSummary(operation: InvestigationOperation, output: any): InvestigationOutputSummary {
+  const result: InvestigationOutputSummary = { counts: {} };
+  const value = output?.value ?? output;
+  const count = (name: string, values: any) => { if (Array.isArray(values)) result.counts[name] = values.length; };
+  count('nodes', output?.nodes); count('relationships', output?.links);
+  count('taxa', value?.labels); count('matrix rows', value?.dm); count('thresholds', value?.thresholds);
+  if (operation === 'tree' && typeof value === 'string') result.counts.trees = 1;
+  if (operation === 'consensus' && typeof value === 'string') result.counts['sequence characters'] = value.length;
+  if (operation === 'bootstrap' && value) {
+    result.requestedReplicates = value.requestedReplicates;
+    result.completedReplicates = value.completedReplicates;
+    result.stoppedEarly = value.stoppedEarly;
+    result.stable = value.stable;
+    result.counts['supported splits'] = Object.keys(value.supportBySplitKey || {}).length;
+    if (value.sampling) result.sampling = investigationCopy(value.sampling);
+  }
+  if (operation === 'network-statistics' && value?.summary) {
+    for (const [name, key] of [['nodes', 'nodeCount'], ['relationships', 'linkCount'], ['components', 'componentCount']]) {
+      if (Number.isFinite(value.summary[key])) result.counts[name] = value.summary[key];
+    }
+    result.approximation = investigationCopy({ betweenness: !!value.summary.approximateBetweenness,
+      pathMetrics: !!value.summary.approximatePathMetrics, sampledSourceCount: value.summary.sampledSourceCount,
+      sampledSourceNodeIds: value.sampledSourceNodeIds || [], exactNodeLimit: value.exactNodeLimit, exactLinkLimit: value.exactLinkLimit });
+  }
+  return investigationCopy(result);
 }
 
 export function createInvestigationWorkspace(): InvestigationWorkspace {
@@ -136,7 +182,7 @@ export function investigationCopy<T>(value: T): T {
     const prototype = Object.getPrototypeOf(item);
     if (!Array.isArray(item) && prototype !== Object.prototype && prototype !== null) return undefined;
     ancestors.add(item);
-    const result: any = Array.isArray(item) ? [] : {};
+    const result: any = Array.isArray(item) ? new Array(item.length) : {};
     for (const key of Object.keys(item)) {
       if (['__proto__', 'constructor', 'prototype', '_seqInt'].includes(key)) continue;
       const next = copy(item[key]);

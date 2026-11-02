@@ -211,16 +211,22 @@ export class CommonService extends AppComponentBase implements OnInit {
     public debugMode: boolean = false;
 
     // Using lodash's debounce, for example
-    public _debouncedUpdateNetworkVisuals = _.debounce(() => {
+    public _debouncedUpdateNetworkVisuals = _.debounce(() => this.refreshLoadedInvestigation(), 300);
+
+    private refreshLoadedInvestigation(): void {
+        // File settings emit threshold changes during import. Finalization owns the
+        // first render; an interactive re-query must not cancel that import job.
+        const session = this.session;
+        if (!session.network.isFullyLoaded) return;
         const threshold = Number(this.session.style.widgets["link-threshold"]);
         this.ensurePatristicEdgesForThreshold(threshold)
             .catch(error => {
                 console.error('Patristic threshold re-query failed:', error);
             })
             .finally(() => {
-                this.updateNetworkVisuals();
+                if (this.session === session && session.network.isFullyLoaded) this.updateNetworkVisuals();
             });
-    }, 300);
+    }
 
     GlobalSettingsModel: any = {
         SelectedColorNodesByVariable: 'None',
@@ -3538,7 +3544,12 @@ parseFASTA(text): Promise<any> {
     }
     getDM(): Promise<any> {
         if (this.isolatedInvestigationAnalysis) return this.getDMUnscoped();
-        return this.runScopedAnalysis('distance-matrix', context => context.getDMUnscoped(), { unpruned: true });
+        const options = { unpruned: true };
+        const saved = this.investigationCalculations.savedOutput(this.session, 'distance-matrix', options);
+        if (saved?.value) return Promise.resolve(investigationCopy(saved.value));
+        return this.investigationCalculations.shareRead(this.session, 'distance-matrix', () =>
+            this.runScopedAnalysis('distance-matrix', context => context.getDMUnscoped(), options), options)
+            .then(value => investigationCopy(value));
     }
     computeTree(): Promise<any> {
         if (this.isolatedInvestigationAnalysis) return this.computeTreeUnscoped();
@@ -4071,8 +4082,9 @@ private alignUnscoped(params): Promise<any> {
         }, { unpruned: true }, [], ['nn']);
     }
 
-    ensurePatristicEdgesForThreshold(threshold: number): Promise<any> {
+    ensurePatristicEdgesForThreshold(threshold: number, options: { initialImport?: boolean } = {}): Promise<any> {
         if (this.isolatedInvestigationAnalysis) return this.ensurePatristicEdgesForThresholdUnscoped(threshold);
+        if (!options.initialImport && this.session.network?.isFullyLoaded === false) return Promise.resolve(null);
         if (!this.hasNewickBackedDistanceSource(this.session.data?.newickString)) return Promise.resolve(null);
         return this.runScopedAnalysis('patristic', context => context.ensurePatristicEdgesForThresholdUnscoped(threshold),
             { parameters: { threshold } }, [], [], true);

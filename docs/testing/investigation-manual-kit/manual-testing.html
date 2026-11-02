@@ -20,7 +20,7 @@
   <li>Save any investigation you want to keep. Open the build containing this feature. If running locally, start <code>npm.cmd start</code> from the project folder, then open <code>http://localhost:4200</code>. Accept the EULA and close the welcome panel.</li>
   <li>Use <strong>File → Add Data</strong> to reach the file-loading area. Choose the specified <code>.microbetrace</code> file, or drop it onto the file-loading area. Wait for the restored dashboard to appear. A saved session replaces the open investigation; it does not need a separate launch step.</li>
   <li>Begin each independent check with the file named in that check. This prevents a preceding calculation, disabled layer, or edited cohort from changing the expected counts.</li>
-  <li>Open <strong>File &rarr; Investigation Workspace</strong>. <strong>Save investigation</strong> saves all data, settings, notes, cohorts, layers, and completed results together; no feature selections are needed. For the editing and analysis checks below, expand <strong>Optional tools</strong>, then open the relevant section: <strong>Edit cohorts</strong>, <strong>Edit relationship layers</strong>, <strong>Edit notes</strong>, or <strong>Run or change calculations</strong>. Close the workspace with its upper-right close button when you need to work in a dashboard pane. Allow about two seconds for input previews to refresh after edits.</li>
+  <li>Open <strong>File &rarr; Reproducibility Report</strong>. <strong>Save investigation</strong> saves all data, settings, notes, cohorts, layers, and completed results together; no feature selections are needed. For the editing and analysis checks below, expand <strong>Optional tools</strong>, then open the relevant section: <strong>Edit cohorts</strong>, <strong>Edit relationship layers</strong>, <strong>Edit notes</strong>, or <strong>Run or change calculations</strong>. Close the panel with its upper-right close button when you need to work in a dashboard pane. Allow about two seconds for input previews to refresh after edits.</li>
 </ol>
 <table class="files">
   <thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody>
@@ -57,18 +57,18 @@
 <ol>
   <li>Load <code>02-configured.microbetrace</code>.</li>
   <li>Check the side-by-side 2D Network and Table panes. Only A/B/C should be visible. A/B are selected; D remains selected in the underlying data while hidden.</li>
-  <li>Open <strong>File &rarr; Investigation Workspace</strong>. Find Left review and Right review, each showing three members, both checked. Find three enabled relationship layers, four notes, and Network statistics set to Cohort with a saved completed result.</li>
+  <li>Open <strong>File &rarr; Reproducibility Report</strong>. Find Left review and Right review, each showing three members, both checked. Find three enabled relationship layers, four notes, and Network statistics set to Cohort with a saved completed result.</li>
   <li>Note the saved result's completion time. Wait several seconds and revisit the panel.</li>
 </ol>
 <p class="expected"><strong>Expected:</strong> no calculation starts automatically; the saved completion time remains unchanged. The retained note for <code>deleted-review-cohort</code> says <strong>Unresolved target</strong>. The cohort statistics preview is 4 eligible nodes · 2 edges.</p>
 
 <h3><span class="check">□ M02</span> Create overlapping cohorts and keep hidden members</h3>
 <ol>
-  <li>Load <code>01-start.microbetrace</code>. A/B/D are already selected. In Investigation Workspace, enter <strong>Left review</strong> and click <strong>Create from selection</strong>.</li>
+  <li>Load <code>01-start.microbetrace</code>. A/B/D are already selected. In Reproducibility Report, enter <strong>Left review</strong> and click <strong>Create from selection</strong>.</li>
   <li>Close the panel. In the Table's Nodes dataset, hold Ctrl (Command on macOS) and click A to deselect it, then E to select it. Verify that the selected rows are B/D/E.</li>
-  <li>Reopen Investigation Workspace from File, create <strong>Right review</strong>, and check both cohort checkboxes. Set Network statistics to <strong>Cohort</strong>.</li>
+  <li>Reopen Reproducibility Report from File, create <strong>Right review</strong>, and check both cohort checkboxes. Set Network statistics to <strong>Cohort</strong>.</li>
   <li>Close the panel. Open top-toolbar <strong>Settings → Filtering</strong>. Under <strong>Subset Nodes</strong>, choose Region, equals, North. Click <strong>Apply Subset</strong>, then <strong>Done</strong>.</li>
-  <li>Reopen Investigation Workspace from File. Click Left review's <strong>Select members</strong>. Clear the subset using the banner's <strong>Clear</strong> button, then inspect the Nodes table.</li>
+  <li>Reopen Reproducibility Report from File. Click Left review's <strong>Select members</strong>. Clear the subset using the banner's <strong>Clear</strong> button, then inspect the Nodes table.</li>
 </ol>
 <p class="expected"><strong>Expected:</strong> each cohort stays at three members despite filtering. Both checked cohorts resolve to four unique nodes A/B/D/E. Select members selects exactly A/B/D; it does not change which cohort checkboxes are checked.</p>
 
@@ -83,18 +83,18 @@
 
 <h3><span class="check">□ M04</span> Threshold, layer eligibility, and mixed-source edges</h3>
 <ol>
-  <li>Load <code>01-start.microbetrace</code>. In Investigation Workspace, set Network statistics to <strong>Full</strong>. Check the preview: 6 nodes · 7 edges.</li>
+  <li>Load <code>01-start.microbetrace</code>. In Reproducibility Report, set Network statistics to <strong>Full</strong>. Check the preview: 6 nodes · 7 edges.</li>
   <li>Disable <strong>Genetic Distance</strong>. Check 6 nodes · 4 edges: BC/CD/EF/AF. Re-enable it.</li>
   <li>Disable <strong>Field contacts</strong>. Check 6 nodes · 5 edges: AB/AC/BC/DE/AF. BC survives through genetics; CD disappears. Re-enable it.</li>
   <li>Disable <strong>Imported relationships</strong>. Check 6 nodes · 6 edges. Re-enable it.</li>
-  <li>Close the panel. In <strong>Settings → Filtering</strong>, set <strong>Filtering Threshold</strong> to 1, then Done. Reopen Investigation Workspace from File: expect 6 nodes · 6 edges. Repeat with 0: expect 6 nodes · 4 edges. Restore 3: expect 6 nodes · 7 edges.</li>
+  <li>Close the panel. In <strong>Settings → Filtering</strong>, set <strong>Filtering Threshold</strong> to 1, then Done. Reopen Reproducibility Report from File: expect 6 nodes · 6 edges. Repeat with 0: expect 6 nodes · 4 edges. Restore 3: expect 6 nodes · 7 edges.</li>
   <li>Switch to Table's Links dataset or inspect link details to verify that BC/CD retain both source contributions. Use a saved snapshot's <code>_originAll</code> field if the current table column shows only contributing visible sources.</li>
 </ol>
 <p class="expected"><strong>Expected:</strong> source controls update shared visibility without deleting stored edges or source memberships. Mixed edges are counted once. Contact-only and imported-only edges are not removed by the genetic threshold.</p>
 
 <h3><span class="check">□ M05</span> Layer names, order, color, and opacity</h3>
 <ol>
-  <li>Load <code>01-start.microbetrace</code>. In Investigation Workspace, rename Field contacts to <strong>Interview evidence</strong>.</li>
+  <li>Load <code>01-start.microbetrace</code>. In Reproducibility Report, rename Field contacts to <strong>Interview evidence</strong>.</li>
   <li>Set its color to a clearly different color and opacity to about 0.5. Move it above Genetic Distance with the up arrow.</li>
   <li>Close the panel and inspect the 2D links. Check a contact-only edge (EF) and a mixed edge (BC/CD). Open <strong>View → Map</strong> and enable links in that pane's settings if necessary.</li>
   <li>Use <strong>Reset style</strong>, verify that normal link styling returns, then reapply an override for the save test.</li>
@@ -113,7 +113,7 @@
 <h3><span class="check">□ M07</span> Compare all three scopes with known statistics</h3>
 <ol>
   <li>Load <code>02-configured.microbetrace</code>. Open <strong>View → Network Statistics</strong>.</li>
-  <li>In Investigation Workspace's Network statistics row, choose <strong>Full</strong>, check the preview, and click that row's <strong>Run</strong>. Inspect the statistics Summary: 6 nodes, 7 links, 1 component.</li>
+  <li>In Reproducibility Report's Network statistics row, choose <strong>Full</strong>, check the preview, and click that row's <strong>Run</strong>. Inspect the statistics Summary: 6 nodes, 7 links, 1 component.</li>
   <li>Choose <strong>Visible</strong> and Run: 3 nodes, 3 links, 1 component.</li>
   <li>Choose <strong>Cohort</strong> and Run: 4 nodes, 2 links, 2 components. Check Clusters for the exact AB and DE components.</li>
   <li>Uncheck both cohorts. Leave scope set to Cohort and try Run.</li>
@@ -138,7 +138,7 @@
   <li>Find the <code>.microbetrace</code> session, <code>investigation-manifest.json</code>, and <code>investigation-record.html</code>. Open the HTML record in a browser.</li>
   <li>Compare the session's <code>snapshotId</code> and <code>provenance.stateChecksum</code> with the manifest's <code>snapshotId</code>/<code>stateChecksum</code> and the HTML header.</li>
   <li>Check software identity, source checksums, all eight state categories, calculation scope/status, input memberships, timestamps, and counts. Stored-edge counts can exceed visible/eligible-edge counts: the original six-node fixture stores 12 edges.</li>
-  <li>Load the ZIP directly into MicrobeTrace and compare the restored state. Then use <strong>File &rarr; Investigation Workspace → Download investigation record</strong> and inspect its separate record bundle.</li>
+  <li>Load the ZIP directly into MicrobeTrace and compare the restored state. Then use <strong>File &rarr; Reproducibility Report → Export reproducibility report</strong> and inspect its separate record bundle.</li>
 </ol>
 <p class="expected"><strong>Expected:</strong> artifacts inside each bundle identify the same captured snapshot. A later separate save or record download is a new capture and may have a different snapshot ID/checksum. The record contains summaries and output checksums; exact analytical inputs and completed outputs remain in the session. In a development build, commit identity can say development.</p>
 
@@ -163,7 +163,7 @@
 <h3><span class="check">□ M12</span> Stale results preserve their completed output</h3>
 <ol>
   <li>Load <code>02-configured.microbetrace</code>. Record the completed cohort statistics time. Change the global threshold to <strong>0</strong>.</li>
-  <li>Reopen Investigation Workspace from File and wait for its preview/status refresh. Do not click Run. Save and reopen this state.</li>
+  <li>Reopen Reproducibility Report from File and wait for its preview/status refresh. Do not click Run. Save and reopen this state.</li>
   <li>Inspect the saved record or session: the prior run still records A/B/D/E with AB/DE and its original output. Its status is stale.</li>
   <li>Click Run for Cohort statistics. The new input population is still four nodes, but now has zero eligible edges. Inspect the replacement time and four singleton components.</li>
 </ol>
@@ -198,9 +198,9 @@
 <h3><span class="check">□ M15</span> Patristic distances and matching bootstrap taxa</h3>
 <ol>
   <li>Load <code>03-imported-tree.microbetrace</code>. Open <strong>View → Phylogenetic Tree</strong> and check five labelled tips A–E.</li>
-  <li>In Investigation Workspace, set Patristic distances to Full and Run. It should complete against the imported tree. Save/reopen and verify the completed result is retained.</li>
+  <li>In Reproducibility Report, set Patristic distances to Full and Run. It should complete against the imported tree. Save/reopen and verify the completed result is retained.</li>
   <li>Try Bootstrap support on this imported tree. Expect the explanation that this version supports bootstrap for sequence-derived trees only.</li>
-  <li>Load <code>02-configured.microbetrace</code>. Set Tree inference to Full and Run. Open Phylogenetic Tree and verify A–E. In the tree pane's Settings → Bootstrap → Calculate Bootstrap, set Replicates to <strong>10</strong> and disable early stopping. In Investigation Workspace set Bootstrap support to Full and Run. Inspect saved metadata and support values.</li>
+  <li>Load <code>02-configured.microbetrace</code>. Set Tree inference to Full and Run. Open Phylogenetic Tree and verify A–E. In the tree pane's Settings → Bootstrap → Calculate Bootstrap, set Replicates to <strong>10</strong> and disable early stopping. In Reproducibility Report set Bootstrap support to Full and Run. Inspect saved metadata and support values.</li>
   <li>Leave the five-tip inferred tree in place. Set Bootstrap support to Cohort (A/B/D/E), then try Run. Its four scoped taxa do not match the five-tip base tree.</li>
   <li>Set Tree inference to Cohort and Run to create an A/B/D/E tree. Then retry Bootstrap support in Cohort scope. Use the four-taxon cohort for a positive scoped bootstrap test; a three-tip tree may have no internal splits eligible for support.</li>
 </ol>
@@ -208,7 +208,7 @@
 
 <h3><span class="check">□ M16</span> Missing sequence prerequisites and empty populations</h3>
 <ol>
-  <li>Load <code>05-no-sequence.microbetrace</code>. The 2D pane should show one small isolated node F on a white background, with zero links; the Table should contain one row. A solid blue network pane is a rendering defect, not the expected missing-sequence behavior. In Investigation Workspace inspect Sequence alignment, Consensus sequence, Genetic distances, and Bootstrap support. Try running a sequence operation.</li>
+  <li>Load <code>05-no-sequence.microbetrace</code>. The 2D pane should show one small isolated node F on a white background, with zero links; the Table should contain one row. A solid blue network pane is a rendering defect, not the expected missing-sequence behavior. In Reproducibility Report inspect Sequence alignment, Consensus sequence, Genetic distances, and Bootstrap support. Try running a sequence operation.</li>
   <li>Load <code>04-one-sequence.microbetrace</code>. Open Phylogenetic Tree and try tree inference/bootstrap.</li>
   <li>Load <code>02-configured.microbetrace</code>, uncheck both cohorts, select Cohort scope for an analysis, and try Run.</li>
 </ol>

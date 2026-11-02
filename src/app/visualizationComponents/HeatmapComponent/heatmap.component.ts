@@ -74,6 +74,10 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
   heatmapLabels: string[];
   heatmapMetric: string;
   private destroy$ = new Subject<void>();
+  private renderVersion = 0;
+  private viewportSession: any;
+  private viewport: any;
+  heatmapError = '';
     
   constructor(injector: Injector,
         private eventManager: EventManager,
@@ -88,6 +92,8 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
       ) {
           super(elRef.nativeElement);
           this.visuals = commonService.visuals;
+          this.viewportSession = commonService.session;
+          this.viewport = cloneDeep(commonService.session.investigation?.viewStates?.Heatmap);
           this.visuals.heatmap = this;
           this.invertX = this.commonService.session.style.widgets['heatmap-invertX'];
           this.invertY = this.commonService.session.style.widgets['heatmap-invertY'];
@@ -107,12 +113,23 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
   }
   
   openCenter(): void {
+    this.viewport = undefined;
+    delete this.commonService.investigationSessions.workspace(this.commonService.session).viewStates.Heatmap;
     const reCenter = {
       'xaxis.autorange': true,
       'yaxis.autorange': true
     }
     PlotlyModule.plotlyjs.relayout("heatmap", reCenter);
-    this.plot = PlotlyModule.plotlyjs.newPlot('heatmap', cloneDeep(this.heatmapData), this.heatmapLayout, this.heatmapConfig);
+  }
+
+  captureInvestigationViewState(): any {
+    if (this.viewportSession !== this.commonService.session) return undefined;
+    const layout = (document.getElementById('heatmap') as any)?.layout;
+    if (!layout) return cloneDeep(this.viewport);
+    return Object.fromEntries(['xaxis', 'yaxis'].map(axis => [axis, {
+      autorange: layout[axis]?.autorange ?? true,
+      ...(Array.isArray(layout[axis]?.range) ? { range: [...layout[axis].range] } : {}),
+    }]));
   }
   
   ngOnInit(): void {
@@ -232,7 +249,10 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
   }
 
   drawHeatmap(config: object): void {
+    const renderVersion = ++this.renderVersion;
     this.commonService.getDM().then(({dm, labels}) => {
+      if (renderVersion !== this.renderVersion || !this.viewActive || !document.getElementById('heatmap')) return;
+      this.heatmapError = '';
       this.nodeIds = labels;
       const xLabels = labels.map(d => d);
       const yLabels = xLabels.slice();
@@ -275,8 +295,8 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
       let marginLeft = this.heatmapShowLabels ? 90 : 10
       let marginBottom = this.heatmapShowLabels ? 75 : 10
       this.heatmapLayout = {
-          xaxis: config,
-          yaxis: config,
+          xaxis: { ...config, ...this.viewport?.xaxis },
+          yaxis: { ...config, ...this.viewport?.yaxis },
           width: $('#heatmap').parent().width() - 35,
           height: $('#heatmap').parent().height() - 90,
           margin: { t: 0, l: marginLeft, b: marginBottom, r: 0 }
@@ -291,10 +311,17 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
       const plot = PlotlyModule.plotlyjs.newPlot('heatmap', cloneDeep(this.heatmapData), this.heatmapLayout, this.heatmapConfig);
       this.plot = plot;
 
-      Promise.resolve(plot).then(() => {
+      return Promise.resolve(plot).then(() => {
+        if (renderVersion !== this.renderVersion) return;
         this.setBackground();
         this.store.setNetworkRendered(true);
       });
+    }).catch(error => {
+      if (renderVersion !== this.renderVersion) return;
+      if (!String(error?.message || error).includes('Calculation cancelled')) {
+        this.heatmapError = error?.message || 'The Heatmap could not be calculated for this scope.';
+        this.cdref.markForCheck();
+      }
     });
   }
 
@@ -318,13 +345,15 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
       let marginLeft = this.heatmapShowLabels ? 90 : 10
       let marginBottom = this.heatmapShowLabels ? 75 : 10
       this.heatmapLayout = {
-        xaxis: config,
-        yaxis: config,
+        xaxis: { ...config, ...this.captureInvestigationViewState()?.xaxis },
+        yaxis: { ...config, ...this.captureInvestigationViewState()?.yaxis },
         width: $('#heatmap').parent().width() - 35,
         height: $('#heatmap').parent().height() - 90,
         margin: { t: 0, l: marginLeft, b: marginBottom, r: 0 }
       }
-      this.openCenter()
+      if ((document.getElementById('heatmap') as any)?.layout) {
+        void PlotlyModule.plotlyjs.relayout('heatmap', this.heatmapLayout);
+      }
     }
 
 /*    const heatmapElement = this.heatmapContainerRef.nativeElement;
@@ -349,7 +378,7 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
   redrawHeatmap(): void {
     //if (!this.heatmapContainerRef.nativeElement.length) return;
     if (!$('#heatmap').length) return;
-    if (this.plot) PlotlyModule.plotlyjs.purge('heatmap');
+    this.viewport = this.captureInvestigationViewState();
     // const labels = this.nodeIds;
     // const xLabels = labels.map(d => 'N' + d);
     // const yLabels = xLabels.slice();
@@ -531,6 +560,10 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
   }
 
   ngOnDestroy(): void {
+    const viewport = this.captureInvestigationViewState();
+    if (viewport) this.commonService.investigationSessions.workspace(this.commonService.session).viewStates.Heatmap = viewport;
+    this.renderVersion++;
+    this.viewActive = false;
     this.destroy$.next();
     this.destroy$.complete();
   }

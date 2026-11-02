@@ -43,6 +43,7 @@
 /.env.local
 /src/environments/primeui-license.generated.ts
 /.playwright-cli/
+/output/playwright/
 /.angular/cache
 /.sass-cache
 /connect.lock

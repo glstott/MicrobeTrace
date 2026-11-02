@@ -1,6 +1,6 @@
 # Investigation snapshots
 
-Open **File → Investigation Workspace** and choose **Save investigation** to save everything together. No individual feature selections are needed. **File → Save** uses the same complete snapshot.
+Open **File → Reproducibility Report** and choose **Save investigation** to save everything together. No individual feature selections are needed. **File → Save** uses the same complete snapshot.
 
 The workspace starts with its editing controls hidden. Expand **Optional tools** only to edit cohorts, relationship layers or notes, run or change calculations, or download the investigation record separately. These tools change the investigation; they do not choose which features are included in a save.
 
@@ -8,14 +8,18 @@ The workspace starts with its editing controls hidden. Expand **Optional tools**
 
 - A `.microbetrace` file contains the versioned snapshot and its manifest.
 - A compressed save includes the session, `investigation-manifest.json`, and `investigation-record.html`. Saving by cluster also includes the complete investigation alongside the cluster CSV files.
-- **Download investigation record** provides the manifest and readable HTML independently. The corresponding snapshot retains the exact analytical inputs and completed outputs.
+- **Export reproducibility report** downloads a ZIP containing the readable HTML, manifest, and matching portable `.microbetrace` session from one capture. Drop this ZIP back into MicrobeTrace to resume the saved investigation.
 - A **Local link** uses the same snapshot format but works only in the browser and site where it was saved. Clearing browser storage removes it.
 
 The manifest identifies the snapshot, capture time, MicrobeTrace version/build, settings, source-content checksums, network counts, and calculation provenance. Source checksums cover canonical saved content, including the binary encoding of spreadsheet inputs. They are explicitly labelled with that representation.
 
+Open `investigation-record.html` in a browser to read the audit report. It presents network counts, threshold and filter rules, layout and grouping, cohorts, relationship layers, notes, and calculation status in summaries and tables. Expand individual sections for exact memberships, saved display settings, calculation parameters, and checksums. Dates are labelled in UTC. The HTML works offline and includes a print layout; the manifest remains the detailed machine-readable record. To resume the analysis, reopen the accompanying `.microbetrace` session or its complete ZIP rather than the HTML or manifest alone.
+
 Opening a snapshot validates its version, integrity, and required references before replacing the current investigation. Its manifest must agree with its settings and results. Legacy sessions remain supported; historical provenance unavailable in those files is labelled **not recorded**.
 
-New saves use schema 2. Their state checksum covers the session and all manifest metadata, including software identity, capture time, counts, source summaries, and calculation summaries. Schema-1 files remain readable using their original state-only checksum; their counts and metadata structure are also validated. Resaving upgrades them to schema 2. Older checksums cannot retroactively verify historical metadata that they did not cover.
+New saves use schema 3. Their state checksum covers the session and all manifest metadata, including software identity, capture time, counts, source summaries, calculation output summaries, and annotation target resolution. Reports include actual Bootstrap replicate counts, batch seeds and early stopping, and network-statistics approximation details when recorded. Schema-1 and schema-2 files remain readable using their original validation rules; resaving upgrades them to schema 3. Older checksums cannot retroactively verify historical metadata that they did not cover.
+
+Tree pan/zoom, Heatmap axis ranges and Alignment scroll positions are saved alongside existing network, map, table and statistics view settings. A rejected or report-only older ZIP displays an explanation and leaves the open investigation intact.
 
 ## Cohorts, layers, and notes
 
