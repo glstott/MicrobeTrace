@@ -58,11 +58,25 @@ export interface InvestigationCalculation {
   inputChecksum: string;
   /** Fingerprint after applying this run; detects later changes without invalidating its own output. */
   currentInputKey: string;
+  /** Categorized fingerprints after applying the result, for explaining later changes. */
+  changeBaseline?: InvestigationChangeBaseline;
+  staleReasons?: string[];
   startedAt: string;
   completedAt: string;
   software: InvestigationSoftware;
   status: 'completed' | 'stale';
   output: any;
+}
+export interface InvestigationChangeBaseline {
+  scope: CalculationScope;
+  cohorts: string;
+  population: string;
+  nodes: string;
+  relationships: string;
+  parameters: string;
+  layers: string;
+  selection: string;
+  tree: string;
 }
 export interface InvestigationWorkspace {
   cohorts: InvestigationCohort[];
@@ -307,7 +321,7 @@ export function resolveInvestigationInputs(session: any, workspace: Investigatio
   return { scope, cohortIds, nodes, links };
 }
 
-export function investigationInputKey(inputs: ResolvedInvestigationInputs, parameters: any): string {
+function investigationInputState(inputs: ResolvedInvestigationInputs, parameters: any): any {
   const operation = parameters?.operation;
   if (operation) {
     const sequence = ['alignment', 'ambiguity', 'consensus', 'consensus-distances', 'pairwise-distances', 'bootstrap'].includes(operation);
@@ -319,11 +333,31 @@ export function investigationInputKey(inputs: ResolvedInvestigationInputs, param
       source: investigationEndpointId(link.source), target: investigationEndpointId(link.target),
       value: link[metric], origins: [...investigationOrigins(link)].sort(),
       nn: parameters['link-show-nn'] ? !!link.nn : undefined, distanceMetric: link._investigationDistanceMetric }));
-    return investigationChangeKey({ scope: inputs.scope, cohortIds: [...inputs.cohortIds].sort(), nodes, links, parameters });
+    return { scope: inputs.scope, cohortIds: [...inputs.cohortIds].sort(), nodes, links, parameters };
   }
   const transient = new Set(['index', 'x', 'y', 'vx', 'vy', 'fx', 'fy', 'fixed', 'selected', 'visible', 'degree', 'cluster', 'foci', '_ambiguity', '_diff', '_score', '_padding', '_cigar']);
   const clean = (object: any) => Object.fromEntries(Object.entries(object).filter(([key]) => !transient.has(key)));
-  return investigationChangeKey({ scope: inputs.scope, cohortIds: inputs.cohortIds, nodes: inputs.nodes.map(clean), links: inputs.links.map(clean), parameters });
+  return { scope: inputs.scope, cohortIds: inputs.cohortIds, nodes: inputs.nodes.map(clean), links: inputs.links.map(clean), parameters };
+}
+
+export function investigationInputKey(inputs: ResolvedInvestigationInputs, parameters: any): string {
+  return investigationChangeKey(investigationInputState(inputs, parameters));
+}
+
+export function investigationChangeBaseline(inputs: ResolvedInvestigationInputs, parameters: any): InvestigationChangeBaseline {
+  const state = investigationInputState(inputs, parameters);
+  const { disabledSources, selectedNodeIds, tree, ...analyticalParameters } = parameters;
+  return {
+    scope: inputs.scope,
+    cohorts: investigationChangeKey(state.cohortIds),
+    population: investigationChangeKey(inputs.nodes.map(investigationNodeId)),
+    nodes: investigationChangeKey(state.nodes),
+    relationships: investigationChangeKey(state.links),
+    parameters: investigationChangeKey(analyticalParameters),
+    layers: investigationChangeKey(disabledSources ?? []),
+    selection: investigationChangeKey(selectedNodeIds ?? []),
+    tree: investigationChangeKey(tree ?? null),
+  };
 }
 
 export function investigationAnnotationResolved(note: InvestigationAnnotation, session: any, workspace: InvestigationWorkspace): boolean {

@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import {
-  InvestigationOperation, ResolvedInvestigationInputs,
+  InvestigationOperation, ResolvedInvestigationInputs, InvestigationCalculation, InvestigationChangeBaseline,
   investigationCopy, investigationChecksum, investigationInputKey, investigationNodeId,
   investigationEdgeId, resolveInvestigationInputs, eligibleInvestigationOrigins,
+  investigationChangeBaseline, investigationChangeKey,
 } from './investigation-state';
 import { InvestigationSessionService, investigationSoftware } from './investigation-session.service';
 
@@ -43,19 +44,73 @@ export class InvestigationCalculationService {
   }
 
   private key(session: any, operation: InvestigationOperation, options: InvestigationRunOptions = {}): string {
+    const { inputs, parameters } = this.currentInputs(session, operation, options);
+    return investigationInputKey(inputs, parameters);
+  }
+
+  private currentInputs(session: any, operation: InvestigationOperation, options: InvestigationRunOptions) {
     const inputs = this.resolve(session, operation, { ...options, nodes: undefined, allowEmpty: true });
     if (options.sequence) inputs.links = [];
-    return investigationInputKey(inputs, this.parameters(session, operation, options.parameters));
+    return { inputs, parameters: this.parameters(session, operation, options.parameters) };
+  }
+
+  private baseline(session: any, operation: InvestigationOperation, options: InvestigationRunOptions): InvestigationChangeBaseline {
+    const { inputs, parameters } = this.currentInputs(session, operation, options);
+    return investigationChangeBaseline(inputs, parameters);
+  }
+
+  private changeReasons(record: InvestigationCalculation, inputs: ResolvedInvestigationInputs, parameters: any): string[] {
+    const current = investigationChangeBaseline(inputs, parameters);
+    let before = record.changeBaseline;
+    // Older runs did not record categorized fingerprints. Their original inputs
+    // are usable only when applying the result did not change the input key.
+    if (!before) {
+      const savedInputs = { scope: record.scope, cohortIds: record.cohortIds, ...record.inputs };
+      const { __scopeOptions, ...savedParameters } = record.parameters;
+      if (investigationInputKey(savedInputs, savedParameters) === record.currentInputKey) {
+        before = investigationChangeBaseline(savedInputs, savedParameters);
+      }
+    }
+    const reasons: string[] = [];
+    const scopeChanged = (before?.scope ?? record.scope) !== current.scope;
+    const cohortsChanged = !scopeChanged && (before?.cohorts ?? investigationChangeKey([...record.cohortIds].sort())) !== current.cohorts;
+    if (scopeChanged) reasons.push('Calculation scope changed.');
+    if (cohortsChanged) reasons.push('Selected cohorts changed.');
+    if (!before) return reasons.length ? reasons : ['Exact change details were not recorded for this saved result.'];
+    // A new scope naturally changes its population and cohort IDs. Describe the
+    // scope change rather than implying that the user also edited those items.
+    if (!scopeChanged && !cohortsChanged && before.population !== current.population) {
+      reasons.push(current.scope === 'cohort' ? 'Eligible cohort membership changed.'
+        : current.scope === 'visible' ? 'Visible node population changed (filters or visibility).'
+        : 'Eligible node population changed.');
+    } else if (!scopeChanged && !cohortsChanged && before.nodes !== current.nodes) reasons.push('Sequence inputs changed.');
+    if (before.layers !== current.layers) reasons.push('Enabled relationship layers changed.');
+    if (before.parameters !== current.parameters) reasons.push('Analytical parameters changed.');
+    if (before.selection !== current.selection) reasons.push('Selected nodes changed.');
+    if (before.tree !== current.tree) reasons.push('Base tree changed.');
+    if (!scopeChanged && !cohortsChanged && before.relationships !== current.relationships) reasons.push(current.scope === 'visible'
+      ? 'Visible relationship inputs changed (filters or relationship data).'
+      : 'Eligible relationships or edge values changed.');
+    return reasons.length ? reasons : ['Analytical inputs or settings changed since this result was completed.'];
   }
 
   refreshStatus(session: any): void {
     const workspace = this.snapshots.workspace(session);
     for (const record of Object.values(workspace.calculations)) {
-      if (!record || record.status === 'stale') continue;
+      if (!record) continue;
       try {
         const options = record.parameters.__scopeOptions || {};
-        if (record.currentInputKey !== this.key(session, record.operation, options)) record.status = 'stale';
-      } catch { record.status = 'stale'; }
+        const { inputs, parameters } = this.currentInputs(session, record.operation, options);
+        if (record.currentInputKey !== investigationInputKey(inputs, parameters)) {
+          record.status = 'stale';
+          record.staleReasons = this.changeReasons(record, inputs, parameters);
+        } else if (record.status === 'stale') {
+          record.staleReasons = ['Inputs now match the saved result again. Run again to refresh its stale status.'];
+        }
+      } catch (error) {
+        record.status = 'stale';
+        record.staleReasons = [`Inputs could not be resolved: ${error instanceof Error ? error.message : 'required inputs are unavailable.'}`];
+      }
     }
   }
 
@@ -81,7 +136,11 @@ export class InvestigationCalculationService {
 
   rebaseAfterApply(session: any, operation: InvestigationOperation): void {
     const run = this.snapshots.workspace(session).calculations[operation];
-    if (run) run.currentInputKey = this.key(session, operation, run.parameters.__scopeOptions || {});
+    if (run) {
+      const options = run.parameters.__scopeOptions || {};
+      run.currentInputKey = this.key(session, operation, options);
+      run.changeBaseline = this.baseline(session, operation, options);
+    }
   }
 
   savedOutput(session: any, operation: InvestigationOperation, options: InvestigationRunOptions = {}): any {
@@ -91,6 +150,7 @@ export class InvestigationCalculationService {
       if (run.status === 'completed' && run.currentInputKey === this.key(session, operation, options)) return run.output;
     } catch { /* Missing cohort/inputs makes the saved output stale, never changes its scope. */ }
     run.status = 'stale';
+    this.refreshStatus(session);
     return undefined;
   }
 
@@ -124,6 +184,7 @@ export class InvestigationCalculationService {
       nodeIds: inputs.nodes.map(investigationNodeId), edgeIds: inputData.links.map(investigationEdgeId),
       parameters: { ...parameters, __scopeOptions: { sequence: !!options.sequence, sweep: !!options.sweep, unpruned: !!options.unpruned, parameters: options.parameters || {} } },
       inputs: inputData, inputChecksum, currentInputKey: this.key(session, operation, options),
+      changeBaseline: this.baseline(session, operation, options),
       startedAt, completedAt: new Date().toISOString(), software: investigationSoftware(),
       status: 'completed', output: investigationCopy(output),
     };

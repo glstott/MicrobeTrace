@@ -141,7 +141,8 @@ export function readableInvestigationRecord(manifest: InvestigationManifest): st
     + table(['Analysis', 'Scope for next run', 'Saved result', 'Saved input counts', 'Saved outputs', 'Completed at (UTC)'], INVESTIGATION_OPERATIONS.map(operation => {
       const run = state.calculations[operation.id];
       return [text(operation.label), text(scopeName(state.scopes[operation.id] || operation.scope)),
-        run ? badge(run.status, run.status === 'stale' ? 'Stale — retained' : 'Completed') : badge('neutral', 'Not run'),
+        run ? { html: badge(run.status, run.status === 'stale' ? 'Stale — retained' : 'Completed').html
+          + (run.status === 'stale' ? `<p class="muted">${escape((run.staleReasons || ['Exact change details were not recorded for this saved result.']).join(' '))}</p>` : '') } : badge('neutral', 'Not run'),
         text(run ? `${counted(run.nodeIds.length, 'node')}; ${counted(run.edgeIds.length, 'relationship')}` : '—'),
         text(run?.outputSummary ? [...Object.entries(run.outputSummary.counts).map(([name, count]) => `${count} ${name}`),
           ...(run.outputSummary.completedReplicates !== undefined ? [`${run.outputSummary.completedReplicates}/${run.outputSummary.requestedReplicates} replicates${run.outputSummary.stoppedEarly ? ' (stopped early)' : ''}`] : [])].join('; ') || 'Completed; see recorded details' : run ? 'Not recorded' : '—'),

@@ -8,6 +8,7 @@ import { BaseComponentDirective } from '@app/base-component.directive';
 import { Subject, takeUntil } from 'rxjs';
 import { CommonStoreService } from '@app/contactTraceCommonServices/common-store.services';
 import { buildVisibleClusterSummary, type VisibleClusterSummary } from '@app/contactTraceCommonServices/threshold-analysis';
+import { investigationEdgeId } from '@app/contactTraceCommonServices/investigation-state';
 
 @Component({
     selector: 'app-waterfall-component',
@@ -111,6 +112,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
   }
 
   ngOnDestroy(): void {
+    this.selectedLinkRow = null;
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -424,13 +426,18 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
       const targetId = this.getEndpointId(link.target);
 
       if (sourceId === selectedNodeId) {
-        links.push({ 'id': targetId, 'distance': link.distance, 'index': link.index })
+        links.push({ 'id': targetId, 'distance': link.distance, 'index': link.index, _investigationEdgeId: investigationEdgeId(link) })
       } else if (targetId === selectedNodeId) {
-        links.push({ 'id': sourceId, 'distance': link.distance, 'index': link.index })
+        links.push({ 'id': sourceId, 'distance': link.distance, 'index': link.index, _investigationEdgeId: investigationEdgeId(link) })
       }
     });
 
     return links;
+  }
+
+  public getSelectedInvestigationEdgeIds(): string[] {
+    const id = this.selectedLinkRow?._investigationEdgeId;
+    return id && this.commonService.session.data.links.some(link => investigationEdgeId(link) === id) ? [id] : [];
   }
 
   formatLinkTableDistance(value: any): string {

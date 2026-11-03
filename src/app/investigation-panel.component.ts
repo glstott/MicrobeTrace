@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, OnDestroy, OnInit, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CommonService } from './contactTraceCommonServices/common.service';
 import {
   INVESTIGATION_OPERATIONS, InvestigationOperation, InvestigationCohort, InvestigationLayer,
   InvestigationAnnotation, CalculationScope, investigationScope, investigationNodeId,
-  investigationAnnotationResolved,
+  investigationAnnotationResolved, investigationEdgeId, investigationEndpointId,
 } from './contactTraceCommonServices/investigation-state';
 
 @Component({
@@ -14,16 +14,22 @@ import {
 })
 export class InvestigationPanelComponent implements OnInit, OnDestroy {
   @Output() saveInvestigation = new EventEmitter<void>();
-  @Output() downloadRecord = new EventEmitter<void>();
+  @Input() saving = false;
   readonly operations = INVESTIGATION_OPERATIONS;
   cohortName = '';
   noteText = '';
   noteTargetType: InvestigationAnnotation['target']['type'] = 'investigation';
-  noteTargetId = '';
+  noteTargetIds: string[] = [];
+  noteTargetOptions: Array<{ id: string; label: string }> = [];
+  noteSelection = { nodes: 0, edges: 0 };
+  noteTargetPickerOpen = false;
+  private noteDraftSession: any;
   error = '';
   status = '';
   running: string | null = null;
   previews: Record<string, string> = {};
+  summary = { completed: 0, stale: 0, unresolvedNotes: 0 };
+  staleResults: Array<{ id: string; label: string; reasons: string[] }> = [];
   readonly cohortNameDrafts = new WeakMap<InvestigationCohort, string>();
   readonly cohortNameErrors = new WeakMap<InvestigationCohort, string>();
   readonly noteDrafts = new WeakMap<InvestigationAnnotation, string>();
@@ -38,8 +44,22 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy {
   }
   ngOnDestroy(): void { clearInterval(this.refreshTimer); }
   private refresh(): void {
+    this.syncNoteDraftSession();
+    this.noteSelection = { nodes: this.selectedNodes().length, edges: this.selectedNoteEdges().length };
+    if (this.noteTargetPickerOpen) this.refreshNoteTargets();
     this.common.investigationSessions.syncLayers(this.common.session);
     this.common.investigationCalculations.refreshStatus(this.common.session);
+    const runs = Object.values(this.workspace.calculations).filter(Boolean);
+    this.summary = {
+      completed: runs.filter(run => run.status === 'completed').length,
+      stale: runs.filter(run => run.status === 'stale').length,
+      unresolvedNotes: this.workspace.annotations.filter(note => !this.resolved(note)).length,
+    };
+    this.staleResults = this.operations.flatMap(operation => {
+      const run = this.workspace.calculations[operation.id];
+      return run?.status === 'stale' ? [{ id: run.id, label: operation.label,
+        reasons: run.staleReasons || ['Exact change details were not recorded for this saved result.'] }] : [];
+    });
     for (const operation of this.operations) {
       try {
         const options = this.operationOptions(operation.id);
@@ -51,6 +71,7 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy {
   }
   changed(updateNetwork = false): void {
     this.error = '';
+    this.status = '';
     this.common.investigationCalculations.refreshStatus(this.common.session);
     if (updateNetwork) {
       this.common.session.style.widgets['link-origin-array-order'] = this.workspace.edgeLayers.map(layer => layer.source);
@@ -58,6 +79,7 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy {
       this.common.updateNetworkVisuals(false, true);
     }
     this.refresh();
+    if (this.noteTargetType !== 'investigation') this.refreshNoteTargets();
   }
   private selectedNodes(): string[] { return this.common.session.data.nodes.filter(node => node.selected).map(investigationNodeId); }
   createCohort(): void {
@@ -108,15 +130,93 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy {
   }
   layerOpacity(layer: InvestigationLayer, value: string): void { layer.opacity = Number(value); this.changed(true); }
   clearLayerStyle(layer: InvestigationLayer): void { delete layer.color; delete layer.opacity; this.changed(true); }
+
+  private syncNoteDraftSession(): boolean {
+    if (this.noteDraftSession === this.common.session) return false;
+    const replaced = !!this.noteDraftSession;
+    this.noteDraftSession = this.common.session;
+    this.noteTargetType = 'investigation';
+    this.noteTargetIds = [];
+    this.noteTargetOptions = [];
+    this.noteText = '';
+    this.noteTargetPickerOpen = false;
+    return replaced;
+  }
+
+  setNoteTargetType(type: InvestigationAnnotation['target']['type']): void {
+    this.syncNoteDraftSession();
+    this.noteTargetType = type;
+    this.noteTargetIds = [];
+    this.error = '';
+    this.refreshNoteTargets();
+  }
+
+  private targetName(item: any, field: string, id: string): string {
+    const values = [item?.name, item?.Name, item?.label, field && field !== 'None' ? item?.[field] : undefined];
+    const value = values.find(value => ['string', 'number'].includes(typeof value) && String(value).trim() && String(value).trim() !== id);
+    return value !== undefined ? String(value).trim() : id;
+  }
+
+  refreshNoteTargets(): void {
+    this.syncNoteDraftSession();
+    const data = this.common.session.data, widgets = this.common.session.style.widgets;
+    const nodes = new Map<string, any>(data.nodes.map(node => [investigationNodeId(node), node]));
+    const nodeName = (id: string) => this.targetName(nodes.get(id), widgets['node-label-variable'], id);
+    const label = (name: string, id: string, hidden = false) => `${name === id ? id : `${name} [${id}]`}${hidden ? ' (hidden)' : ''}`;
+    let options: typeof this.noteTargetOptions;
+    if (this.noteTargetType === 'node') {
+      options = data.nodes.map(node => {
+        const id = investigationNodeId(node);
+        return { id, label: label(nodeName(id), id, node.visible === false) };
+      });
+    } else if (this.noteTargetType === 'edge') {
+      options = data.links.map(link => {
+        const id = investigationEdgeId(link);
+        const ends = `${nodeName(investigationEndpointId(link.source))} — ${nodeName(investigationEndpointId(link.target))}`;
+        const name = this.targetName(link, widgets['link-label-variable'], '');
+        return { id, label: label(name ? `${ends} · ${name}` : ends, id, link.visible === false) };
+      });
+    } else if (this.noteTargetType === 'cohort') {
+      options = this.workspace.cohorts.map(cohort => ({ id: cohort.id, label: label(cohort.name, cohort.id) }));
+    } else options = [];
+    // Keep the picker's keyboard focus and filter stable during periodic refreshes.
+    if (options.length !== this.noteTargetOptions.length || options.some((option, index) =>
+      option.id !== this.noteTargetOptions[index].id || option.label !== this.noteTargetOptions[index].label)) this.noteTargetOptions = options;
+  }
+
+  private selectedNoteEdges(): string[] {
+    const ids = new Set<string>([
+      ...(this.common.visuals?.twoD?.getSelectedInvestigationEdgeIds?.() || []),
+      ...(this.common.visuals?.waterfall?.getSelectedInvestigationEdgeIds?.() || []),
+    ]);
+    if (!ids.size) return [];
+    return this.common.session.data.links.map(investigationEdgeId).filter(id => ids.has(id));
+  }
+
+  useNoteSelection(type: 'node' | 'edge'): void {
+    this.syncNoteDraftSession();
+    const ids = type === 'node' ? this.selectedNodes() : this.selectedNoteEdges();
+    if (!ids.length) { this.error = `Select at least one ${type} first, or choose a target by name.`; return; }
+    this.setNoteTargetType(type);
+    this.noteTargetIds = [...new Set(ids)];
+    this.status = `${this.noteTargetIds.length} ${type} target${this.noteTargetIds.length === 1 ? '' : 's'} chosen from the current selection.`;
+  }
+
   addNote(): void {
+    if (this.syncNoteDraftSession()) { this.error = 'The investigation changed. Choose targets and enter a note again.'; return; }
     if (!this.noteText.trim()) { this.error = 'Enter a note before saving.'; return; }
+    const ids = [...new Set(this.noteTargetIds)];
+    if (this.noteTargetType !== 'investigation' && !ids.length) { this.error = 'Choose at least one target by name or use the current selection.'; return; }
     const time = new Date().toISOString();
-    const note: InvestigationAnnotation = { id: crypto.randomUUID(), text: this.noteText.trim(),
-      target: { type: this.noteTargetType, ...(this.noteTargetType === 'investigation' ? {} : { id: this.noteTargetId.trim() }) }, createdAt: time, updatedAt: time };
-    if (!this.resolved(note)) { this.error = 'Choose an existing target ID for the note.'; return; }
-    this.workspace.annotations.push(note);
+    const targets = this.noteTargetType === 'investigation' ? [{ type: this.noteTargetType }]
+      : ids.map(id => ({ type: this.noteTargetType, id }));
+    const notes: InvestigationAnnotation[] = targets.map(target => ({ id: crypto.randomUUID(), text: this.noteText.trim(),
+      target, createdAt: time, updatedAt: time }));
+    if (notes.some(note => !this.resolved(note))) { this.error = 'A chosen target is no longer available. Choose the targets again; no notes were saved.'; return; }
+    this.workspace.annotations = [...this.workspace.annotations, ...notes];
     this.noteText = '';
     this.changed();
+    this.status = notes.length === 1 ? 'Note saved.' : `${notes.length} notes saved, one for each chosen target.`;
   }
   updateNote(note: InvestigationAnnotation): void {
     const text = (this.noteDrafts.get(note) ?? note.text).trim();

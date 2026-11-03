@@ -5450,27 +5450,41 @@ ${warnings.join('\n')}`,
     }
 
     async DisplayStashDialog(saveStash: string) {
+        if (this.sessionSaveBusy) return;
+        if (saveStash !== 'Save') {
+            this.displayStashDialog = false;
+            return;
+        }
         this.sessionSaveError = '';
+        this.sessionSaveNotice = '';
+        const filename = this.saveFileName;
+        const fileType = this.selectedSaveFileType;
+        const byCluster = this.saveByCluster;
+        const compress = $("#save-file-compress").is(":checked");
+        this.sessionSaving = true;
         try {
+        await this.updateSessionSaveProgress(fileType === 'local-link' ? 'Saving in this browser…'
+            : fileType === 'style' ? 'Preparing style…' : 'Preparing investigation…');
         switch (saveStash) {
             case "Save": {
 
-                if (this.selectedSaveFileType == 'style') {
+                if (fileType === 'style') {
                     const data = JSON.stringify(this.commonService.session.style);
                     const blob = new Blob([data], { type: "application/json;charset=utf-8" });
-                    this.saveGeneratedFile(blob, this.saveFileName+'.style')
+                    this.saveGeneratedFile(blob, filename + '.style');
+                    this.sessionSaveNotice = `Download prepared: ${filename}.style. Your browser handles saving the file.`;
                     this.displayStashDialog = false;
                     return;
                 }
 
-                if (this.selectedSaveFileType === 'local-link') {
-                    void this.saveLocalSessionLink();
+                if (fileType === 'local-link') {
+                    await this.saveLocalSessionLink();
                     return;
                 }
 
                 const zip = new JSZip();
 
-                if(this.saveByCluster){
+                if(byCluster){
                     const clusterNodeList = [];
                     const clusterLinkList = [];
                     const singletonNodeList = [];
@@ -5558,35 +5572,36 @@ ${warnings.join('\n')}`,
                         
                       const that = this;
                       const snapshot = await this.buildSessionStash();
-                      zip.file(`${this.saveFileName}.microbetrace`, JSON.stringify(snapshot));
+                      zip.file(`${filename}.microbetrace`, JSON.stringify(snapshot));
                       zip.file('investigation-manifest.json', JSON.stringify(snapshot.provenance, null, 2));
                       zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance));
-                      // generate zip repsetnation in memory
-                      await zip.generateAsync({type:"blob"}).then(function(content) {
+                      await this.updateSessionSaveProgress('Preparing bundle…');
+                      await zip.generateAsync({type:"blob"}, metadata => this.showBundleProgress(metadata.percent)).then(function(content) {
                           // see FileSaver.js
-                          that.saveGeneratedFile(content, `${that.saveFileName}.zip`);
+                          that.saveGeneratedFile(content, `${filename}.zip`);
                       });
                 } else {
                     const stash = await this.buildSessionStash();
 
                     const that = this;
 
-                    if ($("#save-file-compress").is(":checked")) {
+                    if (compress) {
                         const zip = new JSZip();
-                        zip.file(`${that.saveFileName}.microbetrace`, new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" }));
+                        zip.file(`${filename}.microbetrace`, new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" }));
                         zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
                         zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
+                        await this.updateSessionSaveProgress('Compressing bundle…');
                         await zip.generateAsync({
                             type: "blob",
                             compression: "DEFLATE",
                             compressionOptions: {
                                 level: 9
                             }
-                        })
-                        .then(content => that.saveGeneratedFile(content, `${that.saveFileName}.zip`));
+                        }, metadata => this.showBundleProgress(metadata.percent))
+                        .then(content => that.saveGeneratedFile(content, `${filename}.zip`));
                     } else {
                         const blob = new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" });
-                        this.saveGeneratedFile(blob, `${this.saveFileName}.microbetrace`);
+                        this.saveGeneratedFile(blob, `${filename}.microbetrace`);
                     }
     
                    
@@ -5596,37 +5611,37 @@ ${warnings.join('\n')}`,
                 
                 break;
             }
-            case "Cancel": {
-
-                break;
-            }
         }
-        this.displayStashDialog = !this.displayStashDialog;
+        this.sessionSaveNotice = `Download prepared: ${filename}.${byCluster || compress ? 'zip' : 'microbetrace'}. Your browser handles saving the file.`;
+        this.displayStashDialog = false;
         } catch (error) {
             this.sessionSaveError = error instanceof Error ? error.message : 'The investigation could not be saved.';
             this.displayStashDialog = true;
         } finally {
+            this.sessionSaving = false;
+            this.sessionSaveProgress = '';
             this.cdref.markForCheck();
         }
     }
 
     sessionSaveError = '';
+    sessionSaving = false;
+    sessionSaveProgress = '';
+    sessionSaveNotice = '';
     investigationOpen = false;
 
-    async downloadInvestigationRecord(): Promise<void> {
-        try {
-            const stash = await this.buildSessionStash();
-            const zip = new JSZip();
-            zip.file(`${this.saveFileName || 'investigation'}.microbetrace`, JSON.stringify(stash));
-            zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
-            zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
-            this.saveGeneratedFile(await zip.generateAsync({ type: 'blob' }), `${this.saveFileName || 'investigation'}-record.zip`);
-        } catch (error) {
-            this.sessionSaveError = error instanceof Error ? error.message : 'The investigation record could not be saved.';
-            this.displayStashDialog = true;
-        } finally {
-            this.cdref.markForCheck();
-        }
+    get sessionSaveBusy(): boolean { return !!this.sessionSaving || !!this.localSessionLinkSaving; }
+
+    private async updateSessionSaveProgress(message: string): Promise<void> {
+        this.sessionSaveProgress = message;
+        this.cdref.markForCheck();
+        // Allow the busy state to paint before copying and checksumming a snapshot.
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+
+    private showBundleProgress(percent: number): void {
+        this.sessionSaveProgress = `Preparing bundle… ${Math.round(percent)}%`;
+        this.cdref.markForCheck();
     }
 
     /**
@@ -5745,6 +5760,9 @@ ${warnings.join('\n')}`,
                 break;
             }
             case "Save Session": {
+                if (this.sessionSaveBusy) return;
+                this.sessionSaveError = '';
+                this.sessionSaveNotice = '';
                 this.saveFileName = '';
                 this.saveByCluster = false;
                 this.selectedSaveFileType = 'session';

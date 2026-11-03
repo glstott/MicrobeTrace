@@ -126,9 +126,10 @@ describe('Investigation correctness regressions', () => {
       expect(investigation.cohorts[0].name).to.equal('Left review');
       expect(investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Review case A.');
     });
-    cy.contains('button', 'Export reproducibility report').click();
-    const recordPath = `${Cypress.config('downloadsFolder')}/investigation-focused-record.zip`;
-    writeCapturedDownloadToDisk('investigation-record.zip', recordPath);
+    closePanel();
+    saveSessionFromFileMenu('investigation-focused', { compress: true });
+    const recordPath = `${Cypress.config('downloadsFolder')}/investigation-focused.zip`;
+    writeCapturedDownloadToDisk('investigation-focused.zip', recordPath);
     cy.readFile(recordPath, 'base64').then(async encoded => {
       const zip = await JSZip.loadAsync(encoded, { base64: true });
       const manifest = JSON.parse(await zip.file('investigation-manifest.json')!.async('text'));
@@ -140,8 +141,9 @@ describe('Investigation correctness regressions', () => {
       expect(manifest.investigation.cohorts[0].name).to.equal('Left review');
       expect(manifest.investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Review case A.');
     });
-    cy.get('[aria-label="Cohort name"]').first().type('Revised left review').blur();
-    cy.get('[aria-label="Edit note note-node-A"]').type('Revised case A note').blur();
+    openPanel();
+    cy.get('[aria-label="Cohort name"]').first().clear().type('Revised left review').blur();
+    cy.get('[aria-label="Edit note note-node-A"]').clear().type('Revised case A note').blur();
     cy.get('[aria-label="Cohort name"]').first().should('have.attr', 'aria-invalid', 'false');
     cy.get('[aria-label="Edit note note-node-A"]').should('have.attr', 'aria-invalid', 'false');
     closePanel();
@@ -196,11 +198,18 @@ describe('Investigation correctness regressions', () => {
       expect(current.investigation.selectedCohortIds).to.deep.equal(['cohort-left', 'cohort-right']);
     });
   });
-  it('exports a reopenable report bundle and renders its HTML on narrow screens and paper', () => {
+  it('saves a complete reopenable bundle from the panel and renders its HTML on narrow screens and paper', () => {
     loadKit(); installSaveAsCaptureHook(); openPanel();
-    cy.contains('button', 'Export reproducibility report').click();
+    cy.contains('button', 'Export reproducibility report').should('not.exist');
+    cy.get('[data-testid="investigation-save"]').click();
+    cy.contains('.p-dialog-title', 'Save Session').should('be.visible');
+    cy.get('#stash-name').clear().type('report-paired');
+    cy.get('#save-file-compress').check();
+    cy.get('#save-file-cluster').uncheck();
+    cy.get('#stash-data').click();
+    cy.contains('.p-dialog-title', 'Save Session').should('not.exist');
     const path = `${Cypress.config('downloadsFolder')}/report-paired.zip`;
-    writeCapturedDownloadToDisk('investigation-record.zip', path);
+    writeCapturedDownloadToDisk('report-paired.zip', path);
     let snapshotId: string, html: string;
     cy.readFile(path, 'base64').then(async encoded => {
       const zip = await JSZip.loadAsync(encoded, { base64: true });

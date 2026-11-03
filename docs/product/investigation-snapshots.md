@@ -2,14 +2,17 @@
 
 Open **File → Reproducibility Report** and choose **Save investigation** to save everything together. No individual feature selections are needed. **File → Save** uses the same complete snapshot.
 
-The workspace starts with its editing controls hidden. Expand **Optional tools** only to edit cohorts, relationship layers or notes, run or change calculations, or download the investigation record separately. These tools change the investigation; they do not choose which features are included in a save.
+The workspace starts with its editing controls hidden. Expand **Optional tools** only to edit cohorts, relationship layers or notes, or run or change calculations. These tools change the investigation; they do not choose which features are included in a save.
+
+The status summary shows completed results, stale results, and unresolved notes before opening any tools. Expand **Why results are stale** for the recorded changes, such as scope, cohort membership, visible inputs, enabled layers, analytical parameters, sequences, or the base tree. These notices do not prevent saving; previous outputs and unresolved notes remain included.
 
 ## Files and investigation records
 
 - A `.microbetrace` file contains the versioned snapshot and its manifest.
-- A compressed save includes the session, `investigation-manifest.json`, and `investigation-record.html`. Saving by cluster also includes the complete investigation alongside the cluster CSV files.
-- **Export reproducibility report** downloads a ZIP containing the readable HTML, manifest, and matching portable `.microbetrace` session from one capture. Drop this ZIP back into MicrobeTrace to resume the saved investigation.
+- Leave **Compress?** checked in **Save investigation** or **File → Save** to download one ZIP containing the session, `investigation-manifest.json`, and `investigation-record.html` from the same capture. Drop this ZIP back into MicrobeTrace to resume the saved investigation. Saving by cluster also includes the complete investigation alongside the cluster CSV files.
 - A **Local link** uses the same snapshot format but works only in the browser and site where it was saved. Clearing browser storage removes it.
+
+Saving displays preparation and bundle progress and prevents duplicate submissions while it works. If preparation fails, the same Save dialog keeps the filename and explains the problem so you can retry. A **Download prepared** notice means the file was handed to the browser; the browser controls where it is saved.
 
 The manifest identifies the snapshot, capture time, MicrobeTrace version/build, settings, source-content checksums, network counts, and calculation provenance. Source checksums cover canonical saved content, including the binary encoding of spreadsheet inputs. They are explicitly labelled with that representation.
 
@@ -29,7 +32,11 @@ Cohort names and note text are edited as drafts until a valid change is committe
 
 Layers represent the existing relationship sources. Their names, enabled state, order, color, and opacity are saved. Disabling a source preserves its underlying data. Mixed-origin edges remain available through other enabled sources and count once in analyses. Explicit layer styles override view styling.
 
-Notes target the investigation, a node ID, an edge ID, or a cohort ID. Notes whose targets disappear remain available with an unresolved-target label. Notes are plain text and are escaped in the HTML record.
+Under **Edit notes**, choose Investigation or find nodes, edges, and cohorts in the searchable target picker. Names and IDs distinguish targets with identical names; edges show their endpoint names. Hidden items remain available. **Use selected nodes** copies the current node selection; **Use selected edges** copies selected relationships from the 2D Cytoscape or Waterfall view when available. These shortcuts do not change the selection or follow later selection/filter changes.
+
+Choose one or more targets and enter the note text. Saving several targets creates a separate note for each, with its own stable ID and timestamps. All chosen targets must still exist when saving; otherwise no notes from that action are added and the text remains available for correction. Changing the target type clears the chosen targets. Loading another investigation clears the new-note draft.
+
+Saved notes retain stable node, edge, or cohort IDs, so renaming does not retarget them. Notes whose targets disappear remain available with an unresolved-target label. Notes are plain text and are escaped in the HTML record.
 
 ## Calculation scope and results
 
@@ -50,6 +57,8 @@ For visible scope, restoring threshold/nearest-neighbor candidates never bypasse
 The panel previews input counts. Calculations run on isolated copies; outputs are applied by stable IDs after input and investigation checks. Failed, skipped, or superseded runs preserve earlier completed results and unrelated loaded data. Browser guardrails continue to apply.
 
 Completed runs retain exact input rows, parameters, software identity, checksums, timestamps, and outputs. Approximation sampling and bootstrap batch seeds are retained with their outputs. Later input changes mark results stale. Restoring a snapshot preserves its saved outputs, including stale results; use **Run** to refresh them explicitly.
+
+New runs also retain categorized input fingerprints after applying their output, so a calculation does not identify its own changes as a later edit. Stale explanations are included in the saved session, manifest, and readable record. Older results show **Exact change details were not recorded** when their saved inputs cannot reliably identify the change. Returning inputs to their previous values retains the stale status until an explicit rerun.
 
 Snapshots do not provide a chronological action history or guarantee identical reruns across software versions. In development builds the software identity reports `development`; production builds use the generated version/commit metadata.
 

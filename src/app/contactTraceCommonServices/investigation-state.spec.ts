@@ -387,7 +387,81 @@ describe('Investigation calculation transactions', () => {
     session.investigation.scopes.consensus = 'cohort';
     service.refreshStatus(session);
     expect(session.investigation.calculations.consensus.status).toBe('stale');
+    expect(session.investigation.calculations.consensus.staleReasons).toContain('Calculation scope changed.');
+    expect(session.investigation.calculations.consensus.staleReasons).not.toContain('Selected cohorts changed.');
     expect(service.savedOutput(session, 'consensus', { sequence: true })).toBeUndefined();
+    session.investigation.scopes.consensus = 'full';
+    service.refreshStatus(session);
+    expect(session.investigation.calculations.consensus.status).toBe('stale');
+    expect(session.investigation.calculations.consensus.staleReasons[0]).toContain('Inputs now match');
+    await service.run(session, 'consensus', async () => 'refreshed', undefined, { sequence: true });
+    expect(session.investigation.calculations.consensus.status).toBe('completed');
+    expect(session.investigation.calculations.consensus.staleReasons).toBeUndefined();
+  });
+  for (const scenario of [
+    { name: 'selected cohorts', operation: 'network-statistics', scope: 'cohort', change: session => session.investigation.selectedCohortIds = ['two'], reason: 'Selected cohorts changed.' },
+    { name: 'cohort membership', operation: 'network-statistics', scope: 'cohort', change: session => session.investigation.cohorts[0].nodeIds = ['A'], reason: 'Eligible cohort membership changed.' },
+    { name: 'visible population', operation: 'network-statistics', scope: 'visible', change: session => session.data.nodes[0].visible = false, reason: 'Visible node population changed (filters or visibility).' },
+    { name: 'visible relationships', operation: 'network-statistics', scope: 'visible', change: session => session.data.links[2].visible = false, reason: 'Visible relationship inputs changed (filters or relationship data).' },
+    { name: 'enabled layers', operation: 'network-statistics', scope: 'full', change: session => session.investigation.edgeLayers[1].enabled = false, reason: 'Enabled relationship layers changed.' },
+    { name: 'parameters', operation: 'network-statistics', scope: 'full', change: session => session.style.widgets['link-threshold'] = 2, reason: 'Analytical parameters changed.' },
+    { name: 'node selection', operation: 'network-statistics', scope: 'full', change: session => session.data.nodes[0].selected = false, reason: 'Selected nodes changed.' },
+    { name: 'sequences', operation: 'consensus', scope: 'full', change: session => session.data.nodes[0].seq = 'TTTT', reason: 'Sequence inputs changed.' },
+    { name: 'base tree', operation: 'directionality', scope: 'full', change: session => session.data.newickString = '(A:1,B:1);', reason: 'Base tree changed.' },
+  ] as const) {
+    it(`explains changed ${scenario.name} without replacing the completed output`, async () => {
+      const service = new InvestigationCalculationService(snapshots);
+      const session = investigationFixture();
+      session.investigation.scopes[scenario.operation] = scenario.scope;
+      session.investigation.selectedCohortIds = ['one'];
+      await service.run(session, scenario.operation, async () => ({ value: 'retained result' }), undefined,
+        { sequence: scenario.operation === 'consensus' });
+      const run = session.investigation.calculations[scenario.operation];
+      const completedAt = run.completedAt, output = run.output;
+      scenario.change(session);
+      service.refreshStatus(session);
+      expect(run.staleReasons).toContain(scenario.reason);
+      expect(run.output).toBe(output);
+      expect(run.completedAt).toBe(completedAt);
+      const saved = await snapshots.capture({ session, tabs: [] });
+      const restored = await snapshots.prepare(JSON.parse(JSON.stringify(saved)));
+      const restoredRun = restored.session.investigation.calculations[scenario.operation];
+      expect(restoredRun.staleReasons).toEqual(run.staleReasons);
+      expect(restoredRun.changeBaseline).toEqual(run.changeBaseline);
+    });
+  }
+  it('compares against applied results and rebased inputs, excluding presentation changes', async () => {
+    const service = new InvestigationCalculationService(snapshots);
+    const session = investigationFixture();
+    await service.run(session, 'mst', async () => 'saved', () => session.data.links[0].distance = 2, { unpruned: true });
+    const run = session.investigation.calculations.mst;
+    session.data.nodes[0].x = 500;
+    session.style.widgets['node-color'] = '#123456';
+    service.refreshStatus(session);
+    expect(run.status).toBe('completed');
+    session.data.newickString = '(A:1,B:1);';
+    service.rebaseAfterApply(session, 'mst');
+    service.refreshStatus(session);
+    expect(run.status).toBe('completed');
+    session.data.links[0].distance = 4;
+    service.refreshStatus(session);
+    expect(run.staleReasons).toContain('Eligible relationships or edge values changed.');
+    expect(run.staleReasons).not.toContain('Base tree changed.');
+  });
+  it('explains unavailable cohorts and legacy change details without inventing a cause', async () => {
+    const service = new InvestigationCalculationService(snapshots);
+    const session = investigationFixture();
+    await service.run(session, 'consensus', async () => 'saved', undefined, { sequence: true });
+    const run = session.investigation.calculations.consensus;
+    delete run.changeBaseline;
+    run.currentInputKey = 'historical-post-apply-key';
+    service.refreshStatus(session);
+    expect(run.staleReasons).toEqual(['Exact change details were not recorded for this saved result.']);
+    session.investigation.scopes.consensus = 'cohort';
+    session.investigation.selectedCohortIds = ['missing'];
+    service.refreshStatus(session);
+    expect(run.staleReasons[0]).toContain('A selected cohort is unavailable');
+    expect(run.output).toBe('saved');
   });
   it('waits for synchronous calculation provenance before capture', async () => {
     const service = new InvestigationCalculationService(snapshots);

@@ -92,12 +92,15 @@ describe('Readable investigation record', () => {
     manifest.sources[0].name = attack;
     manifest.snapshotId = attack;
     manifest.investigation.calculations['network-statistics'].parameters.note = attack;
+    manifest.investigation.calculations['network-statistics'].staleReasons = ['Selected cohorts changed.', attack];
     const html = readableInvestigationRecord(manifest), doc = documentFor(manifest);
     expect(doc.querySelectorAll('script,img,iframe,link,[onerror],[onclick]').length).toBe(0);
     expect(doc.querySelectorAll('[src]').length).toBe(0);
     expect(doc.querySelector('.note-text').textContent).toBe(attack);
     expect(html).toContain('&lt;script&gt;');
     expect(doc.body.textContent).toContain(manifest.stateChecksum);
+    expect(doc.querySelector('#calculations').textContent).toContain('Selected cohorts changed.');
+    expect(doc.querySelector('#calculations').textContent).toContain(attack);
     expect(doc.body.textContent).toContain(manifest.sources[0].sha256);
   });
   it('keeps multiline notes and marks resolvable missing targets without changing the manifest', () => {

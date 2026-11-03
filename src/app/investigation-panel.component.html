@@ -1,8 +1,23 @@
 <div data-testid="investigation-panel">
   <div class="investigation-save">
     <p><strong>Save everything together.</strong> All loaded data, settings, cohorts, relationship layers, notes, and completed results are included. No individual selections are needed.</p>
-    <button class="btn btn-primary" data-testid="investigation-save" (click)="saveInvestigation.emit()">Save investigation</button>
+    <button class="btn btn-primary" data-testid="investigation-save" [disabled]="saving" (click)="saveInvestigation.emit()">Save investigation</button>
+    <p class="muted">Leave <strong>Compress?</strong> checked in the Save dialog to download one bundle with the session, manifest, and readable report.</p>
   </div>
+  <section aria-label="Investigation status" data-testid="investigation-summary">
+    <p role="status" aria-live="polite" aria-atomic="true">{{ summary.completed }} completed result{{ summary.completed === 1 ? '' : 's' }} · {{ summary.stale }} stale result{{ summary.stale === 1 ? '' : 's' }} · {{ summary.unresolvedNotes }} unresolved note{{ summary.unresolvedNotes === 1 ? '' : 's' }}</p>
+    @if (summary.stale || summary.unresolvedNotes) {
+      <p class="muted">Saved results and notes are retained. You can save the complete investigation with these items included.</p>
+    }
+    @if (staleResults.length) {
+      <details data-testid="investigation-stale-details">
+        <summary>Why results are stale</summary>
+        @for (result of staleResults; track result.id) {
+          <p><strong>{{ result.label }}</strong><br>{{ result.reasons.join(' ') }}</p>
+        }
+      </details>
+    }
+  </section>
   @if (error) { <p role="alert" class="text-danger">{{ error }}</p> }
   @if (status) { <p role="status">{{ status }}</p> }
   <details class="investigation-tools" data-testid="investigation-tools">
@@ -56,11 +71,26 @@
     <summary id="investigation-notes-title">Edit notes</summary>
   <section aria-labelledby="investigation-notes-title">
     <div class="row-actions">
-      <label>Target <select class="form-control" [(ngModel)]="noteTargetType"><option value="investigation">Investigation</option><option value="node">Node</option><option value="edge">Edge</option><option value="cohort">Cohort</option></select></label>
-      @if (noteTargetType !== 'investigation') { <input class="form-control name" aria-label="Annotation target ID" placeholder="Target ID" [(ngModel)]="noteTargetId"> }
+      @if (noteSelection.nodes) { <button class="btn btn-light btn-sm" data-testid="note-use-selected-nodes" (click)="useNoteSelection('node')">Use selected nodes ({{ noteSelection.nodes }})</button> }
+      @if (noteSelection.edges) { <button class="btn btn-light btn-sm" data-testid="note-use-selected-edges" (click)="useNoteSelection('edge')">Use selected edges ({{ noteSelection.edges }})</button> }
     </div>
+    <div class="row-actions">
+      <label>Target <select class="form-control" aria-label="Note target type" [ngModel]="noteTargetType" (ngModelChange)="setNoteTargetType($event)"><option value="investigation">Investigation</option><option value="node">Node</option><option value="edge">Edge</option><option value="cohort">Cohort</option></select></label>
+      @if (noteTargetType !== 'investigation') {
+        <div class="name">
+          <p-multi-select data-testid="note-target-picker" ariaLabel="Choose note targets" ariaFilterLabel="Search note targets"
+            [options]="noteTargetOptions" [(ngModel)]="noteTargetIds" optionLabel="label" optionValue="id"
+            [filter]="true" filterBy="label,id" filterPlaceHolder="Search names or IDs" placeholder="Choose targets by name"
+            [showToggleAll]="false" [showClear]="true" [maxSelectedLabels]="2" selectedItemsLabel="{0} targets selected"
+            [virtualScroll]="noteTargetOptions.length > 100" [virtualScrollItemSize]="44"
+            [style]="{ width: '100%' }" [panelStyle]="{ maxWidth: 'min(720px, 95vw)' }" appendTo="body"
+            (onPanelShow)="noteTargetPickerOpen = true; refreshNoteTargets()" (onPanelHide)="noteTargetPickerOpen = false"></p-multi-select>
+        </div>
+      }
+    </div>
+    @if (noteTargetType !== 'investigation') { <p class="muted">Find targets by name or ID, including hidden items. A separate note is saved for each chosen target.</p> }
     <textarea aria-label="New annotation" [(ngModel)]="noteText" placeholder="Investigation note"></textarea>
-    <button class="btn btn-primary btn-sm" (click)="addNote()">Save note</button>
+    <button class="btn btn-primary btn-sm" (click)="addNote()">{{ noteTargetType !== 'investigation' && noteTargetIds.length > 1 ? 'Save notes (' + noteTargetIds.length + ')' : 'Save note' }}</button>
     @for (note of workspace.annotations; track note) {
       <div class="entry">
         <label>{{ note.target.type }} {{ note.target.id }} @if (!resolved(note)) { <strong class="text-warning">Unresolved target</strong> }</label>
@@ -85,6 +115,5 @@
     }
   </section>
   </details>
-  <div class="row-actions"><button class="btn btn-light" (click)="downloadRecord.emit()">Export reproducibility report</button><small class="muted">Includes a readable report, machine-readable manifest, and matching portable session with exact inputs and completed outputs.</small></div>
   </details>
 </div>

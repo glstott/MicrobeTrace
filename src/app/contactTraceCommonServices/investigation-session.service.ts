@@ -293,6 +293,15 @@ export class InvestigationSessionService {
       if (!operations.has(operation) || !['full', 'visible', 'cohort'].includes(scope)) throw new Error('A saved calculation scope is invalid.');
     }
     for (const [operation, run] of Object.entries(state.calculations)) {
+      if (run?.changeBaseline !== undefined && (!run.changeBaseline || !['full', 'visible', 'cohort'].includes(run.changeBaseline.scope)
+        || !['cohorts', 'population', 'nodes', 'relationships', 'parameters', 'layers', 'selection', 'tree']
+          .every(key => typeof run.changeBaseline[key] === 'string' && run.changeBaseline[key].length > 0))) {
+        throw new Error('A calculation change baseline is invalid.');
+      }
+      if (run?.staleReasons !== undefined && (!Array.isArray(run.staleReasons)
+        || !run.staleReasons.every(reason => typeof reason === 'string' && !!reason.trim()))) {
+        throw new Error('A calculation stale explanation is invalid.');
+      }
       if (!run || run.operation !== operation || !operations.has(operation) || !['completed', 'stale'].includes(run.status)
         || !['full', 'visible', 'cohort'].includes(run.scope) || !Array.isArray(run.nodeIds) || !Array.isArray(run.edgeIds)
         || !Array.isArray(run.inputs?.nodes) || !Array.isArray(run.inputs?.links) || !run.inputChecksum || !run.software

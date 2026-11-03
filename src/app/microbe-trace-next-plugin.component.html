@@ -1,4 +1,5 @@
 <div class="m-content">
+  @if (sessionSaveNotice) { <p role="status" class="session-save-notice" data-testid="session-save-notice">{{ sessionSaveNotice }}</p> }
   @if (commonService.sessionLoadError) { <p role="alert" class="text-danger" data-testid="investigation-load-error">{{ commonService.sessionLoadError }}</p> }
   @if (exportService.exportProgress$ | async; as exportProgress) {
     @if (exportProgress.active) {
@@ -57,7 +58,7 @@
           <!-- <button mat-menu-item (click)="FileClick('Stash Session')">Stash</button> -->
           <!-- <button mat-menu-item (click)="FileClick('Recall Session')">Recall</button> -->
           <button mat-menu-item (click)="FileClick('Save Session')">Save</button>
-          <button data-testid="app-file-menu-investigation" mat-menu-item (click)="investigationOpen = true" title="Save investigations and export reproducibility reports">Reproducibility Report</button>
+          <button data-testid="app-file-menu-investigation" mat-menu-item (click)="investigationOpen = true" title="Save complete investigations and manage analysis settings">Reproducibility Report</button>
           <button data-testid="app-file-menu-export-dashboard" mat-menu-item (click)="OpenExportDashboard()">Export Dashboard</button>
           <button mat-menu-item (click)="OpenExportTables()">Export Tables</button>
           <button data-testid="app-file-menu-export-graphml" mat-menu-item (click)="ExportGraphML()">Export GraphML</button>
@@ -1234,32 +1235,33 @@
 
 <p-dialog header="Reproducibility Report" [(visible)]="investigationOpen" [modal]="false" appendTo="body" [style]="{ width: '780px', maxWidth: '95vw' }" [baseZIndex]="1500">
   @if (investigationOpen) {
-    <app-investigation-panel (saveInvestigation)="investigationOpen = false; FileClick('Save Session')" (downloadRecord)="downloadInvestigationRecord()"></app-investigation-panel>
+    <app-investigation-panel [saving]="sessionSaveBusy" (saveInvestigation)="investigationOpen = false; FileClick('Save Session')"></app-investigation-panel>
   }
 </p-dialog>
-<p-dialog id="session-stash-modal" [(visible)]="displayStashDialog" [modal]="true" [closable]="!localSessionLinkSaving" [baseZIndex]="1400" header="Save Session">
+<p-dialog id="session-stash-modal" [(visible)]="displayStashDialog" [modal]="true" [closable]="!sessionSaveBusy" [closeOnEscape]="!sessionSaveBusy" [baseZIndex]="1400" header="Save Session">
   @if (sessionSaveError) { <p class="text-danger" role="alert">{{ sessionSaveError }}</p> }
-  <div class="modal-dialog" role="document">
+  @if (sessionSaveProgress) { <p role="status" aria-live="polite" data-testid="session-save-progress">{{ sessionSaveProgress }}</p> }
+  <div class="modal-dialog" role="document" [attr.aria-busy]="sessionSaveBusy">
     <div class="modal-content">
 
       <div class="modal-body">
         <div class="form-group row" title="What would you like to call this session?">
           <div class="col-7">
-            <input style="height:42px" type="text" id="stash-name" class="form-control form-control-sm" [(ngModel)]="saveFileName" (ngModelChange)="clearLocalSessionLinkResult()" placeholder="Name your session!">
+            <input style="height:42px" type="text" id="stash-name" class="form-control form-control-sm" [(ngModel)]="saveFileName" (ngModelChange)="clearLocalSessionLinkResult()" [disabled]="sessionSaveBusy" placeholder="Name your session!">
           </div>
           <div class="col-5">
-            <p-select [options]="saveFileTypeOptions" [(ngModel)]="selectedSaveFileType" (ngModelChange)="clearLocalSessionLinkResult()" appendTo="body"></p-select>
+            <p-select [options]="saveFileTypeOptions" [(ngModel)]="selectedSaveFileType" (ngModelChange)="clearLocalSessionLinkResult()" [disabled]="sessionSaveBusy" appendTo="body"></p-select>
           </div>
         </div>
         @if (selectedSaveFileType=='session') {
           <div class="form-group row" title="Should MicrobeTrace compress this save file?">
             <div class="col">
               <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="save-file-compress" checked>
+                <input class="form-check-input" type="checkbox" id="save-file-compress" [disabled]="sessionSaveBusy" checked>
                 <label class="form-check-label" for="save-file-compress">Compress?</label>
               </div>
               <div id="cluster-checkbox-container" class="form-check form-check-inline">
-                <input class="form-check-input" [(ngModel)]="saveByCluster" type="checkbox" id="save-file-cluster">
+                <input class="form-check-input" [(ngModel)]="saveByCluster" type="checkbox" id="save-file-cluster" [disabled]="sessionSaveBusy">
                 <label class="form-check-label" for="save-file-cluster">By Cluster</label>
               </div>
             </div>
@@ -1280,9 +1282,9 @@
         }
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-error" (click)="DisplayStashDialog('Cancel')" [disabled]="localSessionLinkSaving">{{ localSessionLinkUrl ? 'Done' : 'Cancel' }}</button>
+        <button type="button" class="btn btn-error" (click)="DisplayStashDialog('Cancel')" [disabled]="sessionSaveBusy">{{ localSessionLinkUrl ? 'Done' : 'Cancel' }}</button>
         @if (!localSessionLinkUrl) {
-          <button type="button" id="stash-data" class="btn btn-primary" (click)="DisplayStashDialog('Save')" [disabled]="localSessionLinkSaving || saveFileName === undefined || saveFileName === ''">{{ localSessionLinkSaving ? 'Saving...' : 'Save' }}</button>
+          <button type="button" id="stash-data" class="btn btn-primary" (click)="DisplayStashDialog('Save')" [disabled]="sessionSaveBusy || saveFileName === undefined || saveFileName === ''">{{ sessionSaveBusy ? 'Preparing…' : 'Save' }}</button>
         }
       </div>
     </div><!-- /.modal-content -->
