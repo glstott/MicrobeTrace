@@ -35,6 +35,7 @@ import { showColorTransparencyPicker } from '../KeyTablesComponent/color-transpa
 import { buildThresholdConnectedComponents } from '@app/contactTraceCommonServices/threshold-analysis';
 import { buildPieChartSlicesWithSegmentedFills, buildPieChartSvgDataUri, getCollapsedAggregateBorderWidth, getCollapsedAggregateMinimumRenderedSize, PieChartSlice } from '@app/contactTraceCommonServices/pie-chart-utils';
 import { buildCanonicalNodeColorCounts } from '@app/contactTraceCommonServices/color-mapping.service';
+import { investigationEdgeId } from '@app/contactTraceCommonServices/investigation-state';
 import {
     applyNetworkNodeCompositionSegments,
     buildNetworkNodeVisualFeatures,
@@ -1000,6 +1001,15 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
             return Boolean(this.sigmaRenderer && !this.sigmaLoading && !this.sigmaRendering);
         }
         return Boolean(this.cy && !(typeof this.cy.destroyed === 'function' && this.cy.destroyed()));
+    }
+
+    public getSelectedInvestigationEdgeIds(): string[] {
+        if (this.sigmaActive || !this.isRendererReady()) return [];
+        const selected = this.cy.edges(':selected');
+        if (!selected.length) return [];
+        const loaded = new Set(this.commonService.session.data.links.map(investigationEdgeId));
+        return [...new Set(selected.map(edge => String(edge.data('_investigationEdgeId') ?? edge.id())))]
+            .filter(id => loaded.has(id));
     }
 
     public setRendererViewState(stateValue: NetworkRendererViewState, persist = true): void {
@@ -2741,6 +2751,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
             acc.push({
                 ...link,
+                _investigationEdgeId: investigationEdgeId(link),
                 id: link.id ?? `collapsed-link-${index}`,
                 source: collapsedSource,
                 target: collapsedTarget
@@ -2847,6 +2858,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
                 data: {
                     // Include any additional edge-specific data properties
                     ...link,
+                    _investigationEdgeId: link._investigationEdgeId ?? investigationEdgeId(link),
                     id: index > 0 ? `${link.id}-${index + 1}`: link.id,
                     source: link.source,
                     target: link.target,
@@ -2864,6 +2876,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
         return [{ data: {
             // Include any additional edge-specific data properties
             ...link,
+            _investigationEdgeId: link._investigationEdgeId ?? investigationEdgeId(link),
             id: link.id,
             source: link.source,
             target: link.target,
