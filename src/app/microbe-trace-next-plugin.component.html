@@ -1,5 +1,10 @@
 <div class="m-content">
-  @if (sessionSaveNotice) { <p role="status" class="session-save-notice" data-testid="session-save-notice">{{ sessionSaveNotice }}</p> }
+  @if (sessionSaveNotice) {
+    <div class="session-save-notice" data-testid="session-save-notice">
+      <span role="status">{{ sessionSaveNotice }}</span>
+      <button type="button" aria-label="Dismiss download notification" (click)="dismissSessionSaveNotice()"><span aria-hidden="true">×</span></button>
+    </div>
+  }
   @if (commonService.sessionLoadError) { <p role="alert" class="text-danger" data-testid="investigation-load-error">{{ commonService.sessionLoadError }}</p> }
   @if (exportService.exportProgress$ | async; as exportProgress) {
     @if (exportProgress.active) {

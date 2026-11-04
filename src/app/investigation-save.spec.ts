@@ -18,6 +18,7 @@ describe('Investigation save feedback and retries', () => {
     });
   });
   afterEach(() => {
+    component.dismissSessionSaveNotice();
     if (originalDollar === undefined) delete (window as any).$;
     else (window as any).$ = originalDollar;
   });

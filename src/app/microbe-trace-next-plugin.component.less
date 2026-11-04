@@ -16,6 +16,9 @@
 }
 
 .session-save-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   position: fixed;
   right: 16px;
   bottom: 32px;
@@ -28,6 +31,28 @@
   background: #f0faf3;
   color: #14552f;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+
+  > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  button {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    margin: -4px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { background: rgba(20, 85, 47, 0.08); }
+    &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  }
 }
 
 .partner-dataset-name {

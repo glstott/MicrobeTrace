@@ -12,7 +12,7 @@ The status summary shows completed results, stale results, and unresolved notes 
 - Leave **Compress?** checked in **Save investigation** or **File → Save** to download one ZIP containing the session, `investigation-manifest.json`, and `investigation-record.html` from the same capture. Drop this ZIP back into MicrobeTrace to resume the saved investigation. Saving by cluster also includes the complete investigation alongside the cluster CSV files.
 - A **Local link** uses the same snapshot format but works only in the browser and site where it was saved. Clearing browser storage removes it.
 
-Saving displays preparation and bundle progress and prevents duplicate submissions while it works. If preparation fails, the same Save dialog keeps the filename and explains the problem so you can retry. A **Download prepared** notice means the file was handed to the browser; the browser controls where it is saved.
+Saving displays preparation and bundle progress and prevents duplicate submissions while it works. If preparation fails, the same Save dialog keeps the filename and explains the problem so you can retry. A **Download prepared** notice means the file was handed to the browser; the browser controls where it is saved. The notice disappears after five seconds, or you can close it immediately with its dismiss button.
 
 The manifest identifies the snapshot, capture time, MicrobeTrace version/build, settings, source-content checksums, network counts, and calculation provenance. Source checksums cover canonical saved content, including the binary encoding of spreadsheet inputs. They are explicitly labelled with that representation.
 

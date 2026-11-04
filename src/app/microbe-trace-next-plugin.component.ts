@@ -5456,7 +5456,7 @@ ${warnings.join('\n')}`,
             return;
         }
         this.sessionSaveError = '';
-        this.sessionSaveNotice = '';
+        this.dismissSessionSaveNotice();
         const filename = this.saveFileName;
         const fileType = this.selectedSaveFileType;
         const byCluster = this.saveByCluster;
@@ -5472,7 +5472,7 @@ ${warnings.join('\n')}`,
                     const data = JSON.stringify(this.commonService.session.style);
                     const blob = new Blob([data], { type: "application/json;charset=utf-8" });
                     this.saveGeneratedFile(blob, filename + '.style');
-                    this.sessionSaveNotice = `Download prepared: ${filename}.style. Your browser handles saving the file.`;
+                    this.showSessionSaveNotice(`Download prepared: ${filename}.style. Your browser handles saving the file.`);
                     this.displayStashDialog = false;
                     return;
                 }
@@ -5612,7 +5612,7 @@ ${warnings.join('\n')}`,
                 break;
             }
         }
-        this.sessionSaveNotice = `Download prepared: ${filename}.${byCluster || compress ? 'zip' : 'microbetrace'}. Your browser handles saving the file.`;
+        this.showSessionSaveNotice(`Download prepared: ${filename}.${byCluster || compress ? 'zip' : 'microbetrace'}. Your browser handles saving the file.`);
         this.displayStashDialog = false;
         } catch (error) {
             this.sessionSaveError = error instanceof Error ? error.message : 'The investigation could not be saved.';
@@ -5628,9 +5628,24 @@ ${warnings.join('\n')}`,
     sessionSaving = false;
     sessionSaveProgress = '';
     sessionSaveNotice = '';
+    private sessionSaveNoticeTimer: ReturnType<typeof setTimeout> | null = null;
     investigationOpen = false;
 
     get sessionSaveBusy(): boolean { return !!this.sessionSaving || !!this.localSessionLinkSaving; }
+
+    dismissSessionSaveNotice(): void {
+        if (this.sessionSaveNoticeTimer != null) clearTimeout(this.sessionSaveNoticeTimer);
+        this.sessionSaveNoticeTimer = null;
+        this.sessionSaveNotice = '';
+        this.cdref.markForCheck();
+    }
+
+    private showSessionSaveNotice(message: string): void {
+        this.dismissSessionSaveNotice();
+        this.sessionSaveNotice = message;
+        this.sessionSaveNoticeTimer = setTimeout(() => this.dismissSessionSaveNotice(), 5000);
+        this.cdref.markForCheck();
+    }
 
     private async updateSessionSaveProgress(message: string): Promise<void> {
         this.sessionSaveProgress = message;
@@ -5762,7 +5777,7 @@ ${warnings.join('\n')}`,
             case "Save Session": {
                 if (this.sessionSaveBusy) return;
                 this.sessionSaveError = '';
-                this.sessionSaveNotice = '';
+                this.dismissSessionSaveNotice();
                 this.saveFileName = '';
                 this.saveByCluster = false;
                 this.selectedSaveFileType = 'session';
@@ -6880,6 +6895,7 @@ ${warnings.join('\n')}`,
     }
 
     ngOnDestroy(): void {
+        this.dismissSessionSaveNotice();
         window.removeEventListener('resize', this.timelineWindowResizeHandler);
         this.timelineResizeObserver?.disconnect();
         this.timelineResizeObserver = null;
