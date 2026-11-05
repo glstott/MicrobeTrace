@@ -6,6 +6,38 @@
     <p class="muted">{{ workspace.figures?.length || 0 }} exported image{{ workspace.figures?.length === 1 ? '' : 's' }} included. Export an image from a view or the dashboard to add it to the report.</p>
     <p class="muted">New images retain their supporting data and saved calculation records, even after later edits or reruns.</p>
   </div>
+  <details data-testid="investigation-image-review" [open]="imagesOpen" (toggle)="imagesOpen = $any($event.currentTarget).open">
+    <summary #imageReviewSummary>Review exported images ({{ workspace.figures?.length || 0 }})</summary>
+    @if (imagesOpen) {
+      <p>All retained images are included automatically. Change their report order or remove accidental exports here.</p>
+      <p class="muted" id="investigation-image-text-help">Add an optional title and caption to explain findings and limitations. Your text is included when you save the investigation.</p>
+      <ol #imageReviewList class="image-review-list" aria-label="Exported images in report order">
+        @for (figure of workspace.figures || []; track figure.id; let index = $index) {
+          <li class="image-review-card" data-testid="investigation-image" [attr.data-figure-id]="figure.id">
+            <img [src]="figure.dataUrl" [alt]="figure.title?.trim() || figure.view + ' export: ' + figure.filename" loading="lazy" decoding="async">
+            <div>
+              <strong>Image {{ index + 1 }} · {{ figure.view }}</strong>
+              <p>{{ figure.filename }}</p>
+              <p class="muted">{{ figure.width }} × {{ figure.height }} pixels · Exported <time [attr.datetime]="figure.exportedAt">{{ figure.exportedAt | date:'medium':'UTC' }}</time> UTC</p>
+              <div class="figure-description">
+                <label class="mt-2" [for]="'figure-title-' + figure.id">Title (optional)</label>
+                <input [id]="'figure-title-' + figure.id" class="form-control" type="text" data-testid="investigation-image-title" [attr.aria-label]="'Title for image ' + (index + 1) + ': ' + figure.filename" aria-describedby="investigation-image-text-help" [placeholder]="figure.view" [ngModel]="figure.title || ''" (ngModelChange)="setImageText(figure.id, 'title', $event)" [disabled]="saving">
+                <label class="mt-2" [for]="'figure-caption-' + figure.id">Caption (optional)</label>
+                <textarea [id]="'figure-caption-' + figure.id" class="form-control" rows="3" data-testid="investigation-image-caption" [attr.aria-label]="'Caption for image ' + (index + 1) + ': ' + figure.filename" aria-describedby="investigation-image-text-help" placeholder="Describe what this image shows and any limitations." [ngModel]="figure.caption || ''" (ngModelChange)="setImageText(figure.id, 'caption', $event)" [disabled]="saving"></textarea>
+              </div>
+              <div class="row-actions">
+                <button type="button" class="btn btn-light btn-sm" data-testid="investigation-image-up" [attr.aria-label]="'Move image ' + (index + 1) + ' up: ' + figure.filename" [disabled]="saving || index === 0" (click)="moveImage(figure.id, -1)">Move up</button>
+                <button type="button" class="btn btn-light btn-sm" data-testid="investigation-image-down" [attr.aria-label]="'Move image ' + (index + 1) + ' down: ' + figure.filename" [disabled]="saving || index === workspace.figures.length - 1" (click)="moveImage(figure.id, 1)">Move down</button>
+                <button type="button" class="btn btn-light btn-sm" data-testid="investigation-image-remove" [attr.aria-label]="'Remove image ' + (index + 1) + ': ' + figure.filename" [disabled]="saving" (click)="removeImage(figure.id)">Remove</button>
+              </div>
+            </div>
+          </li>
+        } @empty {
+          <li class="muted">No exported images yet. Export an image from a view or the dashboard to add it to the report.</li>
+        }
+      </ol>
+    }
+  </details>
   <section aria-label="Investigation status" data-testid="investigation-summary">
     <p role="status" aria-live="polite" aria-atomic="true">{{ summary.completed }} completed result{{ summary.completed === 1 ? '' : 's' }} · {{ summary.stale }} stale result{{ summary.stale === 1 ? '' : 's' }} · <button type="button" class="btn btn-link p-0 align-baseline" aria-controls="investigation-note-review" data-testid="investigation-linked-notes" (click)="showNotes('linked')">{{ summary.linkedNotes }} linked note{{ summary.linkedNotes === 1 ? '' : 's' }}</button> · <button type="button" class="btn btn-link p-0 align-baseline" aria-controls="investigation-note-review" data-testid="investigation-unlinked-notes" (click)="showNotes('unlinked')">{{ summary.unlinkedNotes }} unlinked note{{ summary.unlinkedNotes === 1 ? '' : 's' }}</button></p>
     @if (summary.stale || summary.unlinkedNotes) {

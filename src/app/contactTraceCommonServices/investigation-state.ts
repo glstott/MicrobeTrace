@@ -50,6 +50,9 @@ export interface InvestigationFigure {
   id: string;
   view: string;
   filename: string;
+  /** Optional author-written report text; independent of the original image and analytical records. */
+  title?: string;
+  caption?: string;
   mimeType: 'image/png' | 'image/jpeg' | 'image/svg+xml';
   dataUrl: string;
   sha256: string;

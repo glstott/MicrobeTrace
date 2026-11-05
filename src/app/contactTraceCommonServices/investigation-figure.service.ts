@@ -16,6 +16,41 @@ export class InvestigationFigureService {
   private pending = new Map<any, Set<Promise<void>>>();
   constructor(private common: CommonService) {}
 
+  setText(id: string, field: 'title' | 'caption', value: string): boolean {
+    const session = this.common.session;
+    const workspace = this.common.investigationSessions.workspace(session);
+    const figure = workspace.figures?.find(figure => figure.id === id);
+    if (!figure || typeof value !== 'string' || (figure[field] ?? '') === value) return false;
+    if (value) figure[field] = value;
+    else delete figure[field];
+    this.common.investigationCalculations.notifyChanged(session, 'presentation');
+    return true;
+  }
+
+  move(id: string, offset: -1 | 1): boolean {
+    const session = this.common.session;
+    const workspace = this.common.investigationSessions.workspace(session);
+    const figures = [...(workspace.figures || [])];
+    const index = figures.findIndex(figure => figure.id === id), target = index + offset;
+    if (index < 0 || target < 0 || target >= figures.length) return false;
+    [figures[index], figures[target]] = [figures[target], figures[index]];
+    workspace.figures = figures;
+    this.common.investigationCalculations.notifyChanged(session, 'presentation');
+    return true;
+  }
+
+  remove(id: string): boolean {
+    const session = this.common.session;
+    const workspace = this.common.investigationSessions.workspace(session);
+    if (!workspace.figures?.some(figure => figure.id === id)) return false;
+    workspace.figures = workspace.figures.filter(figure => figure.id !== id);
+    // Supporting records can be shared by several images. Keep every archive still in use.
+    const referenced = new Set(workspace.figures.map(figure => figure.evidenceId));
+    workspace.figureEvidence = Object.fromEntries(Object.entries(workspace.figureEvidence || {}).filter(([key]) => referenced.has(key)));
+    this.common.investigationCalculations.notifyChanged(session, 'presentation');
+    return true;
+  }
+
   begin(view: string, options: Record<string, any> = {}): InvestigationImageExport {
     const session = this.common.session;
     const workspace = this.common.investigationSessions.workspace(session);

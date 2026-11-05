@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, DoCheck, Element
 import { Subscription } from 'rxjs';
 import { CommonService } from './contactTraceCommonServices/common.service';
 import { InvestigationCancelledError, InvestigationChange } from './contactTraceCommonServices/investigation-calculation.service';
+import { InvestigationFigureService } from './contactTraceCommonServices/investigation-figure.service';
 import {
   INVESTIGATION_OPERATIONS, InvestigationOperation, InvestigationCohort, InvestigationLayer,
   InvestigationAnnotation, CalculationScope, investigationScope, investigationNodeId,
@@ -16,12 +17,15 @@ interface NoteReview { note: InvestigationAnnotation; linked: boolean; targetLab
   selector: 'app-investigation-panel', standalone: false,
   changeDetection: ChangeDetectionStrategy.Eager,
   templateUrl: './investigation-panel.component.html',
-  styles: [`:host{display:block;color:var(--text-color,#23364b)}.investigation-save{padding:16px;border:1px solid #ccd5df;border-radius:6px;margin-bottom:16px}.investigation-save p{margin-bottom:12px}summary{cursor:pointer;font-weight:600;padding:12px 0}details details{border-top:1px solid #ccd5df}section{padding:0 0 12px}label{font-weight:500}.row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.entry{padding:10px 0;border-top:1px solid #e1e5eb}.name{flex:1;min-width:160px}.muted{font-size:.875rem;color:#55657a}.note{white-space:pre-wrap}.scope-row{display:grid;grid-template-columns:1fr 130px 1.4fr auto;gap:10px;align-items:center;padding:8px 0}select,input,textarea{max-width:100%}textarea{width:100%;min-height:70px}@media(max-width:600px){.scope-row{grid-template-columns:1fr 1fr}.scope-row small{grid-column:1/-1}}`],
+  styles: [`:host{display:block;color:var(--text-color,#23364b)}.investigation-save{padding:16px;border:1px solid #ccd5df;border-radius:6px;margin-bottom:16px}.investigation-save p{margin-bottom:12px}summary{cursor:pointer;font-weight:600;padding:12px 0}details details{border-top:1px solid #ccd5df}section{padding:0 0 12px}label{font-weight:500}.row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.entry{padding:10px 0;border-top:1px solid #e1e5eb}.name{flex:1;min-width:160px}.muted{font-size:.875rem;color:#55657a}.note{white-space:pre-wrap}.scope-row{display:grid;grid-template-columns:1fr 130px 1.4fr auto;gap:10px;align-items:center;padding:8px 0}select,input,textarea{max-width:100%}textarea{width:100%;min-height:70px}.image-review-list{list-style:none;margin:0;padding:0}.image-review-card{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;border-top:1px solid #ccd5df;padding:16px 0}.image-review-card img{display:block;width:150px;height:110px;object-fit:contain;border:1px solid #ccd5df;background:#fff}.image-review-card p{margin:4px 0;overflow-wrap:anywhere}.image-review-card button:focus-visible,summary:focus-visible{outline:3px solid #2484ab;outline-offset:3px}@media(max-width:600px){.scope-row{grid-template-columns:1fr 1fr}.scope-row small{grid-column:1/-1}.image-review-card{grid-template-columns:minmax(0,1fr)}.image-review-card img{width:100%;height:160px}}`],
 })
 export class InvestigationPanelComponent implements OnInit, OnDestroy, DoCheck {
   @Output() saveInvestigation = new EventEmitter<void>();
   @Input() saving = false;
   @ViewChild('noteSearchInput') private noteSearchInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('imageReviewSummary') private imageReviewSummary?: ElementRef<HTMLElement>;
+  @ViewChild('imageReviewList') private imageReviewList?: ElementRef<HTMLOListElement>;
+  imagesOpen = false;
   readonly operations = INVESTIGATION_OPERATIONS;
   cohortName = '';
   noteText = '';
@@ -59,7 +63,7 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy, DoCheck {
   private observedTree: string;
   private observedLabels = '';
   private readonly onSelection = () => this.requestRefresh('selection');
-  constructor(public readonly common: CommonService, private readonly cdref: ChangeDetectorRef) {}
+  constructor(public readonly common: CommonService, private readonly cdref: ChangeDetectorRef, private readonly figures: InvestigationFigureService) {}
   get workspace() { return this.common.investigationSessions.workspace(this.common.session); }
   ngOnInit(): void {
     this.changesSubscription = this.common.investigationCalculations.changes$.subscribe(change => {
@@ -110,6 +114,7 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy, DoCheck {
       this.runToken++;
       this.running = null;
       this.status = ''; this.error = '';
+      this.imagesOpen = false;
       this.refreshNoteReview();
     }
   }
@@ -161,6 +166,29 @@ export class InvestigationPanelComponent implements OnInit, OnDestroy, DoCheck {
   }
   setToolsOpen(open: boolean): void { this.toolsOpen = open; this.refreshPreviews(); }
   setCalculationsOpen(open: boolean): void { this.calculationsOpen = open; this.refreshPreviews(); }
+  setImageText(id: string, field: 'title' | 'caption', value: string): void {
+    if (this.saving || !this.figures.setText(id, field, value)) return;
+    this.error = '';
+  }
+  moveImage(id: string, offset: -1 | 1): void {
+    if (this.saving || !this.figures.move(id, offset)) return;
+    const images = this.workspace.figures;
+    const index = images.findIndex(image => image.id === id);
+    this.error = '';
+    this.status = `${images[index].filename} moved to position ${index + 1} of ${images.length}.`;
+  }
+  removeImage(id: string): void {
+    const images = this.workspace.figures || [];
+    const index = images.findIndex(image => image.id === id);
+    if (this.saving || index < 0 || !this.figures.remove(id)) return;
+    const count = this.workspace.figures.length;
+    this.error = '';
+    this.status = `${images[index].filename} removed from the report. ${count} image${count === 1 ? '' : 's'} retained.`;
+    this.cdref.detectChanges();
+    const buttons = this.imageReviewList?.nativeElement.querySelectorAll<HTMLButtonElement>('[data-testid="investigation-image-remove"]');
+    const next = buttons?.[Math.min(index, buttons.length - 1)];
+    (next || this.imageReviewSummary?.nativeElement)?.focus();
+  }
   private refreshPreviews(): void {
     if (!this.toolsOpen || !this.calculationsOpen || !this.previewsDirty) return;
     for (const operation of this.operations) {

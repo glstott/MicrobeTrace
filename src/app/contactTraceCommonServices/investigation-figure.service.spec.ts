@@ -194,6 +194,125 @@ describe('Exported investigation figures', () => {
     expect(Object.keys(restored.session.investigation.figureEvidence).length).toBe(2);
   });
 
+  it('preserves the reviewed image order, exact bytes and completed results through capture, HTML and reopening', async () => {
+    const calculations = new InvestigationCalculationService(sessions);
+    await calculations.run(common.session, 'consensus', async () => 'ACGT', undefined, { parameters: { seed: 42 } });
+    const completed = investigationCopy(common.session.investigation.calculations);
+    for (const view of ['2D Network', 'Map', 'Dashboard']) {
+      await images.begin(view).record(new Blob([svg], { type: 'image/svg+xml' }), 'same.svg');
+    }
+    const workspace = common.session.investigation;
+    const [first, second, third] = workspace.figures;
+    const evidence = investigationCopy(workspace.figureEvidence);
+    expect(images.move(third.id, -1)).toBeTrue();
+    expect(images.move(first.id, 1)).toBeTrue();
+    expect(workspace.figures).toEqual([third, first, second]);
+    expect(images.move(third.id, -1)).toBeFalse();
+    expect(images.move(second.id, 1)).toBeFalse();
+    expect(images.move('missing-image', 1)).toBeFalse();
+    expect(workspace.figureEvidence).toEqual(evidence);
+    expect(workspace.calculations).toEqual(completed);
+    const saved = await sessions.capture({ session: common.session, tabs: [] });
+    const restored = await sessions.prepare(JSON.parse(JSON.stringify(saved)));
+    expect(restored.session.investigation.figures).toEqual([third, first, second]);
+    expect(saved.provenance.investigation.figures.map(figure => figure.id)).toEqual([third.id, first.id, second.id]);
+    const document = new DOMParser().parseFromString(sessions.readableRecord(saved.provenance, saved.investigation.figures), 'text/html');
+    expect(Array.from(document.querySelectorAll('#figures h3')).map(heading => heading.textContent)).toEqual(['Dashboard', '2D Network', 'Map']);
+    expect(common.investigationCalculations.notifyChanged).toHaveBeenCalledWith(common.session, 'presentation');
+  });
+
+  it('round-trips author-written figure text, escapes markup, and retains original images and analytical records', async () => {
+    const calculations = new InvestigationCalculationService(sessions);
+    await calculations.run(common.session, 'consensus', async () => 'ACGT');
+    for (let index = 0; index < 2; index++) await images.begin('Map').record(new Blob([svg], { type: 'image/svg+xml' }), 'same.svg');
+    const workspace = common.session.investigation;
+    const original = investigationCopy(workspace);
+    const [first, second] = workspace.figures;
+    const title = 'North region <img src=x onerror=alert(1)>';
+    const caption = 'Three linked cases at 3 SNPs.\nLimitations: <script>alert(1)</script> & incomplete sampling.';
+    expect(images.setText(first.id, 'title', title)).toBeTrue();
+    expect(images.setText(first.id, 'caption', caption)).toBeTrue();
+    expect(images.setText(first.id, 'caption', caption)).toBeFalse();
+    expect(workspace.figureEvidence).toEqual(original.figureEvidence);
+    expect(workspace.calculations).toEqual(original.calculations);
+    const saved = await sessions.capture({ session: common.session, tabs: [] });
+    const restored = await sessions.prepare(JSON.parse(JSON.stringify(saved)));
+    expect(saved.provenance.investigation.figures[0].title).toBe(title);
+    expect(saved.provenance.investigation.figures[0].caption).toBe(caption);
+    expect(restored.session.investigation.figures[0]).toEqual({ ...original.figures[0], title, caption });
+    expect(restored.session.investigation.figures[1]).toEqual(original.figures[1]);
+    const document = new DOMParser().parseFromString(sessions.readableRecord(saved.provenance, saved.investigation.figures), 'text/html');
+    expect(document.querySelector('#figures h3').textContent).toBe(title);
+    expect(document.querySelector('#figures img').getAttribute('alt')).toBe(title);
+    expect(document.querySelector('.figure-caption').textContent).toBe(caption);
+    expect(document.querySelector('#figures h3 img')).toBeNull();
+    expect(document.querySelector('#figures script')).toBeNull();
+    expect(document.querySelector('style').textContent).toContain('.figure-caption{white-space:pre-wrap');
+    expect(document.querySelectorAll('#figures h3')[1].textContent).toBe('Map');
+    const tampered = investigationCopy(saved);
+    tampered.investigation.figures[0].caption = 'Changed outside the saved manifest';
+    await expectAsync(sessions.prepare(tampered)).toBeRejectedWithError(/manifest/);
+    images.setText(first.id, 'title', '   ');
+    images.setText(first.id, 'caption', '');
+    expect(first.caption).toBeUndefined();
+    const cleared = await sessions.prepare(await sessions.capture({ session: common.session, tabs: [] }));
+    const fallback = new DOMParser().parseFromString(sessions.readableRecord(cleared.provenance, cleared.investigation.figures), 'text/html');
+    expect(fallback.querySelector('#figures h3').textContent).toBe('Map');
+    expect(fallback.querySelector('.figure-caption')).toBeNull();
+    expect(images.setText(second.id, 'title', '')).toBeFalse();
+    expect(second.title).toBeUndefined();
+    expect(common.investigationCalculations.notifyChanged).toHaveBeenCalledWith(common.session, 'presentation');
+  });
+
+  it('rejects invalid optional figure text and ignores edits to missing or replaced investigations', async () => {
+    await images.begin('Map').record(new Blob([svg], { type: 'image/svg+xml' }), 'map.svg');
+    const saved = await sessions.capture({ session: common.session, tabs: [] });
+    const before = JSON.stringify(common.session);
+    for (const field of ['title', 'caption']) for (const value of [null, 42, {}, []]) {
+      const invalid = investigationCopy(saved);
+      invalid.investigation.figures[0][field] = value;
+      await expectAsync(sessions.prepare(invalid)).toBeRejectedWithError(/image.*metadata/);
+    }
+    expect(images.setText('missing', 'title', 'Do not retarget')).toBeFalse();
+    expect(JSON.stringify(common.session)).toBe(before);
+    const previous = common.session;
+    common.session = { ...previous, investigation: createInvestigationWorkspace() };
+    expect(images.setText(previous.investigation.figures[0].id, 'caption', 'Old panel')).toBeFalse();
+    expect(JSON.stringify(previous)).toBe(before);
+  });
+
+  it('removes only unreferenced supporting records, tolerates old controls and retains new pending exports', async () => {
+    for (let index = 0; index < 2; index++) await images.begin('Dashboard').record(new Blob([svg], { type: 'image/svg+xml' }), 'same.svg');
+    const workspace = common.session.investigation;
+    const [first, second] = workspace.figures;
+    const shared = workspace.figureEvidence[first.evidenceId];
+    const pending = images.begin('Map');
+    common.session.data.nodes[0].name = 'New analytical state';
+    await images.begin('Heatmap').record(new Blob([svg], { type: 'image/svg+xml' }), 'matrix.svg');
+    const third = workspace.figures[2];
+    const currentData = investigationCopy(common.session.data);
+    expect(images.remove(first.id)).toBeTrue();
+    expect(workspace.figures).toEqual([second, third]);
+    expect(workspace.figureEvidence[first.evidenceId]).toBe(shared);
+    expect(images.remove(first.id)).toBeFalse();
+    expect(images.remove(third.id)).toBeTrue();
+    expect(workspace.figureEvidence[third.evidenceId]).toBeUndefined();
+    expect(images.remove(second.id)).toBeTrue();
+    expect(workspace.figures).toEqual([]);
+    expect(workspace.figureEvidence).toEqual({});
+    await expectAsync(sessions.prepare(await sessions.capture({ session: common.session, tabs: [] }))).toBeResolved();
+    await pending.record(new Blob([svg], { type: 'image/svg+xml' }), 'pending.svg');
+    expect(workspace.figures.length).toBe(1);
+    expect(workspace.figureEvidence[workspace.figures[0].evidenceId]).toEqual(shared);
+    expect(common.session.data).toEqual(currentData);
+    await expectAsync(sessions.prepare(await sessions.capture({ session: common.session, tabs: [] }))).toBeResolved();
+    const previous = common.session;
+    common.session = { ...previous, investigation: createInvestigationWorkspace() };
+    expect(images.remove(workspace.figures[0].id)).toBeFalse();
+    expect(images.move(workspace.figures[0].id, 1)).toBeFalse();
+    expect(workspace.figures.length).toBe(1);
+  });
+
   it('preserves binary analytical inputs and original source contents across JSON and browser-local storage payloads', async () => {
     common.session.data.distances = new Float64Array([0, 1.25]);
     common.session.files = [{ name: 'original.xlsx', contents: new Uint8Array([1, 2, 3]).buffer }];

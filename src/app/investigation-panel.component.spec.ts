@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MultiSelectModule } from 'primeng/multiselect';
@@ -6,6 +7,7 @@ import { InvestigationPanelComponent } from './investigation-panel.component';
 import { CommonService } from './contactTraceCommonServices/common.service';
 import { InvestigationSessionService } from './contactTraceCommonServices/investigation-session.service';
 import { InvestigationCalculationService } from './contactTraceCommonServices/investigation-calculation.service';
+import { InvestigationFigureService } from './contactTraceCommonServices/investigation-figure.service';
 import { createInvestigationWorkspace } from './contactTraceCommonServices/investigation-state';
 
 describe('Investigation text editing', () => {
@@ -20,7 +22,7 @@ describe('Investigation text editing', () => {
     common = { session: { investigation, data: { nodes: [{ _id: 'A', seq: 'ACGT', selected: true, visible: true }], links: [] },
       style: { widgets: { 'link-threshold': 3 } }, state: {}, files: [], meta: {}, network: {} },
       investigationSessions: snapshots, investigationCalculations: new InvestigationCalculationService(snapshots) };
-    await TestBed.configureTestingModule({ imports: [FormsModule, MultiSelectModule, NoopAnimationsModule], declarations: [InvestigationPanelComponent],
+    await TestBed.configureTestingModule({ imports: [DatePipe, FormsModule, MultiSelectModule, NoopAnimationsModule], declarations: [InvestigationPanelComponent],
       providers: [{ provide: CommonService, useValue: common }] }).compileComponents();
     fixture = TestBed.createComponent(InvestigationPanelComponent);
     fixture.detectChanges();
@@ -79,6 +81,136 @@ describe('Investigation text editing', () => {
     expect(button.disabled).toBeTrue();
     button.click();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  async function addReviewImages() {
+    // Prepare valid historical images before attaching them to the rendered fixture.
+    const source = { ...common, session: { ...common.session, investigation: { ...common.session.investigation, figures: [], figureEvidence: {} } },
+      investigationCalculations: { notifyChanged: () => {} } };
+    const images = new InvestigationFigureService(source);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="20"><rect width="32" height="20" fill="blue"/></svg>';
+    for (const view of ['2D Network', 'Map', 'Dashboard']) {
+      await images.begin(view).record(new Blob([svg], { type: 'image/svg+xml' }), 'same.svg');
+    }
+    common.session.investigation.figures = source.session.investigation.figures;
+    common.session.investigation.figureEvidence = source.session.investigation.figureEvidence;
+    fixture.componentInstance.changed(false, false); fixture.detectChanges();
+    await fixture.whenStable(); fixture.detectChanges();
+    return common.session.investigation.figures;
+  }
+  function imageCards(): HTMLElement[] { return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="investigation-image"]')); }
+  function openImageReview(): void {
+    const review = fixture.nativeElement.querySelector('[data-testid="investigation-image-review"]');
+    review.querySelector('summary').click();
+    review.dispatchEvent(new Event('toggle'));
+    fixture.detectChanges();
+  }
+
+  it('keeps image review collapsed until opened and renders thumbnails with export metadata and boundary controls', async () => {
+    const images = await addReviewImages();
+    const review = fixture.nativeElement.querySelector('[data-testid="investigation-image-review"]');
+    expect(review.open).toBeFalse();
+    expect(review.querySelector('summary').textContent).toContain('Review exported images (3)');
+    expect(review.querySelector('img')).toBeNull();
+    openImageReview();
+    expect(review.open).toBeTrue();
+    expect(imageCards().map(card => card.dataset.figureId)).toEqual(images.map(image => image.id));
+    const thumbnail = imageCards()[0].querySelector('img');
+    expect(thumbnail.getAttribute('src')).toBe(images[0].dataUrl);
+    expect(thumbnail.alt).toBe('2D Network export: same.svg');
+    expect(review.textContent).toContain('32 × 20 pixels');
+    expect(review.textContent).toContain('UTC');
+    expect(review.querySelector('time').getAttribute('datetime')).toBe(images[0].exportedAt);
+    expect(imageCards()[0].querySelector<HTMLButtonElement>('[data-testid="investigation-image-up"]').disabled).toBeTrue();
+    expect(imageCards()[2].querySelector<HTMLButtonElement>('[data-testid="investigation-image-down"]').disabled).toBeTrue();
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-tools"]').open).toBeFalse();
+  });
+
+  it('reorders duplicate filenames by stable image ID without resolving calculations or changing the image bytes', async () => {
+    await common.investigationCalculations.run(common.session, 'consensus', async () => 'ACGT');
+    const [first, second, third] = await addReviewImages();
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    const previous = JSON.stringify(common.session.investigation.calculations);
+    openImageReview();
+    imageCards()[1].querySelector<HTMLButtonElement>('[data-testid="investigation-image-up"]').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(imageCards().map(card => card.dataset.figureId)).toEqual([second.id, first.id, third.id]);
+    expect(common.session.investigation.figures).toEqual([second, first, third]);
+    expect(fixture.componentInstance.status).toContain('position 1 of 3');
+    expect(JSON.stringify(common.session.investigation.calculations)).toBe(previous);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('removes reviewed images, preserves shared supporting data, and moves keyboard focus to a remaining control', async () => {
+    const [first, second, third] = await addReviewImages();
+    const before = JSON.stringify(common.session.data);
+    const archive = common.session.investigation.figureEvidence[first.evidenceId];
+    openImageReview();
+    imageCards()[0].querySelector<HTMLButtonElement>('[data-testid="investigation-image-remove"]').click();
+    expect(common.session.investigation.figures).toEqual([second, third]);
+    expect(common.session.investigation.figureEvidence[second.evidenceId]).toBe(archive);
+    expect(document.activeElement).toBe(imageCards()[0].querySelector('[data-testid="investigation-image-remove"]'));
+    imageCards()[1].querySelector<HTMLButtonElement>('[data-testid="investigation-image-remove"]').click();
+    imageCards()[0].querySelector<HTMLButtonElement>('[data-testid="investigation-image-remove"]').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(common.session.investigation.figures).toEqual([]);
+    expect(common.session.investigation.figureEvidence).toEqual({});
+    const summary = fixture.nativeElement.querySelector('[data-testid="investigation-image-review"] summary');
+    expect(document.activeElement).toBe(summary);
+    expect(summary.textContent).toContain('(0)');
+    expect(fixture.nativeElement.textContent).toContain('No exported images yet.');
+    expect(JSON.stringify(common.session.data)).toBe(before);
+    await expectAsync(common.investigationSessions.capture({ session: common.session, tabs: [] })).toBeResolved();
+  });
+
+  it('edits titles and multiline captions immediately by image ID and retains text when images move', async () => {
+    const [first, second] = await addReviewImages();
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    const title = 'North region < 3 SNPs';
+    const caption = 'Three linked cases.\nLimitations: incomplete sampling <script>text only</script>.';
+    const context = JSON.stringify(first.context), data = JSON.stringify(common.session.data);
+    openImageReview();
+    await fixture.whenStable(); fixture.detectChanges();
+    await edit('[data-testid="investigation-image-title"]', title, false);
+    await edit('[data-testid="investigation-image-caption"]', caption, false);
+    expect(first.title).toBe(title);
+    expect(first.caption).toBe(caption);
+    expect(second.title).toBeUndefined();
+    expect(second.caption).toBeUndefined();
+    expect(imageCards()[0].querySelector('img').alt).toBe(title);
+    expect(imageCards()[0].querySelector('script')).toBeNull();
+    expect(JSON.stringify(first.context)).toBe(context);
+    expect(JSON.stringify(common.session.data)).toBe(data);
+    expect(resolve).not.toHaveBeenCalled();
+    const captured = await common.investigationSessions.capture({ session: common.session, tabs: [] });
+    expect(captured.investigation.figures[0].title).toBe(title);
+    expect(captured.investigation.figures[0].caption).toBe(caption);
+    imageCards()[0].querySelector<HTMLButtonElement>('[data-testid="investigation-image-down"]').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(imageCards()[1].dataset.figureId).toBe(first.id);
+    expect(imageCards()[1].querySelector<HTMLInputElement>('[data-testid="investigation-image-title"]').value).toBe(title);
+    expect(imageCards()[1].querySelector<HTMLTextAreaElement>('[data-testid="investigation-image-caption"]').value).toBe(caption);
+  });
+
+  it('prevents image edits during save and resets review when another investigation opens', async () => {
+    const images = await addReviewImages();
+    openImageReview();
+    fixture.componentRef.setInput('saving', true); fixture.detectChanges();
+    await fixture.whenStable(); fixture.detectChanges();
+    const before = JSON.stringify(common.session.investigation);
+    for (const control of fixture.nativeElement.querySelectorAll('[data-testid="investigation-image"] :is(button, input, textarea)')) expect(control.disabled).toBeTrue();
+    fixture.componentInstance.moveImage(images[1].id, -1);
+    fixture.componentInstance.removeImage(images[1].id);
+    fixture.componentInstance.setImageText(images[1].id, 'title', 'Must not be saved');
+    fixture.componentInstance.setImageText(images[1].id, 'caption', 'Must not be saved');
+    expect(JSON.stringify(common.session.investigation)).toBe(before);
+    common.session = { ...common.session, investigation: createInvestigationWorkspace() };
+    fixture.componentInstance.changed(false, false);
+    fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+    expect(fixture.componentInstance.imagesOpen).toBeFalse();
+    expect(imageCards().length).toBe(0);
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-image-review"] summary').textContent).toContain('(0)');
+    expect(images.length).toBe(3);
   });
 
   function reviewNotes() {

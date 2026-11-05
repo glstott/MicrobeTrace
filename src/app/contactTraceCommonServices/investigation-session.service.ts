@@ -275,6 +275,7 @@ export class InvestigationSessionService {
       const context = figure?.context;
       if (!figure || typeof figure.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(figure.id) || figureIds.has(figure.id)
         || typeof figure.view !== 'string' || !figure.view.trim() || typeof figure.filename !== 'string' || !figure.filename.trim()
+        || (figure.title !== undefined && typeof figure.title !== 'string') || (figure.caption !== undefined && typeof figure.caption !== 'string')
         || typeof figure.exportedAt !== 'string' || !Number.isFinite(Date.parse(figure.exportedAt)) || !/^[a-f0-9]{64}$/.test(figure.sha256)
         || ![figure.width, figure.height].every(value => Number.isFinite(value) && value > 0)
         || figure.software?.name !== 'MicrobeTrace' || !['version', 'commit', 'buildDate'].every(key => typeof figure.software[key] === 'string' && !!figure.software[key].trim())
