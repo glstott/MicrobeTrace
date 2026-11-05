@@ -35,9 +35,9 @@ describe('Readable investigation record', () => {
     const manifest = recordFixture();
     manifest.investigation.annotations[0].target = { type: 'edge', id: 'removed-edge' };
     manifest.annotationResolution = { note: false };
-    expect(documentFor(manifest).querySelector('#notes').textContent).toContain('Unresolved target');
+    expect(documentFor(manifest).querySelector('#notes').textContent).toContain('Unlinked note');
     manifest.annotationResolution.note = true;
-    expect(documentFor(manifest).querySelector('#notes').textContent).not.toContain('Unresolved target');
+    expect(documentFor(manifest).querySelector('#notes').textContent).not.toContain('Unlinked note');
     delete manifest.annotationResolution;
     expect(documentFor(manifest).querySelector('#notes').textContent).toContain('Target status not recorded');
   });
@@ -107,7 +107,7 @@ describe('Readable investigation record', () => {
     const manifest = recordFixture(), before = JSON.stringify(manifest);
     const doc = documentFor(manifest);
     expect(doc.querySelector('.note-text').textContent).toContain('\nFollow up next week.');
-    expect(doc.querySelector('#notes .stale').textContent).toBe('Unresolved target');
+    expect(doc.querySelector('#notes .stale').textContent).toBe('Unlinked note');
     expect(JSON.stringify(manifest)).toBe(before);
   });
   it('formats UTC dates including epoch zero and explains historical provenance and empty results', () => {

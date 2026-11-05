@@ -19,6 +19,7 @@ import JSZip from 'jszip';
 import html2canvas from 'html2canvas';
 import { CommonStoreService } from './contactTraceCommonServices/common-store.services';
 import { ExportService, ExportOptions } from './contactTraceCommonServices/export.service';
+import { investigationFigureBytes, investigationFigurePath, investigationEvidencePath, canonicalInvestigationJson } from './contactTraceCommonServices/investigation-state';
 import { GraphMLService } from './contactTraceCommonServices/graphml.service';
 import { sanitizeExportRows } from './contactTraceCommonServices/export-sanitization';
 import { formatMixedNodeColorDisplayName, getMixedNodeColorLegendEntries } from './contactTraceCommonServices/color-mapping.service';
@@ -258,11 +259,12 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     saveFileName: string = '';
     saveByCluster: boolean = false;
     saveFileTypeOptions = [
-        { label: 'session', value: 'session'},
-        { label: 'Local link', value: 'local-link'},
-        { label: 'style', value: 'style'}
+        { label: 'Investigation bundle (.zip)', value: 'bundle'},
+        { label: 'Session (.microbetrace)', value: 'session'},
+        { label: 'Style (.style)', value: 'style'},
+        { label: 'Local link (this browser)', value: 'local-link'}
     ];
-    selectedSaveFileType: string = 'session';
+    selectedSaveFileType: string = 'bundle';
     localSessionLinkUrl: string | null = null;
     localSessionLinkError: string | null = null;
     localSessionLinkCopied = false;
@@ -1229,12 +1231,15 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         exportLinkTable: boolean = false,
         exportNodeShapeTable: boolean = false
     ): Promise<void> {
+        const options: ExportOptions = { ...this.exportService.getExportOptions() };
+        const imageExport = this.exportService.beginImageExport(options.view || 'Dashboard', options);
         if (!this.exportService.getExportProgress().active) {
             this.exportService.beginExport('Preparing image export', 5);
         }
         await this.exportService.waitForUiPaint();
 
         if (!elementsForExport[0] && !exportNodeTable && !exportLinkTable && !exportNodeShapeTable) {
+            imageExport.cancel();
             this.exportService.failExport('Nothing is available to export');
             console.error('Visual wrapper container not found');
             return;
@@ -1242,7 +1247,6 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
     
         try {
             // Retrieve export options from the service
-            const options: ExportOptions = this.exportService.getExportOptions();
             this.exportService.updateExportProgress('Preparing visible content', 12);
             const mapLibreCanvasSnapshots = elementsForExport.flatMap((element) =>
                 Array.from(element.querySelectorAll<HTMLCanvasElement>('canvas.maplibregl-canvas')).map((canvas) => ({
@@ -1401,10 +1405,12 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             this.exportService.updateExportProgress('Encoding image file', 90);
             const blob = await this.exportCanvasToBlob(canvas, mimeType, quality);
 
+            await imageExport.record(blob, `${filename}.${filetype}`);
             this.saveGeneratedFile(blob, `${filename}.${filetype}`);
             this.exportService.completeExport();
             console.log('Export completed successfully.');
         } catch (error) {
+            imageExport.cancel();
             this.exportService.failExport();
             console.error('Error during export:', error);
         }
@@ -1436,13 +1442,14 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         exportLinkTable: boolean = false,
         exportNodeShapeTable: boolean = false
     ): Promise<void> {
+        const options = { ...this.exportService.getExportOptions() };
+        const imageExport = this.exportService.beginImageExport(options.view || '2D Network', options);
         if (!this.exportService.getExportProgress().active) {
             this.exportService.beginExport('Preparing image export', 5);
         }
         await this.exportService.waitForUiPaint();
 
         try {
-            const options = this.exportService.getExportOptions();
             const tableElements = [
                 ...this.getGlobalTablesForExport(exportNodeTable, exportLinkTable, exportNodeShapeTable),
                 ...elementsForExport,
@@ -1515,9 +1522,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             const { filetype, mimeType, quality } = this.getRasterExportEncoding(options);
             this.exportService.updateExportProgress('Encoding image file', 90);
             const blob = await this.exportCanvasToBlob(output, mimeType, quality);
+            await imageExport.record(blob, `${options.filename || 'network_export'}.${filetype}`);
             this.saveGeneratedFile(blob, `${options.filename || 'network_export'}.${filetype}`);
             this.exportService.completeExport();
         } catch (error) {
+            imageExport.cancel();
             this.exportService.failExport();
             console.error('Error during renderer raster export:', error);
         }
@@ -1530,6 +1539,8 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
         exportLinkTable: boolean = false,
         exportNodeShapeTable: boolean = false
     ): Promise<void> {
+        const options: ExportOptions = { ...this.exportService.getExportOptions() };
+        const imageExport = this.exportService.beginImageExport(options.view || '2D Network', options);
         if (!this.exportService.getExportProgress().active) {
             this.exportService.beginExport('Preparing image export', 5);
         }
@@ -1549,7 +1560,6 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
                 throw new Error('No table elements found for export');
             }
 
-            const options: ExportOptions = this.exportService.getExportOptions();
 
             const parser = new DOMParser();
             const doc = parser.parseFromString(mainSVGString, 'image/svg+xml');
@@ -1633,9 +1643,11 @@ export class MicrobeTraceNextHomeComponent extends AppComponentBase implements A
             await this.exportService.waitForUiPaint();
 
             const blob = new Blob([combinedSvgString], { type: 'image/svg+xml;charset=utf-8' });
+            await imageExport.record(blob, `${options.filename || 'network_export'}.svg`);
             this.saveGeneratedFile(blob, `${options.filename || 'network_export'}.svg`);
             this.exportService.completeExport();
         } catch (error) {
+            imageExport.cancel();
             this.exportService.failExport();
             console.error('Error during SVG-based export:', error);
         }
@@ -5264,6 +5276,7 @@ ${warnings.join('\n')}`,
     ExportDashboard() {
         // Prepare export options
         const exportOptions: ExportOptions = {
+            view: 'Dashboard',
             filename: this.ExportDashboardFilename,
             filetype: 'png',
             scale: this.ExportDashboardScale,
@@ -5282,6 +5295,7 @@ ${warnings.join('\n')}`,
 
     ExportTables() {
         const exportOptions: ExportOptions = {
+            view: 'Key tables',
             filename: this.ExportTablesFilename,
             filetype: this.ExportTablesFileType,
             scale: this.ExportTablesScale,
@@ -5335,6 +5349,11 @@ ${warnings.join('\n')}`,
 
     }
 
+    private addInvestigationImages(zip: JSZip, snapshot: StashObjects): void {
+        for (const figure of snapshot.investigation?.figures || []) zip.file(investigationFigurePath(figure), investigationFigureBytes(figure));
+        for (const [id, evidence] of Object.entries(snapshot.investigation?.figureEvidence || {})) zip.file(investigationEvidencePath(id), canonicalInvestigationJson(evidence));
+    }
+
     private saveGeneratedFile(content: Blob | string, filename: string) {
         const browserWindow = window as Window & {
             __mtTestSaveAs?: (content: Blob | string, filename: string) => void;
@@ -5349,10 +5368,12 @@ ${warnings.join('\n')}`,
     }
 
     private async buildSessionStash(): Promise<StashObjects> {
+        const current = this.commonService.session;
         await this.commonService.investigationCalculations.flush();
+        await this.exportService.flushImageExports(current);
+        if (this.commonService.session !== current) throw new Error('The investigation changed while the report was being prepared. Save the current investigation again.');
         this.commonService.investigationCalculations.refreshStatus(this.commonService.session);
         const captured = this.commonService.visuals.twoD?.captureInvestigationState?.();
-        const current = this.commonService.session;
         const tableView = this.commonService.visuals.tableComp?.captureInvestigationViewState?.();
         const mapView = this.commonService.visuals.gisMap?.captureInvestigationViewState?.();
         const statisticsView = this.commonService.visuals.networkStatistics?.captureInvestigationViewState?.();
@@ -5401,6 +5422,11 @@ ${warnings.join('\n')}`,
         this.localSessionLinkUrl = null;
         this.localSessionLinkError = null;
         this.localSessionLinkCopied = false;
+    }
+
+    onSaveFileTypeChanged(): void {
+        if (this.selectedSaveFileType !== 'bundle') this.saveByCluster = false;
+        this.clearLocalSessionLinkResult();
     }
 
     async copyLocalSessionLink(): Promise<void> {
@@ -5459,8 +5485,8 @@ ${warnings.join('\n')}`,
         this.dismissSessionSaveNotice();
         const filename = this.saveFileName;
         const fileType = this.selectedSaveFileType;
-        const byCluster = this.saveByCluster;
-        const compress = $("#save-file-compress").is(":checked");
+        const compress = fileType === 'bundle';
+        const byCluster = compress && this.saveByCluster;
         this.sessionSaving = true;
         try {
         await this.updateSessionSaveProgress(fileType === 'local-link' ? 'Saving in this browser…'
@@ -5574,7 +5600,8 @@ ${warnings.join('\n')}`,
                       const snapshot = await this.buildSessionStash();
                       zip.file(`${filename}.microbetrace`, JSON.stringify(snapshot));
                       zip.file('investigation-manifest.json', JSON.stringify(snapshot.provenance, null, 2));
-                      zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance));
+                      zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance, snapshot.investigation?.figures));
+                      this.addInvestigationImages(zip, snapshot);
                       await this.updateSessionSaveProgress('Preparing bundle…');
                       await zip.generateAsync({type:"blob"}, metadata => this.showBundleProgress(metadata.percent)).then(function(content) {
                           // see FileSaver.js
@@ -5589,7 +5616,8 @@ ${warnings.join('\n')}`,
                         const zip = new JSZip();
                         zip.file(`${filename}.microbetrace`, new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" }));
                         zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
-                        zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance));
+                        zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance, stash.investigation?.figures));
+                        this.addInvestigationImages(zip, stash);
                         await this.updateSessionSaveProgress('Compressing bundle…');
                         await zip.generateAsync({
                             type: "blob",
@@ -5780,7 +5808,7 @@ ${warnings.join('\n')}`,
                 this.dismissSessionSaveNotice();
                 this.saveFileName = '';
                 this.saveByCluster = false;
-                this.selectedSaveFileType = 'session';
+                this.selectedSaveFileType = 'bundle';
                 this.clearLocalSessionLinkResult();
                 this.displayStashDialog = true;
                 break;

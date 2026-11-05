@@ -1750,71 +1750,55 @@ export class AlignmentViewComponent extends BaseComponentDirective implements On
   /**
    * Exports the alignmentTop and main canvas as png image
    */
-  exportPNG() {
-    let that = this;
-    let alignmentTop = document.querySelector('#alignmentTop svg');
-    let mainCanvas = $('.canvasHolder canvas').get(0) as HTMLCanvasElement
-    let exportWidth = mainCanvas.width
-    let exportHeight = mainCanvas.height + 140;
-    svgAsPngUri(alignmentTop, {
-      scale: 1,
-      backgroundColor: '#ffffff',
-      encoderType: 'image/png',
-      encoderOptions: 0.8
-    }).then((topB64string) => {
-      let imageDataUrl;
-
-      let exportCanvas = document.createElement("canvas");
+  async exportPNG(): Promise<void> {
+    const imageExport = this.exportService.beginImageExport('Alignment View', { filetype: 'png' });
+    try {
+      const alignmentTop = document.querySelector('#alignmentTop svg');
+      const mainCanvas = $('.canvasHolder canvas').get(0) as HTMLCanvasElement;
+      const mainDataUrl = mainCanvas.toDataURL();
+      const exportWidth = mainCanvas.width, exportHeight = mainCanvas.height + 140;
+      const topDataUrl = await svgAsPngUri(alignmentTop, {
+        scale: 1,
+        backgroundColor: '#ffffff',
+        encoderType: 'image/png',
+        encoderOptions: 0.8
+      });
+      const exportCanvas = document.createElement("canvas");
       exportCanvas.height = exportHeight;
       exportCanvas.width = exportWidth;
-      let ctx = exportCanvas.getContext("2d");
-
-      let iTop = new Image();
-      let iMain = new Image();
-      iTop.src = topB64string;
-      iTop.onload = function() {
-        iMain.src = mainCanvas.toDataURL()
-        iMain.onload = function() {
-
-          ctx.drawImage(iTop, 0, 0)
-          ctx.drawImage(iMain, 0, 140)
-
-          imageDataUrl = exportCanvas.toDataURL("image/png")
-          saveAs(imageDataUrl, that.AlignmentExportFileName + '.png')
-        }
-      }
-  }); 
+      const ctx = exportCanvas.getContext("2d");
+      const iTop = new Image(), iMain = new Image();
+      iTop.src = topDataUrl; iMain.src = mainDataUrl;
+      await Promise.all([iTop.decode(), iMain.decode()]);
+      ctx.drawImage(iTop, 0, 0); ctx.drawImage(iMain, 0, 140);
+      await imageExport.save(exportCanvas.toDataURL("image/png"), this.AlignmentExportFileName + '.png');
+    } catch (error) { imageExport.cancel(); this.exportService.failExport(); console.error('Alignment image export failed', error); }
   }
 
   /**
    * Exports the alignment top and main canvas as svg or png image
    */
-  exportVisualization() {
+  async exportVisualization(): Promise<void> {
     $("body").css("cursor", "progress");
     if (this.AlignmentExportFileTypeVis == 'png') {
-      this.exportPNG();
+      await this.exportPNG();
     } else {
-      
-    let canvas = $('.canvasHolder canvas').get(0) as HTMLCanvasElement
-    let canvasDataURL = canvas.toDataURL();
-  
-    let foreignObj = document.createElementNS('http://www.w3.org/2000/svg', 'image')
-    foreignObj.setAttribute('x', '0'); // Set the x-coordinate
-    foreignObj.setAttribute('y', '140'); // Set the y-coordinate
-    foreignObj.setAttribute('width', canvas.width.toString()); // Set the width
-    foreignObj.setAttribute('height', canvas.height.toString()); // Set the height
-    foreignObj.setAttribute('xlink:href', canvasDataURL);
-
-    let top = $('#alignmentTop svg').get(0)
-    top.style.height = 150+canvas.height+'px'
-    top.appendChild(foreignObj);
-
-    let content = this.exportService.unparseSVG(top);
-    let blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' });
-    saveAs(blob, this.AlignmentExportFileName + '.svg');
-
-    top.style.height = 150+canvas.height+'px';
-    top.removeChild(foreignObj)
+      const imageExport = this.exportService.beginImageExport('Alignment View', { filetype: 'svg' });
+      try {
+        const canvas = $('.canvasHolder canvas').get(0) as HTMLCanvasElement;
+        const foreignObj = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        foreignObj.setAttribute('x', '0');
+        foreignObj.setAttribute('y', '140');
+        foreignObj.setAttribute('width', canvas.width.toString());
+        foreignObj.setAttribute('height', canvas.height.toString());
+        foreignObj.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', canvas.toDataURL());
+        const top = $('#alignmentTop svg').get(0).cloneNode(true) as SVGElement;
+        top.style.height = 150 + canvas.height + 'px';
+        top.appendChild(foreignObj);
+        const content = this.exportService.unparseSVG(top);
+        const blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' });
+        await imageExport.save(blob, this.AlignmentExportFileName + '.svg');
+      } catch (error) { imageExport.cancel(); this.exportService.failExport(); console.error('Alignment image export failed', error); }
     }
     $("body").css("cursor", "default");
   }

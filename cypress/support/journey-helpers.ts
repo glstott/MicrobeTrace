@@ -122,6 +122,14 @@ export function visitAppAndAcceptEula(options: JourneyVisitOptions = {}): void {
   });
 }
 
+export function selectSaveFormat(format: 'bundle' | 'session' | 'style' | 'local-link'): void {
+  const label = { bundle: 'Investigation bundle (.zip)', session: 'Session (.microbetrace)',
+    style: 'Style (.style)', 'local-link': 'Local link (this browser)' }[format];
+  cy.get('#session-stash-modal p-select').should('be.visible').click();
+  cy.contains('li[role="option"]', label).should('be.visible').click();
+  cy.get('#session-stash-modal p-select').should('contain', label);
+}
+
 export function saveSessionFromFileMenu(
   sessionFileBase: string,
   options: SaveSessionOptions = {},
@@ -143,33 +151,13 @@ export function saveSessionFromFileMenu(
     .type(sessionFileBase, { delay: 0, force: true })
     .should('have.value', sessionFileBase);
 
-  cy.get('@saveSessionDialog')
-    .find('#save-file-cluster')
-    .should('exist')
-    .then(($checkbox) => {
-      const checked = Boolean($checkbox.prop('checked'));
-      if (checked !== byCluster) {
-        cy.wrap($checkbox).click({ force: true });
-      }
+  selectSaveFormat(compress || byCluster ? 'bundle' : 'session');
+  if (compress || byCluster) {
+    cy.get('@saveSessionDialog').find('#save-file-cluster').then($checkbox => {
+      if (Boolean($checkbox.prop('checked')) !== byCluster) cy.wrap($checkbox).click({ force: true });
     });
-
-  cy.get('@saveSessionDialog')
-    .find('#save-file-cluster')
-    .should(byCluster ? 'be.checked' : 'not.be.checked');
-
-  cy.get('@saveSessionDialog')
-    .find('#save-file-compress')
-    .should('exist')
-    .then(($checkbox) => {
-      const checked = Boolean($checkbox.prop('checked'));
-      if (checked !== compress) {
-        cy.wrap($checkbox).click({ force: true });
-      }
-    });
-
-  cy.get('@saveSessionDialog')
-    .find('#save-file-compress')
-    .should(compress ? 'be.checked' : 'not.be.checked');
+    cy.get('@saveSessionDialog').find('#save-file-cluster').should(byCluster ? 'be.checked' : 'not.be.checked');
+  } else cy.get('@saveSessionDialog').find('#save-file-cluster').should('not.exist');
 
   cy.get('@saveSessionDialog')
     .find('#stash-data')

@@ -483,6 +483,7 @@ export function assertDashboardViewReady(viewName: string): void {
 
 export function loadDashboardSessionFixture(fixtureName: string): void {
   let loadedFixture: LoadedDashboardFixture;
+  let sessionBeforeImport: any;
 
   cy.window().then((win: unknown) => {
     const typedWindow = win as DashboardWindow;
@@ -536,12 +537,21 @@ export function loadDashboardSessionFixture(fixtureName: string): void {
       return;
     }
 
+    cy.window().then((win: any) => {
+      sessionBeforeImport = win.commonService.session;
+    });
     cy.get('#fileDropRef', { timeout: 15000 })
       .selectFile(`${Cypress.config('fixturesFolder')}/${fixtureName}`, { force: true });
 
-    cy.window({ timeout: 60000 })
-      .its('commonService.session.network.isFullyLoaded')
-      .should('equal', true);
+    // An earlier session may already be loaded. Wait for the imported session
+    // and its own layout restoration before applying the test's pane layout.
+    cy.window({ timeout: 60000 }).should((win: any) => {
+      expect(win.commonService.session, 'imported fixture session').not.to.equal(sessionBeforeImport);
+      expect(win.commonService.session.network.isFullyLoaded, 'imported fixture loaded').to.equal(true);
+      expect(win.commonService.pendingDashboardRestore, 'saved dashboard restore consumed').not.to.exist;
+      expect(win.commonService.visuals.microbeTrace.applyingPendingDashboardRestore,
+        'saved dashboard restore finished').to.equal(false);
+    });
   });
 
   cy.then(() => {

@@ -113,6 +113,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
 
   ngOnDestroy(): void {
     this.selectedLinkRow = null;
+    this.notifyInvestigationSelection();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -444,6 +445,10 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     return this.commonService.formatDisplayedDistanceValue(value, 'distance');
   }
 
+  private notifyInvestigationSelection(): void {
+    this.commonService.investigationCalculations?.notifyChanged(this.commonService.session, 'selection');
+  }
+
   onClusterRowSelect(e) {
     let clusterID = e.data.id;
     this.nodeTableData = this.buildNodeTableData(clusterID);
@@ -458,6 +463,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     this.expandedLinkRowData = [];
     this.setNodeExpandedRow(null);
     this.setLinkExpandedRow(null);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
   }
 
@@ -473,6 +479,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     this.setClusterExpandedRow(null);
     this.setNodeExpandedRow(null);
     this.setLinkExpandedRow(null);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
   }
 
@@ -493,6 +500,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     this.selectedLinkRow = null;
     this.expandedLinkRowData = [];
     this.setLinkExpandedRow(null);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
   }
 
@@ -503,6 +511,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     this.expandedLinkRowData = [];
     this.setNodeExpandedRow(null);
     this.setLinkExpandedRow(null);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
   }
 
@@ -510,6 +519,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
     let linkIndex = e.data.index;
     this.expandedLinkRowData = this.buildLinkExpandedRowData(linkIndex);
     this.setLinkExpandedRow(linkIndex);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
 
   }
@@ -517,6 +527,7 @@ export class WaterfallComponent extends BaseComponentDirective implements OnInit
   onLinkRowUnselect() {
     this.expandedLinkRowData = [];
     this.setLinkExpandedRow(null);
+    this.notifyInvestigationSelection();
     this.cdref.detectChanges();
   }
 

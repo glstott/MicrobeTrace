@@ -583,59 +583,65 @@ describe('Map View', () => {
      });
     })
     
-    // make a test for dragging around the map and tests coordinates (lmap._lastCenter is current coordinates)
     it('tests panning and centering the map', () => {
       cy.closeSettingsPane('Geospatial Settings');
       cy.get('#centerMapButton').click({ force: true });
 
-      let initialCenter : {lat: number, lng: number};
-      let newCenter : {lat: number, lng: number};
+      let initialCenter: L.LatLngLiteral;
+      let initialZoom: number;
+      let initialBounds: string;
+      let panEnd: { clientX: number; clientY: number };
 
       cy.window().then((win: any) => {
-        const lmap = win.commonService.visuals.gisMap.lmap;
+        const mapView = win.commonService.visuals.gisMap;
+        const lmap = mapView.lmap;
         const c = lmap.getCenter();
         initialCenter = { lat: c.lat, lng: c.lng };
+        initialZoom = lmap.getZoom();
+        initialBounds = mapView.layers.nodes().getBounds().toBBoxString();
         const container = lmap.getContainer() as HTMLElement;
-        const start = { clientX: 100, clientY: 400 };
-        const end = { clientX: -100, clientY: 600 };
-
-        const md1 = new MouseEvent('mousedown', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, start))
-        container.dispatchEvent(md1);
-
-        const mm1 = new MouseEvent('mousemove', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, end))
-        container.dispatchEvent(mm1);
-
-        const me1 = new MouseEvent('mouseend', Object.assign({
-          bubbles: true, cancelable: true, composed: true,
-          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0
-        }, end))
-        container.dispatchEvent(me1);
-
-        newCenter = lmap.getCenter();
-        const latDiff = Math.abs(newCenter.lat - initialCenter.lat);
-        const lngDiff = Math.abs(newCenter.lng - initialCenter.lng);
-        expect(latDiff > 1 && lngDiff > 1).to.equal(true);
+        const rect = container.getBoundingClientRect();
+        const start = { clientX: rect.left + rect.width * 0.6, clientY: rect.top + rect.height * 0.4 };
+        panEnd = { clientX: start.clientX - 160, clientY: start.clientY + 120 };
+        container.dispatchEvent(new win.MouseEvent('mousedown', {
+          bubbles: true, cancelable: true, button: 0, buttons: 1, ...start,
+        }));
+        container.dispatchEvent(new win.MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, button: 0, buttons: 1, ...panEnd,
+        }));
       });
 
-      cy.wait(500);
-      
-      cy.get('#centerMapButton').click({ force: true });
-      cy.wait(500);
-
-      cy.window().then((win: any) => {
+      // Let Leaflet process the drag frame before releasing the mouse.
+      cy.window().should((win: any) => {
         const lmap = win.commonService.visuals.gisMap.lmap;
-        const c = lmap.getCenter();
-        newCenter = { lat: c.lat, lng: c.lng };
-        const latDiff = Math.abs(newCenter.lat - initialCenter.lat);
-        const lngDiff = Math.abs(newCenter.lng - initialCenter.lng);
-        expect(latDiff < 0.05 && lngDiff < 0.05).to.equal(true);
-      })
+        const distance = lmap.project(lmap.getCenter(), initialZoom)
+          .distanceTo(lmap.project(initialCenter, initialZoom));
+        expect(distance, 'map was panned in screen pixels').to.be.greaterThan(100);
+      });
+      cy.window().then((win: any) => {
+        win.commonService.visuals.gisMap.lmap.getContainer().dispatchEvent(new win.MouseEvent('mouseup', {
+          bubbles: true, cancelable: true, button: 0, buttons: 0, ...panEnd,
+        }));
+      });
+      cy.window().should((win: any) => {
+        const lmap = win.commonService.visuals.gisMap.lmap;
+        expect(lmap.dragging._draggable._moving, 'mouse drag released').not.to.equal(true);
+        expect(lmap._panAnim?._inProgress, 'pan animation finished').not.to.equal(true);
+      });
+
+      cy.get('#centerMapButton').click({ force: true });
+
+      cy.window().should((win: any) => {
+        const mapView = win.commonService.visuals.gisMap;
+        const lmap = mapView.lmap;
+        expect(lmap._panAnim?._inProgress, 'recentering finished').not.to.equal(true);
+        expect(lmap.getZoom(), 'centered zoom').to.equal(initialZoom);
+        expect(mapView.layers.nodes().getBounds().toBBoxString(), 'unchanged node bounds').to.equal(initialBounds);
+        // Leaflet rounds its pixel origin; allow one pixel on each axis.
+        const distance = lmap.project(lmap.getCenter(), initialZoom)
+          .distanceTo(lmap.project(initialCenter, initialZoom));
+        expect(distance, 'map recentering distance in screen pixels').to.be.at.most(1.5);
+      });
     });
 
     it('tests zoom changes from zoom in, zoom out, and center map buttons', () => {

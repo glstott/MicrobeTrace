@@ -1,12 +1,14 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Subject, Observable } from 'rxjs';
 import { getNodeShapePreviewDataUri } from './node-shapes';
+import { InvestigationFigureService } from './investigation-figure.service';
 
 export interface ExportOptions {
   filename: string;
   filetype: string;
   scale: number;
   quality: number;
+  view?: string;
 }
 
 export interface ExportProgressState {
@@ -76,7 +78,10 @@ export class ExportService {
     quality: 0.92,
   };
 
-  constructor() {}
+  constructor(private figures: InvestigationFigureService) {}
+
+  beginImageExport(view: string, options: Record<string, any> = {}) { return this.figures.begin(view, options); }
+  flushImageExports(session: any): Promise<void> { return this.figures.flush(session); }
 
   beginExport(stage = 'Preparing export', progress = 0): void {
     const current = this.exportProgressSource.value;
@@ -443,7 +448,7 @@ export class ExportService {
    * @param svgNode The SVG HTMLElement (for example, obtained via document.getElementById('network')).
    * @returns A string containing the complete SVG code with CSS.
    */
-  unparseSVG(svgNode: HTMLElement): string {
+  unparseSVG(svgNode: Element): string {
     svgNode.setAttribute('xlink', 'http://www.w3.org/1999/xlink');
     const selectorTextArr: string[] = [];
 

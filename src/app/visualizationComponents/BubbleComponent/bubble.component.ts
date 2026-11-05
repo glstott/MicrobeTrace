@@ -108,6 +108,21 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   private cytoscapeFactoryPromise: Promise<typeof cytoscape> | null = null;
 
   private destroy$ = new Subject<void>();
+  private isDestroyed = false;
+  private containerEventsBound = false;
+  private pendingViewTasks = new Set<number>();
+  private readonly resizeHandler = () => this.goldenLayoutComponentResize();
+  private readonly hideHandler = () => {
+    if (this.isDestroyed) return;
+    this.viewActive = false;
+    this.cdref.detectChanges();
+  };
+  private readonly showHandler = () => {
+    if (this.isDestroyed) return;
+    this.viewActive = true;
+    this.syncFromSessionState();
+    this.scheduleViewTask(() => this.goldenLayoutComponentResize(), 5);
+  };
 
   constructor(
     public commonService: CommonService,
@@ -160,19 +175,10 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     this.getData();
     this.onNodeSizeChange();
 
-    this.container.on('resize', () => { this.goldenLayoutComponentResize()})
-    this.container.on('hide', () => { 
-      this.viewActive = false; 
-      this.cdref.detectChanges();
-    })
-    this.container.on('show', () => { 
-        this.viewActive = true; 
-        this.syncFromSessionState();
-        setTimeout(() => {
-          this.goldenLayoutComponentResize();
-        }, 5)
-
-    })
+    this.container.on('resize', this.resizeHandler);
+    this.container.on('hide', this.hideHandler);
+    this.container.on('show', this.showHandler);
+    this.containerEventsBound = true;
     
     let that = this;
     $(document).off('.bubbleView');
@@ -216,6 +222,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
 
   async ngAfterViewInit(): Promise<void> {
     await this.generateCytoscape();
+    if (this.isDestroyed) return;
     if (this.SelectedNodeCollapsingTypeVariable) {
       this.refreshCollapsedData();
     }
@@ -223,6 +230,17 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   }
 
   ngOnDestroy(): void {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
+    this.viewActive = false;
+    this.pendingViewTasks.forEach(timer => window.clearTimeout(timer));
+    this.pendingViewTasks.clear();
+    if (this.containerEventsBound) {
+      this.container.off('resize', this.resizeHandler);
+      this.container.off('hide', this.hideHandler);
+      this.container.off('show', this.showHandler);
+      this.containerEventsBound = false;
+    }
     this.destroy$.next();
     this.destroy$.complete();
     $(document).off('.bubbleView');
@@ -236,6 +254,15 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
       (this.commonService.visuals as any).bubble = null;
     }
     this.cyContainer = null;
+  }
+
+  private scheduleViewTask(callback: () => void, delay = 0): void {
+    if (this.isDestroyed) return;
+    const timer = window.setTimeout(() => {
+      this.pendingViewTasks.delete(timer);
+      if (!this.isDestroyed) callback();
+    }, delay);
+    this.pendingViewTasks.add(timer);
   }
 
   private rebuildSelectedFieldList() {
@@ -268,7 +295,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
 
     // Bubble can be the first launched view, so it must explicitly release
     // the shared processing modal after its first Cytoscape draw completes.
-    window.setTimeout(() => {
+    this.scheduleViewTask(() => {
       this.store.setNetworkRendered(true);
     }, 0);
   }
@@ -551,7 +578,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
 
   async generateCytoscape(): Promise<void> {
     const cytoscapeFactory = await this.loadCytoscapeRenderer();
-    if (!this.cyContainer?.nativeElement) return;
+    if (this.isDestroyed || !this.cyContainer?.nativeElement) return;
     this.cy = cytoscapeFactory({
       container: this.cyContainer.nativeElement,
       elements: this.mapDataToCytoscapElements(this.visibleData),
@@ -1148,10 +1175,12 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
   }
 
   goldenLayoutComponentResize() {    
+    if (this.isDestroyed) return;
     this.viewHeight = this.container.height - 73;
     this.viewWidth = this.container.width - 42;
     this.cdref.detectChanges()
-    setTimeout(() => {
+    this.scheduleViewTask(() => {
+      if (!this.cy || this.cy.destroyed()) return;
       this.cy.fit(this.cy.nodes(), 30);
       this.onLabelSizeChange()
     }, 200);
@@ -1440,7 +1469,7 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     this.setSelectedNodes(this);
 
     if (this.viewActive) {
-      setTimeout(() => {
+      this.scheduleViewTask(() => {
         this.goldenLayoutComponentResize();
       }, 5);
     }
@@ -1869,7 +1898,9 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
     return new Blob([bytes], { type: mimeType });
   }
 
-  private exportRasterVisualization(): void {
+  private async exportRasterVisualization(): Promise<void> {
+    const imageExport = this.exportService.beginImageExport('Bubble', this.exportService.getExportOptions());
+    try {
     const scale = Number(this.SelectedBubbleExportScaleVariable) || 1;
     const dataUrl = this.cy.png({
       full: true,
@@ -1878,11 +1909,15 @@ export class BubbleComponent extends BaseComponentDirective implements OnInit, M
       output: 'base64uri',
     });
 
-    this.saveGeneratedFile(this.dataUrlToBlob(dataUrl), `${this.BubbleExportFileName}.png`);
+    const blob = this.dataUrlToBlob(dataUrl);
+    await imageExport.record(blob, `${this.BubbleExportFileName}.png`);
+    this.saveGeneratedFile(blob, `${this.BubbleExportFileName}.png`);
+    } catch (error) { imageExport.cancel(); this.exportService.failExport(); console.error('Bubble image export failed', error); }
   }
 
   exportVisualization() {
     const exportOptions: ExportOptions = {
+      view: 'Bubble',
       filename: this.BubbleExportFileName,
       filetype: this.BubbleExportFileType,
       scale: this.SelectedBubbleExportScaleVariable,

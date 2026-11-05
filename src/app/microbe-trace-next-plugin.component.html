@@ -1243,34 +1243,41 @@
     <app-investigation-panel [saving]="sessionSaveBusy" (saveInvestigation)="investigationOpen = false; FileClick('Save Session')"></app-investigation-panel>
   }
 </p-dialog>
-<p-dialog id="session-stash-modal" [(visible)]="displayStashDialog" [modal]="true" [closable]="!sessionSaveBusy" [closeOnEscape]="!sessionSaveBusy" [baseZIndex]="1400" header="Save Session">
+<p-dialog id="session-stash-modal" [(visible)]="displayStashDialog" [modal]="true" [closable]="!sessionSaveBusy" [closeOnEscape]="!sessionSaveBusy" [baseZIndex]="1400" header="Save Session" [style]="{ width: '560px', maxWidth: '95vw' }">
   @if (sessionSaveError) { <p class="text-danger" role="alert">{{ sessionSaveError }}</p> }
   @if (sessionSaveProgress) { <p role="status" aria-live="polite" data-testid="session-save-progress">{{ sessionSaveProgress }}</p> }
   <div class="modal-dialog" role="document" [attr.aria-busy]="sessionSaveBusy">
     <div class="modal-content">
 
       <div class="modal-body">
-        <div class="form-group row" title="What would you like to call this session?">
-          <div class="col-7">
+        <div class="form-group row">
+          <div class="col-12">
+            <label for="stash-name">Name</label>
             <input style="height:42px" type="text" id="stash-name" class="form-control form-control-sm" [(ngModel)]="saveFileName" (ngModelChange)="clearLocalSessionLinkResult()" [disabled]="sessionSaveBusy" placeholder="Name your session!">
           </div>
-          <div class="col-5">
-            <p-select [options]="saveFileTypeOptions" [(ngModel)]="selectedSaveFileType" (ngModelChange)="clearLocalSessionLinkResult()" [disabled]="sessionSaveBusy" appendTo="body"></p-select>
+        </div>
+        <div class="form-group row">
+          <div class="col-12">
+            <label for="session-save-format">Save format</label>
+            <p-select inputId="session-save-format" ariaLabel="Save format" [options]="saveFileTypeOptions" [(ngModel)]="selectedSaveFileType" (ngModelChange)="onSaveFileTypeChanged()" [disabled]="sessionSaveBusy" [style]="{ width: '100%' }" appendTo="body"></p-select>
           </div>
         </div>
-        @if (selectedSaveFileType=='session') {
-          <div class="form-group row" title="Should MicrobeTrace compress this save file?">
+        @if (selectedSaveFileType === 'bundle') {
+          <p data-testid="session-save-format-help">Complete investigation, manifest, readable report, and exported images in one ZIP. Reopen the ZIP directly in MicrobeTrace.</p>
+          <div class="form-group row">
             <div class="col">
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="checkbox" id="save-file-compress" [disabled]="sessionSaveBusy" checked>
-                <label class="form-check-label" for="save-file-compress">Compress?</label>
-              </div>
               <div id="cluster-checkbox-container" class="form-check form-check-inline">
                 <input class="form-check-input" [(ngModel)]="saveByCluster" type="checkbox" id="save-file-cluster" [disabled]="sessionSaveBusy">
-                <label class="form-check-label" for="save-file-cluster">By Cluster</label>
+                <label class="form-check-label" for="save-file-cluster">Include cluster CSV files</label>
               </div>
             </div>
           </div>
+        }
+        @if (selectedSaveFileType === 'session') {
+          <p data-testid="session-save-format-help">Complete investigation and embedded manifest in one .microbetrace file. Choose the investigation bundle to also include the readable report.</p>
+        }
+        @if (selectedSaveFileType === 'style') {
+          <p data-testid="session-save-format-help">Styling and view settings for reuse with other data.</p>
         }
         @if (selectedSaveFileType === 'local-link') {
           <p class="mb-2">Save this session in this browser and create a link you can bookmark. The link works only on this browser and this MicrobeTrace site. Clearing site data removes the session.</p>

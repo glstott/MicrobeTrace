@@ -480,28 +480,27 @@ export class HeatmapComponent extends BaseComponentDirective implements OnInit, 
     this.redrawHeatmap();
   }
 
-  saveImage(): void {
+  async saveImage(): Promise<void> {
     const fileName = this.SelectedImageFilenameVariable;
     const domId = 'heatmap';
     const exportImageType = this.SelectedNetworkExportFileTypeVariable;
     const content = document.getElementById(domId);
     if (content) {
+      const imageExport = this.exportService.beginImageExport('Heatmap', { filename: fileName, filetype: exportImageType });
+      try {
       const fixedContent = this.fixGradient(content);
       if (exportImageType === 'png') {
-        domToImage.toPng(content).then(
-          dataUrl => {
-            saveAs(dataUrl, fileName+"."+exportImageType);
-        });
+        await imageExport.save(await domToImage.toPng(content), fileName+"."+exportImageType);
       } else if (exportImageType === 'jpeg') {
-          domToImage.toJpeg(content, { quality: 0.85 }).then(
-            dataUrl => {
-              saveAs(dataUrl, fileName+"."+exportImageType);
-            });
+          await imageExport.save(await domToImage.toJpeg(content, { quality: 0.85 }), fileName+"."+exportImageType);
       } else if (exportImageType === 'svg') {
-          const svgContent = this.exportService.unparseSVG(fixedContent);
+          const svgDataUrl = await domToImage.toSvg(fixedContent);
+          const svgContent = decodeURIComponent(svgDataUrl.slice(svgDataUrl.indexOf(',') + 1));
           const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
-          saveAs(blob, fileName+"."+exportImageType);
+          await imageExport.save(blob, fileName+"."+exportImageType);
       }
+      } catch (error) { this.exportService.failExport(); console.error('Heatmap image export failed', error); }
+      finally { imageExport.cancel(); }
     }
   }
 

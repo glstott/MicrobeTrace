@@ -1,7 +1,7 @@
 /// <reference types="cypress" />
 import JSZip from 'jszip';
 import { expandInvestigationTools } from '../../support/investigation-helpers';
-import { assertPhyloTreeReady, assertHeatmapReady, goToPhyloTreeView, installSaveAsCaptureHook, saveSessionFromFileMenu,
+import { assertPhyloTreeReady, assertHeatmapReady, goToPhyloTreeView, installSaveAsCaptureHook, saveSessionFromFileMenu, selectSaveFormat,
   waitForProcessingDialogToClear, writeCapturedDownloadToDisk } from '../../support/journey-helpers';
 import { INVESTIGATION_OPERATIONS } from '../../../src/app/contactTraceCommonServices/investigation-state';
 
@@ -205,7 +205,7 @@ describe('Investigation snapshots', () => {
       const saved = JSON.parse(await zip.file(`${name}.microbetrace`)!.async('text'));
       const manifest = JSON.parse(await zip.file('investigation-manifest.json')!.async('text'));
       const html = await zip.file('investigation-record.html')!.async('text');
-      expect(saved.schemaVersion).to.equal(3);
+      expect(saved.schemaVersion).to.equal(5);
       expect(manifest.snapshotId).to.equal(saved.snapshotId);
       expect(manifest.stateChecksum).to.equal(saved.provenance.stateChecksum);
       expect(html).to.include(saved.snapshotId).and.include('&lt;check sources&gt;');
@@ -255,7 +255,7 @@ describe('Investigation snapshots', () => {
     cy.get('#scope-network-statistics').should('not.be.visible');
     cy.get('[data-testid="investigation-save"]').should('be.visible').click();
     cy.get('#session-stash-modal #stash-name').should('be.visible').type(filename.replace('.microbetrace', ''));
-    cy.get('#save-file-compress').uncheck();
+    selectSaveFormat('session');
     cy.get('#stash-data').click();
     writeCapturedDownloadToDisk(filename, path);
     cy.readFile(path).then(raw => {

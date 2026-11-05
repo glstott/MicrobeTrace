@@ -38,7 +38,21 @@ function saveNote(text: string, count = 1) {
 
 describe('Investigation authoring and save feedback', () => {
   it('reopens named and selected targets with exact memberships, timestamps, and stale explanations', () => {
-    loadInvestigation(); installSaveAsCaptureHook(); openNotes();
+    loadInvestigation(); installSaveAsCaptureHook();
+    cy.get('[data-testid="app-file-menu-button"]').click();
+    cy.get('[data-testid="app-file-menu-investigation"]').click();
+    cy.get('[data-testid="investigation-unlinked-notes"]').click();
+    cy.get('[data-testid="investigation-tools"]').should('have.prop', 'open', true);
+    cy.get('[data-testid="investigation-note-tools"]').should('have.prop', 'open', true);
+    cy.get('[aria-label="Search notes"]').should('be.focused').type('DELETED-REVIEW-COHORT');
+    cy.get('#investigation-note-review textarea').should('have.length', 1).and('have.attr', 'aria-label', 'Edit note note-orphan');
+    cy.get('[data-testid="investigation-linked-notes"]').click();
+    cy.get('[aria-label="Search notes"]').should('have.value', '').type('Case A');
+    cy.get('#investigation-note-review textarea').should('have.length', 1).and('have.attr', 'aria-label', 'Edit note note-node-A');
+    cy.get('[aria-label="Search notes"]').clear().type('no matching note');
+    cy.get('#investigation-note-review').should('contain', 'No notes match these filters.');
+    cy.contains('#investigation-note-review button', /^Clear filters$/).click();
+    cy.get('#investigation-note-review textarea').should('have.length', 4);
     searchTarget('node', 'Case D');
     cy.contains('[role="option"]', 'Case D [D] (hidden)').should('be.visible').click();
     finishTarget(); saveNote('Cypress named hidden node');
@@ -63,7 +77,7 @@ describe('Investigation authoring and save feedback', () => {
       expect(run.status).to.equal('completed'); expect(run.id).not.to.equal(priorRun);
     });
     cy.get('#scope-network-statistics').select('full');
-    cy.get('[data-testid="investigation-summary"]').should('contain', '1 stale result').and('contain', '1 unresolved note');
+    cy.get('[data-testid="investigation-summary"]').should('contain', '1 stale result').and('contain', '9 linked notes').and('contain', '1 unlinked note');
     cy.get('[data-testid="investigation-stale-details"] > summary').click();
     cy.get('[data-testid="investigation-stale-details"]').should('contain', 'Calculation scope changed.');
     cy.window().then((win: any) => {
@@ -77,9 +91,12 @@ describe('Investigation authoring and save feedback', () => {
       expectedNotes = JSON.parse(JSON.stringify(notes));
       savedRun = JSON.parse(JSON.stringify(session.investigation.calculations['network-statistics']));
     });
+    cy.get('[data-testid="investigation-unlinked-notes"]').click();
+    cy.get('[aria-label="Search notes"]').type('deleted-review-cohort');
+    cy.get('#investigation-note-review textarea').should('have.length', 1);
     cy.get('[data-testid="investigation-save"]').should('not.be.disabled').click();
     cy.get('#stash-name').type('authoring-roundtrip');
-    cy.get('#save-file-compress').check(); cy.get('#stash-data').click();
+    cy.get('#session-stash-modal p-select').should('contain', 'Investigation bundle (.zip)'); cy.get('#stash-data').click();
     cy.get('[data-testid="session-save-notice"]').should('contain', 'authoring-roundtrip.zip');
     const path = `${Cypress.config('downloadsFolder')}/authoring-roundtrip.zip`;
     writeCapturedDownloadToDisk('authoring-roundtrip.zip', path);
@@ -114,7 +131,7 @@ describe('Investigation authoring and save feedback', () => {
       }).as('capture');
     });
     cy.get('[data-testid="app-file-menu-button"]').click(); cy.contains('button[mat-menu-item]', /^Save$/).click();
-    cy.get('#stash-name').type('save-feedback'); cy.get('#save-file-compress').check(); cy.get('#stash-data').click();
+    cy.get('#stash-name').type('save-feedback'); cy.get('#session-stash-modal p-select').should('contain', 'Investigation bundle (.zip)'); cy.get('#stash-data').click();
     cy.get('#session-stash-modal [role="alert"]').should('contain', 'Synthetic snapshot preparation failure');
     cy.get('#stash-name').should('have.value', 'save-feedback');
     cy.get('#stash-data').should('not.be.disabled').click();

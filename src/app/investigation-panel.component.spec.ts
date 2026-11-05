@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MultiSelectModule } from 'primeng/multiselect';
@@ -52,7 +52,7 @@ describe('Investigation text editing', () => {
     expect(captured.investigation.scopes).toEqual(common.session.investigation.scopes);
   });
 
-  it('summarizes saved results and unresolved notes without requiring tools or blocking saves', async () => {
+  it('summarizes saved results and linked/unlinked notes without requiring tools or blocking saves', async () => {
     await common.investigationCalculations.run(common.session, 'network-statistics', async () => ({ value: 'statistics' }));
     await common.investigationCalculations.run(common.session, 'consensus', async () => 'ACGT', undefined, { sequence: true });
     common.session.investigation.scopes.consensus = 'cohort';
@@ -60,7 +60,7 @@ describe('Investigation text editing', () => {
     fixture.componentInstance.changed();
     fixture.detectChanges();
     const summary = fixture.nativeElement.querySelector('[data-testid="investigation-summary"]');
-    expect(summary.textContent).toContain('1 completed result · 1 stale result · 1 unresolved note');
+    expect(summary.textContent).toContain('1 completed result · 1 stale result · 1 linked note · 1 unlinked note');
     expect(summary.textContent).toContain('Calculation scope changed.');
     expect(summary.textContent).toContain('You can save the complete investigation');
     expect(summary.closest('[data-testid="investigation-tools"]')).toBeNull();
@@ -79,6 +79,110 @@ describe('Investigation text editing', () => {
     expect(button.disabled).toBeTrue();
     button.click();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  function reviewNotes() {
+    return Array.from(fixture.nativeElement.querySelectorAll('#investigation-note-review textarea')) as HTMLTextAreaElement[];
+  }
+  function addReviewNote(id: string, type: 'investigation' | 'node' | 'edge' | 'cohort', targetId?: string, text = id) {
+    common.session.investigation.annotations.push({ id, target: { type, ...(targetId ? { id: targetId } : {}) }, text,
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' });
+  }
+
+  it('opens the requested note group from the summary, clears old searches, and leaves saved membership intact', async () => {
+    addReviewNote('orphan', 'cohort', 'removed-review', 'Retained methods');
+    fixture.componentInstance.changed(false, false);
+    fixture.componentInstance.setNoteSearch('previous search');
+    fixture.detectChanges();
+    const before = JSON.stringify(common.session);
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    fixture.nativeElement.querySelector('[data-testid="investigation-unlinked-notes"]').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-tools"]').open).toBeTrue();
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-note-tools"]').open).toBeTrue();
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('[aria-label="Search notes"]'));
+    expect(fixture.componentInstance.noteSearch).toBe('');
+    expect(fixture.componentInstance.noteFilter).toBe('unlinked');
+    expect(reviewNotes().map(input => input.value)).toEqual(['Retained methods']);
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-note-count"]').textContent).toContain('Showing 1 of 2 notes');
+    fixture.nativeElement.querySelector('[data-testid="investigation-linked-notes"]').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(reviewNotes().map(input => input.value)).toEqual(['Saved note']);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(JSON.stringify(common.session)).toBe(before);
+    const captured = await common.investigationSessions.capture({ session: common.session, tabs: [] });
+    expect(captured.investigation.annotations).toEqual(common.session.investigation.annotations);
+    expect('noteFilter' in captured.investigation).toBeFalse();
+    expect('noteSearch' in captured.investigation).toBeFalse();
+  });
+
+  it('searches text, stable IDs, hidden target names, relationship endpoints and cohort names with combined filters', async () => {
+    common.session.data.nodes[0].name = 'Case Alpha';
+    common.session.data.nodes.push({ _id: 'B', name: 'Case Beta', visible: false });
+    common.session.data.links.push({ id: 'edge-AB', source: 'A', target: 'B', name: 'Field contact' });
+    addReviewNote('hidden-note', 'node', 'B', 'Follow up next week');
+    addReviewNote('edge-note', 'edge', 'edge-AB', 'Relationship methods');
+    addReviewNote('cohort-note', 'cohort', 'review', 'Review methods');
+    addReviewNote('orphan-note', 'node', 'missing-node', 'Retained methods');
+    const panel = fixture.componentInstance;
+    panel.changed(false, false); panel.showNotes('linked');
+    const search = async (query: string, ids: string[]) => {
+      await edit('[aria-label="Search notes"]', query, false);
+      expect(reviewNotes().map(input => input.getAttribute('aria-label').replace('Edit note ', ''))).toEqual(ids);
+    };
+    await search('  FOLLOW UP  ', ['hidden-note']);
+    await search('case beta', ['hidden-note', 'edge-note']);
+    await search('edge-AB', ['edge-note']);
+    await search('field contact', ['edge-note']);
+    await search('saved cohort', ['cohort-note']);
+    await search('orphan-note', []);
+    expect(fixture.nativeElement.textContent).toContain('No notes match these filters.');
+    const filter = fixture.nativeElement.querySelector('[aria-label="Show notes"]') as HTMLSelectElement;
+    filter.value = 'unlinked'; filter.dispatchEvent(new Event('change'));
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(reviewNotes().map(input => input.value)).toEqual(['Retained methods']);
+    fixture.nativeElement.querySelector('#investigation-note-review button').click();
+    await fixture.whenStable(); fixture.detectChanges();
+    expect(filter.value).toBe('all');
+    expect(reviewNotes().length).toBe(5);
+    expect(fixture.nativeElement.querySelector('[aria-label="Search notes"]').value).toBe('');
+  });
+
+  it('updates filtered membership after adding, editing, deleting notes or removing a cohort without changing other notes', async () => {
+    addReviewNote('cohort-note', 'cohort', 'review', 'Cohort methods');
+    const panel = fixture.componentInstance;
+    panel.changed(false, false); panel.showNotes('unlinked');
+    expect(panel.filteredNotes.length).toBe(0);
+    panel.deleteCohort('review'); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewNotes().map(input => input.value)).toEqual(['Cohort methods']);
+    panel.setNoteSearch('cohort methods');
+    const note = common.session.investigation.annotations[1];
+    panel.noteDrafts.set(note, 'Revised methods'); panel.updateNote(note);
+    fixture.detectChanges(); await fixture.whenStable(); expect(reviewNotes().length).toBe(0);
+    panel.clearNoteFilters(); panel.setNoteSearch('revised');
+    fixture.detectChanges(); await fixture.whenStable(); expect(reviewNotes().map(input => input.value)).toEqual(['Revised methods']);
+    panel.deleteNote('cohort-note'); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewNotes().length).toBe(0);
+    panel.noteText = 'Revised investigation methods'; panel.addNote(); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewNotes().map(input => input.value)).toEqual(['Revised investigation methods']);
+    expect(common.session.investigation.annotations[0].text).toBe('Saved note');
+    expect(panel.summary.linkedNotes).toBe(2);
+    expect(panel.summary.unlinkedNotes).toBe(0);
+  });
+
+  it('clears note filters when another investigation opens and explains empty groups', async () => {
+    const panel = fixture.componentInstance;
+    panel.showNotes('unlinked'); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('No notes match these filters.');
+    panel.setNoteSearch('missing');
+    const saved = await common.investigationSessions.capture({ session: common.session, tabs: [] });
+    common.session = (await common.investigationSessions.prepare(saved)).session;
+    fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges();
+    expect(panel.noteFilter).toBe('all'); expect(panel.noteSearch).toBe('');
+    expect(reviewNotes().map(input => input.value)).toEqual(['Saved note']);
+    panel.deleteNote('note'); fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('No notes saved yet.');
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-note-count"]').textContent).toContain('Showing 0 of 0 notes');
   });
 
   async function edit(selector: string, value: string, commit = true) {
@@ -141,6 +245,8 @@ describe('Investigation text editing', () => {
     expect(panel.noteTargetOptions).toEqual([{ id: 'A', label: 'Alex [A]' }, { id: 'B', label: 'Alex [B] (hidden)' }]);
     panel.noteTargetIds = ['B']; panel.noteText = 'Review hidden case.';
     panel.addNote();
+    expect(panel.summary.linkedNotes).toBe(2);
+    expect(panel.summary.unlinkedNotes).toBe(0);
     const saved = await common.investigationSessions.capture({ session: common.session, tabs: [] });
     const restored = await common.investigationSessions.prepare(JSON.parse(JSON.stringify(saved)));
     expect(restored.session.investigation.annotations.slice(-1)[0].target).toEqual({ type: 'node', id: 'B' });
@@ -208,7 +314,8 @@ describe('Investigation text editing', () => {
     const note = common.session.investigation.annotations.slice(-1)[0];
     expect(note.target).toEqual({ type: 'cohort', id: 'review' });
     panel.deleteCohort('review'); expect(panel.resolved(note)).toBeFalse();
-    expect(panel.summary.unresolvedNotes).toBe(1);
+    expect(panel.summary.unlinkedNotes).toBe(1);
+    expect(panel.summary.linkedNotes).toBe(1);
     const saved = await common.investigationSessions.capture({ session: common.session, tabs: [] });
     expect(saved.provenance.annotationResolution[note.id]).toBeFalse();
   });
@@ -229,5 +336,140 @@ describe('Investigation text editing', () => {
     const picker = fixture.nativeElement.querySelector('[data-testid="note-target-picker"]');
     expect(picker.textContent).toContain('<img src=x onerror=alert(1)>');
     expect(picker.querySelector('img')).toBeNull();
+  });
+
+  it('defers previews until both tool sections open and performs no repeated idle resolutions', fakeAsync(() => {
+    const panel = fixture.componentInstance;
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    tick(6000);
+    expect(resolve).not.toHaveBeenCalled();
+    panel.setToolsOpen(true);
+    expect(resolve).not.toHaveBeenCalled();
+    panel.setCalculationsOpen(true);
+    expect(Object.keys(panel.previews).length).toBe(panel.operations.length);
+    expect(resolve).toHaveBeenCalledTimes(panel.operations.length);
+    tick(6000);
+    expect(resolve).toHaveBeenCalledTimes(panel.operations.length);
+    panel.setToolsOpen(false);
+    common.session.data.nodes.push({ _id: 'B', seq: 'AAAA', visible: true });
+    common.investigationCalculations.notifyChanged(common.session);
+    tick(0);
+    expect(resolve).toHaveBeenCalledTimes(panel.operations.length);
+    panel.setToolsOpen(true);
+    expect(panel.previews.consensus).toContain('2 eligible sequences');
+    expect(resolve).toHaveBeenCalledTimes(2 * panel.operations.length);
+  }));
+
+  it('coalesces graph changes while leaving unrelated presentation and outcome notifications cheap', fakeAsync(() => {
+    const panel = fixture.componentInstance;
+    panel.setToolsOpen(true); panel.setCalculationsOpen(true);
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    for (let i = 0; i < 5; i++) common.investigationCalculations.notifyChanged(common.session);
+    tick(0);
+    expect(resolve).toHaveBeenCalledTimes(panel.operations.length);
+    common.investigationCalculations.notifyChanged(common.session, 'outcome');
+    common.investigationCalculations.notifyChanged(common.session, 'presentation');
+    tick(0);
+    expect(resolve).toHaveBeenCalledTimes(panel.operations.length);
+    common.session.data.nodes.push({ _id: 'B', seq: 'AAAA', visible: true });
+    common.investigationCalculations.notifyChanged(common.session);
+    panel.noteText = 'Note committed while graph refresh is queued';
+    panel.addNote();
+    tick(0);
+    expect(panel.previews.consensus).toContain('2 eligible sequences');
+    expect(resolve).toHaveBeenCalledTimes(2 * panel.operations.length);
+  }));
+
+  it('updates stale status and selection shortcuts while previews remain collapsed', async () => {
+    await common.investigationCalculations.run(common.session, 'network-statistics', async () => 'statistics');
+    await fixture.whenStable();
+    const panel = fixture.componentInstance;
+    common.session.data.nodes[0].selected = false;
+    $(document).trigger('node-selected');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect(panel.noteSelection.nodes).toBe(0);
+    expect(panel.summary.stale).toBe(1);
+    expect(panel.previews).toEqual({});
+    expect(common.session.investigation.calculations['network-statistics'].staleReasons).toContain('Selected nodes changed.');
+  });
+
+  it('refreshes when analytical settings change outside the panel and stops after destruction', async () => {
+    await common.investigationCalculations.run(common.session, 'network-statistics', async () => 'statistics');
+    await fixture.whenStable();
+    common.session.style.widgets['link-threshold'] = 2;
+    fixture.detectChanges();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect(fixture.componentInstance.summary.stale).toBe(1);
+    fixture.destroy();
+    const resolve = spyOn(common.investigationCalculations, 'resolve').and.callThrough();
+    common.investigationCalculations.notifyChanged(common.session);
+    $(document).trigger('node-selected');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('explains a skipped run and retains the earlier completed result', async () => {
+    const calculations = common.investigationCalculations;
+    await calculations.run(common.session, 'pairwise-distances', async () => ({ value: 'previous distances' }), undefined, { sequence: true });
+    const original = common.session.investigation.calculations['pairwise-distances'];
+    common.computeLinks = () => calculations.run(common.session, 'pairwise-distances',
+      async () => ({ skipped: { message: 'The sequence pair count exceeds the browser limit.' } }), undefined, { sequence: true });
+    common.updateNetworkVisuals = jasmine.createSpy('update network');
+    await fixture.componentInstance.run('pairwise-distances');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.status).toContain('Calculation skipped.');
+    expect(fixture.componentInstance.status).toContain('exceeds the browser limit');
+    expect(fixture.componentInstance.status).toContain('Previous completed result retained.');
+    expect(fixture.componentInstance.status).not.toContain('Calculation finished.');
+    expect(fixture.componentInstance.error).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="investigation-run-outcome"]').textContent).toContain('Last attempt skipped: The sequence pair count exceeds the browser limit.');
+    expect(common.session.investigation.calculations['pairwise-distances']).toBe(original);
+    expect(common.updateNetworkVisuals).not.toHaveBeenCalled();
+  });
+
+  it('reports cancellation without applying a late consensus result or overwriting a replacement session', async () => {
+    const original = common.session;
+    let release: (value: string) => void;
+    common.computeConsensus = () => common.investigationCalculations.run(original, 'consensus',
+      () => new Promise<string>(resolve => release = resolve), undefined, { sequence: true }, () => common.session);
+    const pending = fixture.componentInstance.run('consensus');
+    common.session = { ...original, data: { ...original.data, consensus: 'replacement consensus' }, investigation: createInvestigationWorkspace() };
+    fixture.detectChanges();
+    release('old consensus'); await pending; await fixture.whenStable();
+    expect(common.session.data.consensus).toBe('replacement consensus');
+    expect(fixture.componentInstance.status).toBe('');
+    expect(fixture.componentInstance.error).toBe('');
+    expect(fixture.componentInstance.running).toBeNull();
+  });
+
+  it('reports an input-change cancellation while retaining the previous result', async () => {
+    const calculations = common.investigationCalculations, session = common.session;
+    await calculations.run(session, 'consensus', async () => 'previous consensus', undefined, { sequence: true });
+    const previous = session.investigation.calculations.consensus;
+    let release: (value: string) => void;
+    common.computeConsensus = () => calculations.run(session, 'consensus',
+      () => new Promise<string>(resolve => release = resolve), undefined, { sequence: true });
+    const pending = fixture.componentInstance.run('consensus');
+    session.data.nodes[0].seq = 'TTTT';
+    release('discard this result'); await pending;
+    expect(fixture.componentInstance.status).toContain('Calculation cancelled');
+    expect(fixture.componentInstance.error).toBe('');
+    expect(session.investigation.calculations.consensus).toBe(previous);
+    expect(session.data.consensus).toBeUndefined();
+  });
+
+  it('identifies reuse of a completed tree without claiming a replacement calculation', async () => {
+    const calculations = common.investigationCalculations, session = common.session;
+    session.data.nodes.push({ _id: 'B', seq: 'AAAA', visible: true });
+    await calculations.run(session, 'tree', async () => ({ value: '(A:1,B:1);' }), undefined, { unpruned: true });
+    const previous = session.investigation.calculations.tree;
+    common.visuals = {};
+    common.computeTree = jasmine.createSpy('tree cache').and.resolveTo(previous.output.value);
+    await fixture.componentInstance.run('tree');
+    expect(fixture.componentInstance.status).toContain('Using the previously completed result');
+    expect(session.investigation.calculations.tree).toBe(previous);
+    expect(session.data.newickString).toBe('(A:1,B:1);');
   });
 });

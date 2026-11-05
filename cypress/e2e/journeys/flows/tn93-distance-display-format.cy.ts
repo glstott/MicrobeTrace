@@ -173,7 +173,7 @@ const saveStyleFromFileMenu = (styleFileBase: string): void => {
   cy.get('@saveStyleDialog')
     .find('p-select')
     .click({ force: true });
-  cy.contains('li[role="option"]', 'style', { timeout: 15000 }).click({ force: true });
+  cy.contains('li[role="option"]', 'Style (.style)', { timeout: 15000 }).click({ force: true });
 
   cy.get('@saveStyleDialog')
     .find('#stash-data')

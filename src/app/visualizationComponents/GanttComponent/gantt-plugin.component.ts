@@ -8,7 +8,6 @@ import { CommonService } from '@app/contactTraceCommonServices/common.service';
 import { SelectItem } from 'primeng/api';
 import { DialogSettings } from '@app/helperClasses/dialogSettings';
 import * as _ from 'lodash';
-import { saveAs } from 'file-saver';
 import * as domToImage from 'html-to-image';
 import { CustomShapes } from '@app/helperClasses/customShapes';
 import { BaseComponentDirective } from '@app/base-component.directive';
@@ -453,39 +452,28 @@ export class GanttComponent extends BaseComponentDirective implements OnInit, Af
     this.isExportClosed = true;
   }
 
-  saveImage(event): void {
+  async saveImage(event): Promise<void> {
     const fileName = this.SelectedGanttChartImageFilenameVariable;
     const domId = 'gantt';
     const exportImageType = this.SelectedNetworkExportFileTypeListVariable ;
     const content = document.getElementById(domId);
+    const imageExport = this.exportService.beginImageExport('Gantt Chart', { filename: fileName, filetype: exportImageType });
+    try {
     if (exportImageType === 'png') {
-      domToImage.toPng(content).then(
-        dataUrl => {
-          saveAs(dataUrl, fileName);
-          this.closeExportPane();
-      });
+      await imageExport.save(await domToImage.toPng(content), fileName);
+      this.closeExportPane();
     } else if (exportImageType === 'jpeg') {
-        domToImage.toJpeg(content, { quality: 0.85 }).then(
-          dataUrl => {
-            saveAs(dataUrl, fileName);
-            this.closeExportPane();
-          });
+        await imageExport.save(await domToImage.toJpeg(content, { quality: 0.85 }), fileName);
+        this.closeExportPane();
     } else if (exportImageType === 'svg') {
-        // The tooltips were being displayed as black bars, so I add a rule to hide them.
-        // Have to parse the string into a document, get the right element, add the rule, and reserialize it
-        let svgContent = this.exportService.unparseSVG(content);
-        const parser = new DOMParser();
-        const deserialized = parser.parseFromString(svgContent, 'text/xml')
-        console.log(deserialized);
-        const style = deserialized.getElementsByTagName('style');
-        console.log(style);
-        style[0].innerHTML = ".tooltip { display: none !important; } .small { font-size: 80%; font-family: Roboto, 'Helvetica Neue', sans-serif; }";
-        const serializer = new XMLSerializer();
-        svgContent = serializer.serializeToString(deserialized);
+        const svgDataUrl = await domToImage.toSvg(content, { filter: node => !node.classList?.contains('tooltip') });
+        const svgContent = decodeURIComponent(svgDataUrl.slice(svgDataUrl.indexOf(',') + 1));
         const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
-        saveAs(blob, fileName);
+        await imageExport.save(blob, fileName);
         this.closeExportPane();
     }
+    } catch (error) { this.exportService.failExport(); console.error('Gantt image export failed', error); }
+    finally { imageExport.cancel(); }
 
   }
 }

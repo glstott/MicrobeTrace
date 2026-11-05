@@ -1,12 +1,14 @@
 <div data-testid="investigation-panel">
   <div class="investigation-save">
-    <p><strong>Save everything together.</strong> All loaded data, settings, cohorts, relationship layers, notes, and completed results are included. No individual selections are needed.</p>
+    <p><strong>Save everything together.</strong> All loaded data, settings, cohorts, relationship layers, notes, completed results, and exported images are included. No individual selections are needed.</p>
     <button class="btn btn-primary" data-testid="investigation-save" [disabled]="saving" (click)="saveInvestigation.emit()">Save investigation</button>
-    <p class="muted">Leave <strong>Compress?</strong> checked in the Save dialog to download one bundle with the session, manifest, and readable report.</p>
+    <p class="muted">Choose <strong>Investigation bundle (.zip)</strong> in the Save dialog to include the session, manifest, and readable report.</p>
+    <p class="muted">{{ workspace.figures?.length || 0 }} exported image{{ workspace.figures?.length === 1 ? '' : 's' }} included. Export an image from a view or the dashboard to add it to the report.</p>
+    <p class="muted">New images retain their supporting data and saved calculation records, even after later edits or reruns.</p>
   </div>
   <section aria-label="Investigation status" data-testid="investigation-summary">
-    <p role="status" aria-live="polite" aria-atomic="true">{{ summary.completed }} completed result{{ summary.completed === 1 ? '' : 's' }} · {{ summary.stale }} stale result{{ summary.stale === 1 ? '' : 's' }} · {{ summary.unresolvedNotes }} unresolved note{{ summary.unresolvedNotes === 1 ? '' : 's' }}</p>
-    @if (summary.stale || summary.unresolvedNotes) {
+    <p role="status" aria-live="polite" aria-atomic="true">{{ summary.completed }} completed result{{ summary.completed === 1 ? '' : 's' }} · {{ summary.stale }} stale result{{ summary.stale === 1 ? '' : 's' }} · <button type="button" class="btn btn-link p-0 align-baseline" aria-controls="investigation-note-review" data-testid="investigation-linked-notes" (click)="showNotes('linked')">{{ summary.linkedNotes }} linked note{{ summary.linkedNotes === 1 ? '' : 's' }}</button> · <button type="button" class="btn btn-link p-0 align-baseline" aria-controls="investigation-note-review" data-testid="investigation-unlinked-notes" (click)="showNotes('unlinked')">{{ summary.unlinkedNotes }} unlinked note{{ summary.unlinkedNotes === 1 ? '' : 's' }}</button></p>
+    @if (summary.stale || summary.unlinkedNotes) {
       <p class="muted">Saved results and notes are retained. You can save the complete investigation with these items included.</p>
     }
     @if (staleResults.length) {
@@ -20,7 +22,7 @@
   </section>
   @if (error) { <p role="alert" class="text-danger">{{ error }}</p> }
   @if (status) { <p role="status">{{ status }}</p> }
-  <details class="investigation-tools" data-testid="investigation-tools">
+  <details class="investigation-tools" data-testid="investigation-tools" [open]="toolsOpen" (toggle)="setToolsOpen($any($event.currentTarget).open)">
     <summary>Optional tools</summary>
     <p class="muted">Use these tools to edit your investigation or run an analysis. They do not choose what gets saved.</p>
   <details data-testid="investigation-cohort-tools">
@@ -55,7 +57,7 @@
       <div class="entry">
         <div class="row-actions">
           <label><input type="checkbox" [attr.aria-label]="'Enable layer ' + layer.name" [(ngModel)]="layer.enabled" (change)="changed(true)"> Enabled</label>
-          <input class="form-control name" aria-label="Layer name" [(ngModel)]="layer.name" (change)="changed()">
+          <input class="form-control name" aria-label="Layer name" [(ngModel)]="layer.name" (change)="changed(false, false)">
           <input type="color" [attr.aria-label]="'Color for ' + layer.name" [value]="layer.color || '#94a3b8'" (input)="layer.color = $any($event.target).value; changed(true)">
           <label>Opacity <input type="range" min="0" max="1" step="0.05" [value]="layer.opacity ?? 1" (change)="layerOpacity(layer, $any($event.target).value)"></label>
           <button class="btn btn-light btn-sm" (click)="clearLayerStyle(layer)">Reset style</button>
@@ -67,7 +69,7 @@
     }
   </section>
   </details>
-  <details data-testid="investigation-note-tools">
+  <details data-testid="investigation-note-tools" [open]="notesOpen" (toggle)="notesOpen = $any($event.currentTarget).open">
     <summary id="investigation-notes-title">Edit notes</summary>
   <section aria-labelledby="investigation-notes-title">
     <div class="row-actions">
@@ -91,17 +93,28 @@
     @if (noteTargetType !== 'investigation') { <p class="muted">Find targets by name or ID, including hidden items. A separate note is saved for each chosen target.</p> }
     <textarea aria-label="New annotation" [(ngModel)]="noteText" placeholder="Investigation note"></textarea>
     <button class="btn btn-primary btn-sm" (click)="addNote()">{{ noteTargetType !== 'investigation' && noteTargetIds.length > 1 ? 'Save notes (' + noteTargetIds.length + ')' : 'Save note' }}</button>
-    @for (note of workspace.annotations; track note) {
+    <div id="investigation-note-review">
+    <div class="row-actions">
+      <label>Show notes <select class="form-control" aria-label="Show notes" [ngModel]="noteFilter" (ngModelChange)="setNoteFilter($event)"><option value="all">All notes</option><option value="linked">Linked notes</option><option value="unlinked">Unlinked notes</option></select></label>
+      <label class="name">Search notes <input #noteSearchInput class="form-control" type="search" aria-label="Search notes" placeholder="Text, target name, or ID" [ngModel]="noteSearch" (ngModelChange)="setNoteSearch($event)"></label>
+      @if (noteFilter !== 'all' || noteSearch) { <button type="button" class="btn btn-light btn-sm" (click)="clearNoteFilters()">Clear filters</button> }
+    </div>
+    <p class="muted" role="status" aria-live="polite" data-testid="investigation-note-count">Showing {{ filteredNotes.length }} of {{ workspace.annotations.length }} notes. All notes are included when saving.</p>
+    @for (entry of filteredNotes; track entry.note) {
+      @let note = entry.note;
       <div class="entry">
-        <label>{{ note.target.type }} {{ note.target.id }} @if (!resolved(note)) { <strong class="text-warning">Unresolved target</strong> }</label>
+        <label>{{ entry.targetLabel }} @if (!entry.linked) { <strong class="text-warning">Unlinked note</strong> }</label>
         <textarea [attr.aria-label]="'Edit note ' + note.id" [ngModel]="noteDrafts.get(note) ?? note.text" (ngModelChange)="noteDrafts.set(note, $event)" (blur)="updateNote(note)" [attr.aria-invalid]="noteErrors.has(note)" [attr.aria-describedby]="noteErrors.has(note) ? 'note-text-error-' + note.id : null"></textarea>
         @if (noteErrors.get(note); as message) { <p role="alert" class="text-danger" [id]="'note-text-error-' + note.id">{{ message }}</p> }
         <div class="row-actions"><small class="muted">Updated {{ note.updatedAt }}</small><button class="btn btn-light btn-sm" (click)="deleteNote(note.id)">Delete note</button></div>
       </div>
+    } @empty {
+      <p class="muted">{{ workspace.annotations.length ? 'No notes match these filters.' : 'No notes saved yet.' }}</p>
     }
+    </div>
   </section>
   </details>
-  <details data-testid="investigation-calculation-tools">
+  <details data-testid="investigation-calculation-tools" (toggle)="setCalculationsOpen($any($event.currentTarget).open)">
     <summary id="investigation-calculations-title">Run or change calculations</summary>
   <section aria-labelledby="investigation-calculations-title">
     <p class="muted">Full and cohort scopes ignore display filters and retain enabled relationship layers and applicable analysis settings. Visible scope uses the current filtered graph. Each run captures its inputs before starting.</p>
@@ -111,6 +124,11 @@
         <select class="form-control" [id]="'scope-' + operation.id" [ngModel]="scope(operation.id)" (ngModelChange)="setScope(operation.id, $event)"><option value="full">Full</option><option value="visible">Visible</option><option value="cohort">Cohort</option></select>
         <small>{{ previews[operation.id] }} @if (workspace.calculations[operation.id]; as run) { <br>Saved result: {{ run.status }} · {{ run.completedAt }} }</small>
         <button class="btn btn-light btn-sm" [disabled]="!!running" (click)="run(operation.id)">{{ running === operation.id ? 'Running…' : 'Run' }}</button>
+        @if (outcome(operation.id); as attempt) {
+          @if (attempt.status !== 'completed' && attempt.status !== 'running') {
+            <p style="grid-column: 1 / -1; margin: 0" data-testid="investigation-run-outcome">Last attempt {{ attempt.status }}: {{ attempt.reason }}</p>
+          }
+        }
       </div>
     }
   </section>

@@ -3,14 +3,16 @@ import { buildDate, commitHash, version } from '../../environments/version';
 import type { StashObjects } from '../helperClasses/interfaces';
 import { buildNetworkGroupingModel } from './network-grouping.model';
 import { readableInvestigationRecord } from './investigation-record';
+import { validateFigureEvidence, verifyFigureEvidence, summarizeFigureEvidence } from './investigation-figure-evidence';
 import {
   createInvestigationWorkspace, investigationCopy, investigationChecksum, investigationNodeId,
   investigationEdgeId, investigationOrigins, InvestigationManifest, InvestigationSoftware,
   InvestigationState, InvestigationWorkspace, INVESTIGATION_OPERATIONS, reviveInvestigationBinary, canonicalInvestigationJson,
   investigationOutputSummary, investigationAnnotationResolved,
+  InvestigationFigure, investigationFigureSummary, investigationFigureBytes, investigationFigureChecksum,
 } from './investigation-state';
 
-export const INVESTIGATION_SCHEMA_VERSION = 3;
+export const INVESTIGATION_SCHEMA_VERSION = 5;
 export function investigationSoftware(): InvestigationSoftware {
   return { name: 'MicrobeTrace', version, commit: commitHash, buildDate };
 }
@@ -51,6 +53,10 @@ export class InvestigationSessionService {
       timelinePinned: !!stash.session.network?.timelinePinned,
     });
     const workspace: InvestigationWorkspace = investigationCopy(stash.session.investigation || createInvestigationWorkspace());
+    workspace.figures ??= [];
+    workspace.figureEvidence ??= {};
+    // Do not infer historical evidence from today's investigation when upgrading an older image.
+    workspace.figures.forEach(figure => figure.evidenceId ??= null);
     this.syncLayers({ ...session, investigation: workspace });
     const result: StashObjects = {
       schemaVersion: INVESTIGATION_SCHEMA_VERSION,
@@ -63,6 +69,8 @@ export class InvestigationSessionService {
     result.investigation = this.stateFromSession(session, workspace, result);
     // Validate what we will actually write, including all required references.
     this.validate(result);
+    await this.validateFigureChecksums(result.investigation.figures);
+    await verifyFigureEvidence(workspace.figureEvidence, workspace.figures);
     const summaries: InvestigationManifest['investigation']['calculations'] = {};
     for (const [operation, calculation] of Object.entries(workspace.calculations)) {
       if (!calculation) continue;
@@ -73,6 +81,7 @@ export class InvestigationSessionService {
       const contents = file.contents ?? file.content ?? file.data;
       return { name: String(file.name ?? 'Unnamed input'), sha256: contents === undefined ? 'not recorded' : await investigationChecksum(contents), representation: contents === undefined ? 'not recorded' : 'canonical saved content (including binary encoding)' };
     }));
+    const figureEvidence = await this.summarizeEvidence(workspace.figureEvidence);
     result.provenance = {
       schemaVersion: INVESTIGATION_SCHEMA_VERSION,
       snapshotId: result.snapshotId,
@@ -82,7 +91,7 @@ export class InvestigationSessionService {
       sources,
       counts: this.counts(session),
       annotationResolution: this.annotationResolution(session, workspace),
-      investigation: investigationCopy({ ...result.investigation, calculations: summaries }),
+      investigation: investigationCopy({ ...result.investigation, figures: result.investigation.figures.map(investigationFigureSummary), figureEvidence, calculations: summaries }),
       historicalProvenance: stash.session.investigationHistoricalProvenance === 'not recorded' ? 'not recorded' : 'recorded',
     };
     result.provenance.stateChecksum = await investigationChecksum(this.checksumPayload(result));
@@ -178,7 +187,10 @@ export class InvestigationSessionService {
         summaries[operation] = { ...summary, outputChecksum: await investigationChecksum(output),
           ...(stash.schemaVersion >= 3 ? { outputSummary: investigationOutputSummary(run.operation, output) } : {}) };
       }
-      if (canonicalInvestigationJson({ ...stash.investigation, calculations: summaries }) !== canonicalInvestigationJson(stash.provenance.investigation)) {
+      const manifestState = { ...stash.investigation, calculations: summaries,
+        ...(stash.investigation.figures !== undefined ? { figures: stash.investigation.figures.map(investigationFigureSummary) } : {}),
+        ...(stash.investigation.figureEvidence !== undefined ? { figureEvidence: await this.summarizeEvidence(stash.investigation.figureEvidence) } : {}) };
+      if (canonicalInvestigationJson(manifestState) !== canonicalInvestigationJson(stash.provenance.investigation)) {
         throw new Error('The investigation manifest does not match the saved settings and results.');
       }
       if (!Array.isArray(stash.provenance.sources) || stash.provenance.sources.length !== (stash.session.files || []).length) throw new Error('The input source manifest is invalid.');
@@ -190,6 +202,8 @@ export class InvestigationSessionService {
       }
       const actual = await investigationChecksum(this.checksumPayload(stash));
       if (actual !== stash.provenance.stateChecksum) throw new Error('The investigation checksum does not match its saved contents.');
+      await this.validateFigureChecksums(stash.investigation.figures || []);
+      await verifyFigureEvidence(stash.investigation.figureEvidence, stash.investigation.figures || []);
       this.hydrateState(stash);
     } else {
       stash.session.investigation = createInvestigationWorkspace();
@@ -204,7 +218,8 @@ export class InvestigationSessionService {
     const session = stash.session;
     session.investigation = {
       cohorts: state.cohorts, selectedCohortIds: state.selectedCohortIds, edgeLayers: state.edgeLayers,
-      annotations: state.annotations, scopes: state.scopes, calculations: state.calculations, viewStates: state.viewStates,
+      annotations: state.annotations, scopes: state.scopes, calculations: state.calculations, viewStates: state.viewStates, figures: state.figures || [],
+      figureEvidence: state.figureEvidence || {},
     };
     session.investigationHistoricalProvenance = stash.provenance.historicalProvenance;
     session.state = state.filters.state;
@@ -228,7 +243,7 @@ export class InvestigationSessionService {
   }
 
   validate(stash: StashObjects): void {
-    if (stash.schemaVersion !== undefined && ![1, 2, INVESTIGATION_SCHEMA_VERSION].includes(stash.schemaVersion)) throw new Error(`Unsupported investigation schema version: ${stash.schemaVersion}.`);
+    if (stash.schemaVersion !== undefined && ![1, 2, 3, 4, INVESTIGATION_SCHEMA_VERSION].includes(stash.schemaVersion)) throw new Error(`Unsupported investigation schema version: ${stash.schemaVersion}.`);
     const session = stash.session;
     if (!session?.data || !Array.isArray(session.data.nodes) || !Array.isArray(session.data.links)
       || !session.style?.widgets || typeof session.style.widgets !== 'object') throw new Error('The saved session does not contain a valid network and settings.');
@@ -254,6 +269,24 @@ export class InvestigationSessionService {
       || !state.threshold || !Number.isFinite(state.threshold.value) || !state.filters?.state || !Array.isArray(state.filters.exclusions)
       || !state.filters.tables || !state.layout?.widgets || !Array.isArray(state.layout.nodes) || !Array.isArray(state.layout.tabs)
       || !state.grouping?.widgets || !Array.isArray(state.grouping.groups)) throw new Error('The investigation state is incomplete.');
+    if ((stash.schemaVersion >= 4 || state.figures !== undefined) && !Array.isArray(state.figures)) throw new Error('The saved report images are invalid.');
+    const figureIds = new Set<string>();
+    for (const figure of state.figures || []) {
+      const context = figure?.context;
+      if (!figure || typeof figure.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(figure.id) || figureIds.has(figure.id)
+        || typeof figure.view !== 'string' || !figure.view.trim() || typeof figure.filename !== 'string' || !figure.filename.trim()
+        || typeof figure.exportedAt !== 'string' || !Number.isFinite(Date.parse(figure.exportedAt)) || !/^[a-f0-9]{64}$/.test(figure.sha256)
+        || ![figure.width, figure.height].every(value => Number.isFinite(value) && value > 0)
+        || figure.software?.name !== 'MicrobeTrace' || !['version', 'commit', 'buildDate'].every(key => typeof figure.software[key] === 'string' && !!figure.software[key].trim())
+        || !Number.isFinite(Date.parse(figure.software.buildDate))
+        || !context || !/^[a-f0-9]{64}$/.test(context.inputChecksum)
+        || !['settings', 'filters', 'viewStates', 'options'].every(key => context[key] && typeof context[key] === 'object' && !Array.isArray(context[key]))
+        || !['nodeIds', 'edgeIds', 'visibleNodeIds', 'visibleEdgeIds', 'selectedCohortIds', 'enabledLayerIds', 'calculationIds'].every(key =>
+          Array.isArray(context[key]) && context[key].every(value => typeof value === 'string'))) throw new Error('A saved report image has invalid metadata.');
+      investigationFigureBytes(figure);
+      figureIds.add(figure.id);
+    }
+    validateFigureEvidence(state.figureEvidence, state.figures || [], stash.schemaVersion >= 5);
     const treeViewport = state.viewStates['Phylogenetic Tree'];
     if (treeViewport !== undefined && (!treeViewport || !['x', 'y', 'k'].every(key => Number.isFinite(treeViewport[key])) || treeViewport.k <= 0)) throw new Error('The saved tree viewport is invalid.');
     const alignmentViewport = state.viewStates['Alignment View'];
@@ -312,7 +345,15 @@ export class InvestigationSessionService {
     if (state.grouping.groups.some(group => !Array.isArray(group.nodeIds) || group.nodeIds.some(id => !ids.has(id)))) throw new Error('A saved group refers to a missing node.');
   }
 
-  readableRecord(manifest: InvestigationManifest): string {
-    return readableInvestigationRecord(manifest);
+  private async summarizeEvidence(archives: InvestigationWorkspace['figureEvidence']): Promise<NonNullable<InvestigationManifest['investigation']['figureEvidence']>> {
+    return Object.fromEntries(await Promise.all(Object.entries(archives || {}).map(async ([id, evidence]) => [id, await summarizeFigureEvidence(id, evidence)])));
+  }
+
+  private async validateFigureChecksums(figures: InvestigationFigure[]): Promise<void> {
+    for (const figure of figures) if (await investigationFigureChecksum(investigationFigureBytes(figure)) !== figure.sha256) throw new Error('A report image checksum does not match its saved contents.');
+  }
+
+  readableRecord(manifest: InvestigationManifest, figures: InvestigationFigure[] = []): string {
+    return readableInvestigationRecord(manifest, figures);
   }
 }

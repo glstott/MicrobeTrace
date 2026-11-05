@@ -1,9 +1,8 @@
 import { Injector, Component, Output, EventEmitter, OnInit, ElementRef, ChangeDetectorRef, Inject, ViewChild, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { EventManager } from '@angular/platform-browser';
 import { CommonService } from '@app/contactTraceCommonServices/common.service';
-import { saveAs } from 'file-saver';
 //import * as domToImage from 'html-to-image';
-import { saveSvgAsPng } from 'save-svg-as-png';
+import { svgAsPngUri } from 'save-svg-as-png';
 import { SelectItem } from 'primeng/api';
 import { DialogSettings } from '@app/helperClasses/dialogSettings';
 import * as _ from 'lodash';
@@ -568,33 +567,30 @@ export class SankeyComponent extends BaseComponentDirective implements OnInit, O
   }
   openCenter(): void {}
 
-  exportVisualization(): void {
+  async exportVisualization(): Promise<void> {
     //const domId = 'sankey-container';
     const exportImageType = this.SelectedNetworkExportFileTypeListVariable ;
+    const imageExport = this.exportService.beginImageExport('Sankey', { filename: this.SelectedSankeyImageFilename, filetype: exportImageType, scale: this.SankeyExportScaleVariable });
+    try {
     //const content = document.getElementById(domId);
     if (exportImageType === 'png') {
       window.devicePixelRatio = 1;
-      saveSvgAsPng(this.sankeySVG.nativeElement, this.SelectedSankeyImageFilename + '.' + this.SelectedNetworkExportFileTypeListVariable, {
+      const dataUrl = await svgAsPngUri(this.sankeySVG.nativeElement, {
           scale: this.SankeyExportScaleVariable,
           backgroundColor: "#ffffff",
           encoderType: 'image/' + this.SelectedNetworkExportFileTypeListVariable,
       });
-    //   domToImage.toPng(content).then(
-    //     dataUrl => {
-    //       saveAs(dataUrl, this.SelectedSankeyImageFilename);
-    //   });
-    // } else if (exportImageType === 'jpeg') {
-    //     domToImage.toJpeg(content, { quality: 0.85 }).then(
-    //       dataUrl => {
-    //         saveAs(dataUrl, this.SelectedSankeyImageFilename);
-    //       });
+      await imageExport.save(dataUrl, this.SelectedSankeyImageFilename + '.' + exportImageType);
     } else if (exportImageType === 'svg') {
         let svgContent = this.exportService.unparseSVG(this.sankeySVG.nativeElement);
         const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
-        saveAs(blob, this.SelectedSankeyImageFilename);
+        await imageExport.save(blob, this.SelectedSankeyImageFilename);
     }
 
     this.ShowSankeyExportPane = false;
+    this.cdref.markForCheck();
+    } catch (error) { this.exportService.failExport(); console.error('Sankey image export failed', error); }
+    finally { imageExport.cancel(); }
   }
 
 }

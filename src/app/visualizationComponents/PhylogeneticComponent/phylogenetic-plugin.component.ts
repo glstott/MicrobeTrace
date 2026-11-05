@@ -1613,6 +1613,7 @@ export class PhylogeneticComponent extends BaseComponentDirective implements OnI
 
   saveImage(event) {
     const exportOptions: ExportOptions = {
+      view: 'Phylogenetic Tree',
       filename: this.SelectedTreeImageFilenameVariable,
       filetype: this.SelectedNetworkExportFileTypeListVariable,
       scale: this.SelectedNetworkExportScaleVariable,

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { Subject } from 'rxjs';
 import {
   InvestigationOperation, ResolvedInvestigationInputs, InvestigationCalculation, InvestigationChangeBaseline,
   investigationCopy, investigationChecksum, investigationInputKey, investigationNodeId,
@@ -16,12 +17,34 @@ export interface InvestigationRunOptions {
   allowEmpty?: boolean;
 }
 
+export type InvestigationChange = 'inputs' | 'selection' | 'presentation' | 'outcome';
+export interface InvestigationRunOutcome {
+  id: string;
+  status: 'running' | 'completed' | 'skipped' | 'cancelled' | 'failed';
+  reason?: string;
+}
+export class InvestigationCancelledError extends Error {}
+
 @Injectable({ providedIn: 'root' })
 export class InvestigationCalculationService {
   private readonly jobs = new WeakMap<object, Map<string, string>>();
   private readonly reads = new WeakMap<object, Map<string, { key: string; promise: Promise<any> }>>();
   private readonly pending = new Set<Promise<any>>();
+  private readonly outcomes = new WeakMap<object, Map<InvestigationOperation, InvestigationRunOutcome>>();
+  private readonly changes = new Subject<{ session: object; kind: InvestigationChange }>();
+  readonly changes$ = this.changes.asObservable();
   constructor(private readonly snapshots: InvestigationSessionService) {}
+
+  notifyChanged(session: object, kind: InvestigationChange = 'inputs'): void { this.changes.next({ session, kind }); }
+  lastOutcome(session: object, operation: InvestigationOperation): Readonly<InvestigationRunOutcome> | undefined {
+    return this.outcomes.get(session)?.get(operation);
+  }
+  private finishOutcome(session: object, operation: InvestigationOperation, outcome: InvestigationRunOutcome): void {
+    const current = this.lastOutcome(session, operation);
+    if (current?.id !== outcome.id || current.status !== 'running') return;
+    this.outcomes.get(session).set(operation, outcome);
+    this.notifyChanged(session, outcome.status === 'completed' ? 'inputs' : 'outcome');
+  }
 
   parameters(session: any, operation: InvestigationOperation, extra: any = {}): any {
     // Presentation widgets are excluded so moving a camera does not stale an analysis.
@@ -94,10 +117,10 @@ export class InvestigationCalculationService {
     return reasons.length ? reasons : ['Analytical inputs or settings changed since this result was completed.'];
   }
 
-  refreshStatus(session: any): void {
+  refreshStatus(session: any, operations?: readonly InvestigationOperation[]): void {
     const workspace = this.snapshots.workspace(session);
     for (const record of Object.values(workspace.calculations)) {
-      if (!record) continue;
+      if (!record || (operations && !operations.includes(record.operation))) continue;
       try {
         const options = record.parameters.__scopeOptions || {};
         const { inputs, parameters } = this.currentInputs(session, record.operation, options);
@@ -115,7 +138,15 @@ export class InvestigationCalculationService {
   }
 
   async flush(): Promise<void> { await Promise.all(Array.from(this.pending)); }
-  cancelSession(session: object): void { this.jobs.set(session, new Map()); this.reads.delete(session); }
+  cancelSession(session: object): void {
+    this.jobs.set(session, new Map());
+    this.reads.delete(session);
+    for (const [operation, outcome] of this.outcomes.get(session) || []) {
+      if (outcome.status === 'running') this.finishOutcome(session, operation, {
+        id: outcome.id, status: 'cancelled', reason: 'Calculation cancelled because its investigation changed.',
+      });
+    }
+  }
 
   /** Render consumers share identical work; reading a matrix must not supersede another reader. */
   shareRead<T>(session: any, operation: InvestigationOperation, work: () => Promise<T>, options: InvestigationRunOptions = {}): Promise<T> {
@@ -169,26 +200,47 @@ export class InvestigationCalculationService {
     const startedAt = new Date().toISOString();
     if (!this.jobs.has(session)) this.jobs.set(session, new Map());
     this.jobs.get(session).set(operation, id);
-    const inputData = investigationCopy({ nodes: inputs.nodes, links: options.sequence ? [] : inputs.links,
-      ...(['patristic', 'bootstrap', 'threshold-analysis', 'tree', 'distance-matrix', 'mst', 'nearest-neighbor'].includes(operation) ? { tree: session.data.newickString } : {}) });
-    const digest = investigationChecksum({ inputs: inputData, parameters });
-    const output = await compute(inputs);
-    const inputChecksum = await digest;
-    if (currentSession() !== session || this.jobs.get(session)?.get(operation) !== id
-      || this.key(session, operation, options) !== currentInputKey) throw new Error('Calculation cancelled because its investigation inputs changed.');
-    // A failed or superseded run leaves the previous result and live data untouched.
-    apply(output, inputs);
-    if (output && typeof output === 'object' && (output as any).skipped) return output;
-    workspace.calculations[operation] = {
-      id, operation, scope: inputs.scope, cohortIds: inputs.cohortIds,
-      nodeIds: inputs.nodes.map(investigationNodeId), edgeIds: inputData.links.map(investigationEdgeId),
-      parameters: { ...parameters, __scopeOptions: { sequence: !!options.sequence, sweep: !!options.sweep, unpruned: !!options.unpruned, parameters: options.parameters || {} } },
-      inputs: inputData, inputChecksum, currentInputKey: this.key(session, operation, options),
-      changeBaseline: this.baseline(session, operation, options),
-      startedAt, completedAt: new Date().toISOString(), software: investigationSoftware(),
-      status: 'completed', output: investigationCopy(output),
-    };
-    return output;
+    if (!this.outcomes.has(session)) this.outcomes.set(session, new Map());
+    this.outcomes.get(session).set(operation, { id, status: 'running' });
+    this.notifyChanged(session, 'outcome');
+    try {
+      const inputData = investigationCopy({ nodes: inputs.nodes, links: options.sequence ? [] : inputs.links,
+        ...(['patristic', 'bootstrap', 'threshold-analysis', 'tree', 'distance-matrix', 'mst', 'nearest-neighbor'].includes(operation) ? { tree: session.data.newickString } : {}) });
+      const digest = investigationChecksum({ inputs: inputData, parameters });
+      const output = await compute(inputs);
+      const inputChecksum = await digest;
+      let inputsMatch = false;
+      try { inputsMatch = this.key(session, operation, options) === currentInputKey; } catch { /* Removed prerequisites cancel this run. */ }
+      if (currentSession() !== session || this.jobs.get(session)?.get(operation) !== id
+        || !inputsMatch) throw new InvestigationCancelledError('Calculation cancelled because its investigation inputs changed.');
+      // A failed or superseded run leaves the previous result and live data untouched.
+      apply(output, inputs);
+      if (output && typeof output === 'object' && (output as any).skipped) {
+        const skipped = (output as any).skipped;
+        this.finishOutcome(session, operation, { id, status: 'skipped',
+          reason: typeof skipped === 'string' ? skipped : skipped.message || (output as any).reason || 'No calculation was performed.' });
+        return output;
+      }
+      workspace.calculations[operation] = {
+        id, operation, scope: inputs.scope, cohortIds: inputs.cohortIds,
+        nodeIds: inputs.nodes.map(investigationNodeId), edgeIds: inputData.links.map(investigationEdgeId),
+        parameters: { ...parameters, __scopeOptions: { sequence: !!options.sequence, sweep: !!options.sweep, unpruned: !!options.unpruned, parameters: options.parameters || {} } },
+        inputs: inputData, inputChecksum, currentInputKey: this.key(session, operation, options),
+        changeBaseline: this.baseline(session, operation, options),
+        startedAt, completedAt: new Date().toISOString(), software: investigationSoftware(),
+        status: 'completed', output: investigationCopy(output),
+      };
+      this.finishOutcome(session, operation, { id, status: 'completed' });
+      return output;
+    } catch (error) {
+      const cancelled = error instanceof InvestigationCancelledError || currentSession() !== session || this.jobs.get(session)?.get(operation) !== id;
+      const failure = cancelled && !(error instanceof InvestigationCancelledError)
+        ? new InvestigationCancelledError('Calculation cancelled because its investigation inputs changed.') : error;
+      this.finishOutcome(session, operation, { id,
+        status: cancelled ? 'cancelled' : 'failed',
+        reason: failure instanceof Error ? failure.message : String(failure) });
+      throw failure;
+    }
   }
 
   /** Threshold sweeps are synchronous; saves wait for their provenance digest to finish. */

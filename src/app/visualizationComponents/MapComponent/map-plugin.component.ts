@@ -3844,6 +3844,7 @@ export class MapComponent extends BaseComponentDirective implements OnInit, Mico
         this.lmap.removeControl(this.lmap.zoomControl)
         setTimeout(() => {
             const exportOptions: ExportOptions = {
+                view: 'Map',
                 filename: this.SelectedNetworkExportFilenameVariable,
                 filetype: this.SelectedNetworkExportFileTypeListVariable,
                 scale: this.SelectedNetworkExportScaleVariable,

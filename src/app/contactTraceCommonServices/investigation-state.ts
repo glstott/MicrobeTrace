@@ -46,6 +46,58 @@ export interface InvestigationSoftware {
   commit: string;
   buildDate: string;
 }
+export interface InvestigationFigure {
+  id: string;
+  view: string;
+  filename: string;
+  mimeType: 'image/png' | 'image/jpeg' | 'image/svg+xml';
+  dataUrl: string;
+  sha256: string;
+  exportedAt: string;
+  software: InvestigationSoftware;
+  width: number;
+  height: number;
+  /** Content-addressed supporting records. Null means historical records were not recorded. */
+  evidenceId?: string | null;
+  /** State at export time; figures remain historical artifacts when the investigation changes. */
+  context: {
+    inputChecksum: string;
+    settings: Record<string, any>;
+    filters: any;
+    viewStates: InvestigationViewStates;
+    nodeIds: string[];
+    edgeIds: string[];
+    visibleNodeIds: string[];
+    visibleEdgeIds: string[];
+    selectedCohortIds: string[];
+    enabledLayerIds: string[];
+    calculationIds: string[];
+    options: Record<string, any>;
+  };
+}
+export type InvestigationFigureSummary = Omit<InvestigationFigure, 'dataUrl'> & { path: string };
+export interface InvestigationFigureEvidence {
+  version: 1;
+  data: Record<string, any> & { nodes: any[]; links: any[] };
+  files: any[];
+  cohorts: InvestigationCohort[];
+  selectedCohortIds: string[];
+  edgeLayers: InvestigationLayer[];
+  scopes: Partial<Record<InvestigationOperation, CalculationScope>>;
+  calculations: Partial<Record<InvestigationOperation, InvestigationCalculation>>;
+}
+export type InvestigationCalculationSummary = Omit<InvestigationCalculation, 'inputs' | 'output'> & { outputChecksum: string; outputSummary?: InvestigationOutputSummary };
+export interface InvestigationFigureEvidenceSummary {
+  path: string;
+  inputChecksum: string;
+  counts: { nodes: number; edges: number };
+  sources: InvestigationManifest['sources'];
+  cohorts: InvestigationCohort[];
+  selectedCohortIds: string[];
+  edgeLayers: InvestigationLayer[];
+  scopes: Partial<Record<InvestigationOperation, CalculationScope>>;
+  calculations: Partial<Record<InvestigationOperation, InvestigationCalculationSummary>>;
+}
 export interface InvestigationCalculation {
   id: string;
   operation: InvestigationOperation;
@@ -86,6 +138,8 @@ export interface InvestigationWorkspace {
   scopes: Partial<Record<InvestigationOperation, CalculationScope>>;
   calculations: Partial<Record<InvestigationOperation, InvestigationCalculation>>;
   viewStates: InvestigationViewStates;
+  figures?: InvestigationFigure[];
+  figureEvidence?: Record<string, InvestigationFigureEvidence>;
 }
 export interface InvestigationViewStates {
   [view: string]: any;
@@ -104,7 +158,7 @@ export interface InvestigationState extends InvestigationWorkspace {
   grouping: { widgets: Record<string, any>; groups: Array<{ id: string; label?: string; field?: string; nodeIds: string[] }> };
 }
 export interface InvestigationManifest {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4 | 5;
   snapshotId: string;
   capturedAt: string;
   stateChecksum: string;
@@ -113,8 +167,10 @@ export interface InvestigationManifest {
   counts: { nodes: number; edges: number; visibleNodes: number; visibleEdges: number };
   /** Resolution at capture time, including edge targets omitted from this compact manifest. */
   annotationResolution?: Record<string, boolean>;
-  investigation: Omit<InvestigationState, 'calculations'> & {
-    calculations: Partial<Record<InvestigationOperation, Omit<InvestigationCalculation, 'inputs' | 'output'> & { outputChecksum: string; outputSummary?: InvestigationOutputSummary }>>;
+  investigation: Omit<InvestigationState, 'calculations' | 'figures' | 'figureEvidence'> & {
+    figures?: InvestigationFigureSummary[];
+    figureEvidence?: Record<string, InvestigationFigureEvidenceSummary>;
+    calculations: Partial<Record<InvestigationOperation, InvestigationCalculationSummary>>;
   };
   historicalProvenance: 'recorded' | 'not recorded';
 }
@@ -158,7 +214,26 @@ export function investigationOutputSummary(operation: InvestigationOperation, ou
 }
 
 export function createInvestigationWorkspace(): InvestigationWorkspace {
-  return { cohorts: [], selectedCohortIds: [], edgeLayers: [], annotations: [], scopes: {}, calculations: {}, viewStates: {} };
+  return { cohorts: [], selectedCohortIds: [], edgeLayers: [], annotations: [], scopes: {}, calculations: {}, viewStates: {}, figures: [], figureEvidence: {} };
+}
+export function investigationEvidencePath(id: string): string { return `figure-evidence/${id}.json`; }
+export function investigationFigurePath(figure: Pick<InvestigationFigure, 'id' | 'mimeType'>): string {
+  return `figures/${figure.id}.${figure.mimeType === 'image/svg+xml' ? 'svg' : figure.mimeType === 'image/jpeg' ? 'jpeg' : 'png'}`;
+}
+export function investigationFigureSummary(figure: InvestigationFigure): InvestigationFigureSummary {
+  const { dataUrl, ...summary } = figure;
+  return { ...summary, path: investigationFigurePath(figure) };
+}
+export function investigationFigureBytes(figure: Pick<InvestigationFigure, 'dataUrl' | 'mimeType'>): Uint8Array {
+  const prefix = `data:${figure.mimeType};base64,`;
+  if (!['image/png', 'image/jpeg', 'image/svg+xml'].includes(figure.mimeType) || !figure.dataUrl?.startsWith(prefix)
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(figure.dataUrl.slice(prefix.length))) throw new Error('A saved report image has invalid embedded content.');
+  try { return Uint8Array.from(atob(figure.dataUrl.slice(prefix.length)), character => character.charCodeAt(0)); }
+  catch { throw new Error('A saved report image has invalid embedded content.'); }
+}
+export async function investigationFigureChecksum(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)));
+  return Array.from(digest, value => value.toString(16).padStart(2, '0')).join('');
 }
 export function investigationNodeId(node: any): string {
   return String(node?._id ?? node?.id ?? '');

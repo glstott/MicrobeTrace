@@ -1,6 +1,6 @@
 /// <reference types="cypress" />
 import JSZip from 'jszip';
-import { installSaveAsCaptureHook, writeCapturedDownloadToDisk } from '../../support/journey-helpers';
+import { installSaveAsCaptureHook, selectSaveFormat, writeCapturedDownloadToDisk } from '../../support/journey-helpers';
 
 const notice = '[data-testid="session-save-notice"]';
 const dismiss = `${notice} button[aria-label="Dismiss download notification"]`;
@@ -13,8 +13,7 @@ function openSave(name: string) {
 
 function saveSession(name: string, compress = false) {
   openSave(name);
-  if (compress) cy.get('#save-file-compress').check();
-  else cy.get('#save-file-compress').uncheck();
+  selectSaveFormat(compress ? 'bundle' : 'session');
   cy.get('#stash-data').should('not.be.disabled').click();
   cy.get(notice).should('be.visible').and('contain', `${name}.${compress ? 'zip' : 'microbetrace'}`);
   cy.get('#session-stash-modal').should('not.be.visible');
@@ -52,8 +51,7 @@ describe('Session download notification', () => {
 
   it('dismisses a style-download notice with the keyboard and preserves the style file', () => {
     openSave('notice-style');
-    cy.get('#session-stash-modal p-select').click();
-    cy.contains('li[role="option"]', /^style$/).click();
+    selectSaveFormat('style');
     cy.get('#stash-data').click();
     cy.get(notice).should('be.visible').and('contain', 'notice-style.style');
     cy.get('#session-stash-modal').should('not.be.visible');

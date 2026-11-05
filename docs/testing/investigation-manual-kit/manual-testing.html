@@ -60,7 +60,7 @@
   <li>Open <strong>File &rarr; Reproducibility Report</strong>. Find Left review and Right review, each showing three members, both checked. Find three enabled relationship layers, four notes, and Network statistics set to Cohort with a saved completed result.</li>
   <li>Note the saved result's completion time. Wait several seconds and revisit the panel.</li>
 </ol>
-<p class="expected"><strong>Expected:</strong> no calculation starts automatically; the saved completion time remains unchanged. The retained note for <code>deleted-review-cohort</code> says <strong>Unresolved target</strong>. The cohort statistics preview is 4 eligible nodes · 2 edges.</p>
+<p class="expected"><strong>Expected:</strong> no calculation starts automatically; the saved completion time remains unchanged. The summary shows <strong>3 linked notes · 1 unlinked note</strong>. The retained note for <code>deleted-review-cohort</code> says <strong>Unlinked note</strong>. The cohort statistics preview is 4 eligible nodes · 2 edges.</p>
 
 <h3><span class="check">□ M02</span> Create overlapping cohorts and keep hidden members</h3>
 <ol>
@@ -101,15 +101,16 @@
 </ol>
 <p class="expected"><strong>Expected:</strong> explicit overrides take precedence over existing view colors; order determines precedence when more than one contributing layer has an override. Renaming changes the display name while the Source identity stays unchanged. Restoring a save preserves the final name, order, enabled states, and style values.</p>
 
-<h3><span class="check">□ M06</span> Plain-text annotations and unresolved targets</h3>
+<h3><span class="check">□ M06</span> Plain-text annotations and unlinked notes</h3>
 <ol>
   <li>Load <code>02-configured.microbetrace</code>. Open <strong>File → Reproducibility Report → Optional tools → Edit notes</strong>. Leave Target as Investigation, enter <strong>Methods note &lt;check sources&gt;</strong>, and click <strong>Save note</strong>.</li>
   <li>Choose Node, open the target picker, search for A, and choose the entry for node <strong>A</strong>. Save a note. Repeat with Edge, searching for <strong>C-D</strong>, and Cohort, searching for <strong>Left review</strong>. Use names or IDs rather than copying IDs from another view.</li>
   <li>Click <strong>Use selected nodes</strong>. Inspect the chosen targets, including any hidden selected members, and save a distinctive note. Confirm one note is created per chosen node. Change filters or the node selection and confirm those saved targets remain fixed. When using a selected relationship in Waterfall or the 2D Cytoscape renderer, repeat with <strong>Use selected edges</strong>.</li>
   <li>Edit one note and click outside its text box. Observe the updated timestamp.</li>
-  <li>Delete Left review. Inspect its cohort note and the unresolved-note count in the status summary above Optional tools. Delete another note using <strong>Delete note</strong>.</li>
+  <li>Delete Left review. Inspect its cohort note and the linked- and unlinked-note counts in the status summary above Optional tools. Delete another note using <strong>Delete note</strong>.</li>
+  <li>Click the <strong>unlinked notes</strong> count. Confirm Edit notes opens, only unlinked notes appear, and Search notes receives focus. Search for <code>deleted-review-cohort</code> using uppercase letters. Click the linked-note count and confirm the search clears. Search by note text, a target name, and an edge ID. Choose All notes or click <strong>Clear filters</strong> to return to the full list. Try a search with no matches. Save and reopen with a search active and confirm every note was retained.</li>
 </ol>
-<p class="expected"><strong>Expected:</strong> names and IDs distinguish duplicate names, hidden targets remain available, and relationship targets show their endpoint names. Changing target type clears the chosen targets. Empty or removed targets are rejected without partially saving a group of notes. The deleted cohort's note remains and says Unresolved target. The explicitly deleted note disappears. Angle brackets remain literal text in the panel and downloaded HTML record. Reopening a session retains exact note targets and text.</p>
+<p class="expected"><strong>Expected:</strong> names and IDs distinguish duplicate names, hidden targets remain available, and relationship targets show their endpoint names. Changing target type clears the chosen targets. Empty or removed targets are rejected without partially saving a group of notes. The deleted cohort's note remains and says Unlinked note; its count moves from linked to unlinked. The explicitly deleted note disappears. Angle brackets remain literal text in the panel and downloaded HTML record. Reopening a session retains exact note targets and text.</p>
 
 <h3><span class="check">□ M07</span> Compare all three scopes with known statistics</h3>
 <ol>
@@ -128,7 +129,7 @@
   <li>In the 2D pane's <strong>Settings → Grouping → Controls</strong>, show Groups and set Group By to Ward. Enable group labels under Labels. Change a node color or label setting as well.</li>
   <li>Close settings. Drag a node to a distinctive position while pinned. Pan/zoom the network. Drag a dashboard divider and move a tab to another stack if desired. Keep Table and 2D Network open; optionally add Map and Network Statistics.</li>
   <li>Use Table's node-column picker to show Region/Ward. Apply a table-only column filter and note it separately from the shared North subset. Check that ordinary node selection is as intended.</li>
-  <li>Run Network statistics in Cohort scope. Record its saved completion time. Immediately after a final pan/zoom, use <strong>File → Save</strong>, enter <strong>manual-roundtrip</strong>, choose <strong>session</strong>, uncheck <strong>Compress?</strong>, and Save.</li>
+  <li>Run Network statistics in Cohort scope. Record its saved completion time. Immediately after a final pan/zoom, use <strong>File → Save</strong>, enter <strong>manual-roundtrip</strong>, choose <strong>Session (.microbetrace)</strong>, and Save.</li>
   <li>Change the threshold, grouping, cohort selection, note, layout, and camera. Then load the downloaded <code>manual-roundtrip.microbetrace</code>.</li>
   <li>Inspect Investigation, global settings, each open pane, Table filters/columns, selection, pin state, node position, dashboard split, and zoom/pan. Open the saved file in a text editor if checking exact memberships, IDs, or camera values.</li>
 </ol>
@@ -136,20 +137,23 @@
 
 <h3><span class="check">□ M09</span> Compressed save and publication record</h3>
 <ol>
-  <li>From the restored state in M08, save again with <strong>Compress?</strong> checked. Observe preparation/bundle progress and disabled save controls while it works, then the <strong>Download prepared</strong> notice. Extract the downloaded ZIP outside the app.</li>
+  <li>Use the 2D Network's existing Export Screen control to export PNG and SVG images. Export another view image or use <strong>File → Export Dashboard</strong>. Reuse a filename for two exports. Change the threshold or styling afterward.</li>
+  <li>From the restored state in M08, save again using <strong>Investigation bundle (.zip)</strong>, the default format. Observe preparation/bundle progress and disabled save controls while it works, then the <strong>Download prepared</strong> notice. Extract the downloaded ZIP outside the app.</li>
   <li>Find the <code>.microbetrace</code> session, <code>investigation-manifest.json</code>, and <code>investigation-record.html</code>. Open the HTML record in a browser.</li>
   <li>Compare the session's <code>snapshotId</code> and <code>provenance.stateChecksum</code> with the manifest's <code>snapshotId</code>/<code>stateChecksum</code> and the HTML header.</li>
   <li>Check software identity, source checksums, all eight state categories, calculation scope/status, input memberships, timestamps, and counts. Stored-edge counts can exceed visible/eligible-edge counts: the original six-node fixture stores 12 edges.</li>
-  <li>Load the ZIP directly into MicrobeTrace and compare the restored state. Then use <strong>File &rarr; Reproducibility Report → Save investigation</strong>, leave <strong>Compress?</strong> checked, and inspect the resulting complete bundle.</li>
+  <li>Inspect <strong>Exported visualizations</strong>. Compare each embedded image against the original download, including its filename, view, export time, dimensions, and settings at export. Check the original files in <code>figures/</code>. Open the HTML offline and confirm the gallery still renders. Reopen the ZIP or session and save another bundle; verify every image is retained without re-exporting.</li>
+  <li>Export a figure with the configured cohort statistics result. Change Network statistics to Full and run it again. Edit a source value or cohort membership, then save a bundle. Follow the figure's <strong>Supporting data and calculation records preserved</strong> link. Verify the original cohort, input IDs, run ID, parameters, and output counts remain, while the report's current Calculations section shows the replacement run. Inspect <code>figure-evidence/</code> for the exact original data, source contents, and completed outputs. Reopen and save again; the old figure's records must stay unchanged. Export two images without changing analytical state and verify they can share one archive. Older saved images must say their historical analytical records were not recorded.</li>
+  <li>Load the ZIP directly into MicrobeTrace and compare the restored state. Then use <strong>File &rarr; Reproducibility Report → Save investigation</strong>, keep <strong>Investigation bundle (.zip)</strong> selected, and inspect the resulting complete bundle.</li>
 </ol>
-<p class="expected"><strong>Expected:</strong> artifacts inside each bundle identify the same captured snapshot. A later save is a new capture and may have a different snapshot ID/checksum. The record contains summaries and output checksums; exact analytical inputs and completed outputs remain in the session. In a development build, commit identity can say development.</p>
+<p class="expected"><strong>Expected:</strong> artifacts inside each bundle identify the same captured snapshot. Exported images match the original downloads and stay unchanged after later edits; repeated filenames produce separate figures. Their export settings and times remain distinct from the final saved state. The HTML works offline. A later save is a new capture and may have a different snapshot ID/checksum. The record contains summaries and output checksums; exact analytical inputs and completed outputs remain in the session. In a development build, commit identity can say development.</p>
 
 <h3><span class="check">□ M10</span> Local links and legacy sessions</h3>
 <ol>
   <li>Load <code>02-configured.microbetrace</code>. Choose <strong>File → Save</strong>, enter a name, select <strong>Local link</strong>, and Save.</li>
   <li>Copy the link and open it in another tab in the <strong>same browser profile and same MicrobeTrace site</strong>. Compare cohorts, subset, layers, notes, and saved calculation time.</li>
   <li>Try the link in a private window or another browser profile.</li>
-  <li>Load <code>06-legacy.microbetrace</code>, save with <strong>Compress?</strong> checked, and open the HTML record from the downloaded bundle.</li>
+  <li>Load <code>06-legacy.microbetrace</code>, save using <strong>Investigation bundle (.zip)</strong>, and open the HTML record from the downloaded bundle.</li>
 </ol>
 <p class="expected"><strong>Expected:</strong> the same-profile local link restores the snapshot. The other profile reports the local session unavailable. The legacy file opens; historical provenance is labelled <strong>not recorded</strong>. Use portable session files for sharing.</p>
 

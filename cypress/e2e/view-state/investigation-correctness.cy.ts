@@ -137,7 +137,7 @@ describe('Investigation correctness regressions', () => {
       const saved = JSON.parse(await sessionEntry.async('text'));
       expect(saved.snapshotId).to.equal(manifest.snapshotId);
       expect(saved.provenance.stateChecksum).to.equal(manifest.stateChecksum);
-      expect(manifest.schemaVersion).to.equal(3);
+      expect(manifest.schemaVersion).to.equal(5);
       expect(manifest.investigation.cohorts[0].name).to.equal('Left review');
       expect(manifest.investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Review case A.');
     });
@@ -153,7 +153,7 @@ describe('Investigation correctness regressions', () => {
     writeCapturedDownloadToDisk(`${name}.microbetrace`, sessionPath);
     cy.readFile(sessionPath).then(raw => {
       const saved = JSON.parse(String(raw));
-      expect(saved.schemaVersion).to.equal(3);
+      expect(saved.schemaVersion).to.equal(5);
       expect(saved.investigation.cohorts[0].name).to.equal('Revised left review');
       expect(saved.investigation.annotations.find((note: any) => note.id === 'note-node-A').text).to.equal('Revised case A note');
     });
@@ -204,7 +204,7 @@ describe('Investigation correctness regressions', () => {
     cy.get('[data-testid="investigation-save"]').click();
     cy.contains('.p-dialog-title', 'Save Session').should('be.visible');
     cy.get('#stash-name').clear().type('report-paired');
-    cy.get('#save-file-compress').check();
+    cy.get('#session-stash-modal p-select').should('contain', 'Investigation bundle (.zip)');
     cy.get('#save-file-cluster').uncheck();
     cy.get('#stash-data').click();
     cy.contains('.p-dialog-title', 'Save Session').should('not.exist');

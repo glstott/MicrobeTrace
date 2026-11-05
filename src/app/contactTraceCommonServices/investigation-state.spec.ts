@@ -182,7 +182,7 @@ describe('Investigation portable sessions', () => {
     saved.provenance.stateChecksum = await investigationChecksum({ schemaVersion: 2, snapshotId: saved.snapshotId, session: saved.session,
       tabs: saved.tabs, dashboardLayout: saved.dashboardLayout, dashboardState: saved.dashboardState, investigation: saved.investigation, provenance });
     const loaded = await sessions.prepare(saved);
-    expect((await sessions.capture(loaded)).schemaVersion).toBe(3);
+    expect((await sessions.capture(loaded)).schemaVersion).toBe(5);
   });
   it('round-trips all state categories through JSON, preserving styles and stable membership', async () => {
     const session = investigationFixture();
@@ -280,7 +280,7 @@ describe('Investigation portable sessions', () => {
   });
   it('binds valid publication metadata values to the current schema checksum', async () => {
     const saved = await sessions.capture({ session: investigationFixture(), tabs: [] });
-    expect(saved.schemaVersion).toBe(3);
+    expect(saved.schemaVersion).toBe(5);
     for (const change of [
       (manifest: any) => manifest.capturedAt = '2020-01-01T00:00:00.000Z',
       (manifest: any) => manifest.software.version = 'different version',
@@ -304,7 +304,7 @@ describe('Investigation portable sessions', () => {
       dashboardLayout: saved.dashboardLayout, dashboardState: saved.dashboardState, investigation: saved.investigation });
     const loaded = await sessions.prepare(saved);
     expect(loaded.session.data.nodes.length).toBe(4);
-    expect((await sessions.capture(loaded)).schemaVersion).toBe(3);
+    expect((await sessions.capture(loaded)).schemaVersion).toBe(5);
     saved.provenance.counts.nodes = 999;
     await expectAsync(sessions.prepare(saved)).toBeRejectedWithError(/counts do not match/);
   });
@@ -362,6 +362,7 @@ describe('Investigation calculation transactions', () => {
       .toBeRejectedWithError(/cancelled/);
     expect(apply).not.toHaveBeenCalled();
     expect(session.investigation.calculations.consensus).toBeUndefined();
+    expect(service.lastOutcome(session, 'consensus').status).toBe('cancelled');
   });
   it('discards a run when its population or analytical parameters change', async () => {
     const service = new InvestigationCalculationService(snapshots);
@@ -378,6 +379,7 @@ describe('Investigation calculation transactions', () => {
     const original = session.investigation.calculations.consensus;
     await expectAsync(service.run(session, 'consensus', async () => { throw new Error('worker failed'); }, undefined, { sequence: true })).toBeRejectedWithError('worker failed');
     expect(session.investigation.calculations.consensus).toBe(original);
+    expect(service.lastOutcome(session, 'consensus')).toEqual(jasmine.objectContaining({ status: 'failed', reason: 'worker failed' }));
   });
   it('marks results stale when scope changes and never returns a stale cached result', async () => {
     const service = new InvestigationCalculationService(snapshots);
@@ -485,8 +487,36 @@ describe('Investigation calculation transactions', () => {
     const session = investigationFixture();
     await service.run(session, 'consensus', async () => 'first', undefined, { sequence: true });
     const original = session.investigation.calculations.consensus;
-    await service.run(session, 'consensus', async () => ({ skipped: true }), undefined, { sequence: true });
+    await service.run(session, 'consensus', async () => ({ skipped: { message: 'Browser input limit exceeded.' } }), undefined, { sequence: true });
     expect(session.investigation.calculations.consensus).toBe(original);
+    expect(service.lastOutcome(session, 'consensus')).toEqual(jasmine.objectContaining({ status: 'skipped', reason: 'Browser input limit exceeded.' }));
+    const captured = await snapshots.capture({ session, tabs: [] });
+    expect(captured.investigation.calculations.consensus.id).toBe(original.id);
+    expect((captured.session as any).outcomes).toBeUndefined();
+  });
+  it('does not let an older cancelled response replace the outcome of a newer completed run', async () => {
+    const service = new InvestigationCalculationService(snapshots), session = investigationFixture();
+    let release: (value: string) => void;
+    const pending = service.run(session, 'consensus', () => new Promise<string>(resolve => release = resolve), undefined, { sequence: true });
+    await service.run(session, 'consensus', async () => 'new consensus', undefined, { sequence: true });
+    const latest = service.lastOutcome(session, 'consensus');
+    release('old consensus');
+    await expectAsync(pending).toBeRejectedWithError(/cancelled/);
+    expect(service.lastOutcome(session, 'consensus')).toBe(latest);
+    expect(latest.status).toBe('completed');
+    expect(session.investigation.calculations.consensus.output).toBe('new consensus');
+  });
+  it('keeps an explicit cancellation outcome when a stopped worker later rejects', async () => {
+    const service = new InvestigationCalculationService(snapshots), session = investigationFixture();
+    let rejectWorker: (error: Error) => void;
+    const pending = service.run(session, 'consensus', () => new Promise((_resolve, reject) => rejectWorker = reject), undefined, { sequence: true });
+    service.cancelSession(session);
+    const cancelled = service.lastOutcome(session, 'consensus');
+    expect(cancelled.status).toBe('cancelled');
+    rejectWorker(new Error('Late worker error'));
+    await expectAsync(pending).toBeRejectedWithError(/cancelled/);
+    expect(service.lastOutcome(session, 'consensus')).toBe(cancelled);
+    expect(session.investigation.calculations.consensus).toBeUndefined();
   });
 });
 
@@ -518,6 +548,18 @@ describe('Investigation integration with live computation entrypoints', () => {
     common.rebuildLinkMatrix();
     return common;
   }
+  it('exposes the real sequence guardrail outcome without replacing earlier edges or results', async () => {
+    const common = commonFixture();
+    await common.investigationCalculations.run(common.session, 'pairwise-distances', async () => ({ value: 'previous distances' }), undefined, { sequence: true });
+    const previous = common.session.investigation.calculations['pairwise-distances'];
+    const links = JSON.stringify(common.session.data.links);
+    common.session.meta.guardrails = { sequencePairwiseLinkWarningThreshold: 1, sequencePairwiseLinkHardLimit: 1 };
+    expect(await common.computeLinks(common.session.data.nodes)).toBe(0);
+    expect(common.investigationCalculations.lastOutcome(common.session, 'pairwise-distances').status).toBe('skipped');
+    expect(common.investigationCalculations.lastOutcome(common.session, 'pairwise-distances').reason).toContain('browser guardrail');
+    expect(common.session.investigation.calculations['pairwise-distances']).toBe(previous);
+    expect(JSON.stringify(common.session.data.links)).toBe(links);
+  });
   it('leaves the current investigation untouched after invalid restore validation', async () => {
     const common = commonFixture(), original = common.session;
     await expectAsync(common.applySession({ schemaVersion: 999, session: original, tabs: [] })).toBeRejectedWithError(/Unsupported/);

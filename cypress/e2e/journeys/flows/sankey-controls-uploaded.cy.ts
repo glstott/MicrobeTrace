@@ -442,6 +442,7 @@ describe('Journey Flow - Sankey controls on uploaded data', () => {
       .clear()
       .type(pngFileBase);
     cy.get('@sankeyExport').find('#sankey-export-submit').click({ force: true });
+    cy.contains('.p-dialog-title', 'Export Sankey').should('not.exist');
 
     cy.readFile(pngPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
       expect(pngBinary.length, 'exported PNG byte length').to.be.greaterThan(1000);
@@ -454,6 +455,7 @@ describe('Journey Flow - Sankey controls on uploaded data', () => {
       .clear()
       .type(svgFileBase);
     cy.get('@sankeyExport').find('#sankey-export-submit').click({ force: true });
+    cy.contains('.p-dialog-title', 'Export Sankey').should('not.exist');
 
     cy.readFile(svgPath, 'utf8', { timeout: 30000 }).should((svgText) => {
       expect(svgText, 'exported Sankey SVG content').to.include('<svg');

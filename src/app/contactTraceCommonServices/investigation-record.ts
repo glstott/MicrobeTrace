@@ -1,5 +1,6 @@
 import { INVESTIGATION_OPERATIONS } from './investigation-state';
-import type { InvestigationManifest } from './investigation-state';
+import { investigationFigureBytes } from './investigation-state';
+import type { InvestigationManifest, InvestigationFigure } from './investigation-state';
 
 interface ReportCell { html: string }
 const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g,
@@ -50,7 +51,7 @@ const settingRows = (value: any, prefix = ''): Array<[string, any]> => Object.en
 });
 
 /** An offline, script-free publication record. Exact machine-readable state stays in the manifest/session. */
-export function readableInvestigationRecord(manifest: InvestigationManifest): string {
+export function readableInvestigationRecord(manifest: InvestigationManifest, images: InvestigationFigure[] = []): string {
   const state = manifest.investigation;
   const counts = manifest.counts;
   const runs = Object.values(state.calculations);
@@ -61,6 +62,58 @@ export function readableInvestigationRecord(manifest: InvestigationManifest): st
   const selectedMembers = new Set(selectedCohorts.flatMap(cohort => cohort.nodeIds));
   const nodes = state.layout.nodes;
   const ids = (title: string, values: string[]): string => details(`${title} (${values.length})`, `<p class="members">${escape(values.length ? values.join(', ') : 'None')}</p>`);
+  const evidenceArchives = state.figureEvidence || {};
+  const figures = section('figures', 'Exported visualizations', (state.figures?.length
+    ? '<p>These are the images exported during this investigation. Each image preserves its appearance and recorded settings at export time; later changes do not replace it.</p>'
+      + state.figures.map(figure => {
+        const image = images.find(item => item.id === figure.id && item.sha256 === figure.sha256);
+        if (image) investigationFigureBytes(image);
+        return `<figure class="exported-figure"><h3>${escape(figure.view)}</h3>${image
+          ? `<a href="${image.dataUrl}" download="${escape(figure.filename)}"><img src="${image.dataUrl}" width="${figure.width}" height="${figure.height}" alt="${escape(`${figure.view}: ${figure.filename}`)}"></a>`
+          : `<p class="muted">Image file: ${escape(figure.path)}. Rebuild this record from the accompanying session to embed the image.</p>`}
+          <figcaption><strong>${escape(figure.filename)}</strong> · Exported ${escape(date(figure.exportedAt))} · ${figure.width} × ${figure.height} pixels</figcaption>
+          <p class="muted">${figure.evidenceId && evidenceArchives[figure.evidenceId]
+            ? `<a href="#evidence-${escape(figure.evidenceId)}">Supporting data and calculation records preserved</a>. Later edits and reruns do not replace these records.`
+            : 'Historical analytical records: not recorded for this image.'}</p>
+          ${details('Settings and audit references at export', facts([
+            ['View', figure.view], ['Loaded nodes', figure.context.nodeIds.length], ['Visible nodes', figure.context.visibleNodeIds.length],
+            ['Loaded relationships', figure.context.edgeIds.length], ['Visible relationships', figure.context.visibleEdgeIds.length],
+            ['Software', `${figure.software.name} ${figure.software.version}`], ['Software build', figure.software.commit],
+          ]) + facts(settingRows(figure.context.options, 'Export')) + facts(settingRows(figure.context.settings, 'Display'))
+            + facts(settingRows(figure.context.filters, 'Filters')) + facts(settingRows(figure.context.viewStates, 'View'))
+            + ids('Loaded node IDs at export', figure.context.nodeIds) + ids('Visible node IDs at export', figure.context.visibleNodeIds)
+            + ids('Loaded relationship IDs at export', figure.context.edgeIds) + ids('Visible relationship IDs at export', figure.context.visibleEdgeIds)
+            + ids('Selected cohort IDs at export', figure.context.selectedCohortIds) + ids('Enabled layer IDs at export', figure.context.enabledLayerIds)
+            + ids('Saved calculation IDs at export', figure.context.calculationIds)
+            + table(['Audit reference', 'Value'], [['Image ID', figure.id], ['Image SHA-256', figure.sha256], ['Input content SHA-256', figure.context.inputChecksum], ['Bundle path', figure.path]].map(([name, value]) => [text(name), code(value)])))}
+          </figure>`;
+      }).join('')
+    : '<p class="muted">No images were exported before this snapshot. Export an image from a view or the dashboard, then save the investigation bundle to include it here.</p>'));
+  const figureEvidence = section('figure-evidence', 'Supporting records for exported figures', Object.entries(evidenceArchives).map(([id, evidence], index) => {
+    const historicalRuns = Object.values(evidence.calculations);
+    const references = (state.figures || []).filter(figure => figure.evidenceId === id).length;
+    const labelFor = (operation: string) => INVESTIGATION_OPERATIONS.find(item => item.id === operation)?.label || operation;
+    return `<article id="evidence-${escape(id)}"><h3>Supporting record ${index + 1}</h3><p>Preserves the loaded data, source files, cohort and relationship-layer definitions, scope choices, and saved calculation inputs and outputs present at export. ${counted(references, 'figure')} ${references === 1 ? 'references' : 'reference'} this record.</p>`
+      + facts([['Loaded nodes at export', evidence.counts.nodes], ['Loaded relationships at export', evidence.counts.edges]])
+      + table(['Analysis', 'Retained run ID', 'Scope when run', 'Result at export', 'Recorded inputs', 'Recorded outputs', 'Completed at (UTC)'], historicalRuns.map(run => [
+        text(labelFor(run.operation)), code(run.id), text(scopeName(run.scope)), badge(run.status, run.status === 'stale' ? 'Stale — retained' : 'Completed'),
+        text(`${run.nodeIds.length} nodes; ${run.edgeIds.length} relationships`),
+        text(Object.entries(run.outputSummary?.counts || {}).map(([name, count]) => `${count} ${name}`).join('; ') || 'Original calculation record retained'), text(date(run.completedAt)),
+      ]), 'No saved calculations were present when this figure was exported.')
+      + historicalRuns.map(run => details(`${labelFor(run.operation)}: original parameters and input IDs`, facts([
+        ['Run ID', run.id], ['Software', `${run.software.name} ${run.software.version}`], ['Build', run.software.commit],
+        ...settingRows(Object.fromEntries(Object.entries(run.parameters).filter(([key]) => key !== '__scopeOptions'))),
+        ['Input SHA-256', run.inputChecksum], ['Output SHA-256', run.outputChecksum],
+      ]) + ids('Original calculation node IDs', run.nodeIds) + ids('Original calculation relationship IDs', run.edgeIds))).join('')
+      + details('Cohorts, layers, scopes, and source files at export',
+        table(['Cohort', 'Members', 'Selected at export'], evidence.cohorts.map(cohort => [text(cohort.name), text(cohort.nodeIds.length), text(evidence.selectedCohortIds.includes(cohort.id))]))
+        + evidence.cohorts.map(cohort => ids(`Members of ${cohort.name} at export`, cohort.nodeIds)).join('')
+        + table(['Relationship layer', 'Source', 'Enabled', 'Color', 'Opacity'], evidence.edgeLayers.map(layer => [text(layer.name), text(layer.source), text(layer.enabled), text(layer.color), text(layer.opacity)]))
+        + table(['Analysis', 'Scope choice at export'], Object.entries(evidence.scopes).map(([operation, scope]) => [text(labelFor(operation)), text(scopeName(scope))]))
+        + table(['Source file at export', 'Content SHA-256'], evidence.sources.map(source => [text(source.name), code(source.sha256)])))
+      + `<p class="muted">Exact data and calculation outputs are stored in the accompanying session and <a href="${escape(evidence.path)}" download>supporting-record JSON</a> (<span class="reference">${escape(evidence.path)}</span>).</p>`
+      + facts([['Supporting-record SHA-256', id], ['Loaded-data SHA-256', evidence.inputChecksum]]) + '</article>';
+  }).join('') || '<p class="muted">No figure supporting records were recorded.</p>');
 
   const threshold = section('threshold', 'Threshold', facts([
     ['Threshold value', state.threshold.value], ['Threshold field', label(state.threshold.metric)],
@@ -120,7 +173,7 @@ export function readableInvestigationRecord(manifest: InvestigationManifest): st
     const resolved = manifest.annotationResolution?.[note.id];
     const unresolved = resolved !== undefined ? !resolved : note.target.type === 'node' ? !nodes.some(node => node.id === note.target.id)
       : note.target.type === 'cohort' ? !cohortNames.has(note.target.id) : false;
-    return `<article class="note"><h3>${escape(target)}${unresolved ? ' <span class="badge stale">Unresolved target</span>' : resolved === undefined && note.target.type === 'edge' ? ' <span class="badge neutral">Target status not recorded</span>' : ''}</h3><p class="note-text">${escape(note.text)}</p><p class="muted">Created ${escape(date(note.createdAt))} · Updated ${escape(date(note.updatedAt))}</p></article>`;
+    return `<article class="note"><h3>${escape(target)}${unresolved ? ' <span class="badge stale">Unlinked note</span>' : resolved === undefined && note.target.type === 'edge' ? ' <span class="badge neutral">Target status not recorded</span>' : ''}</h3><p class="note-text">${escape(note.text)}</p><p class="muted">Created ${escape(date(note.createdAt))} · Updated ${escape(date(note.updatedAt))}</p></article>`;
   }).join('') : '<p class="muted">No notes recorded.</p>');
 
   const runDetails = INVESTIGATION_OPERATIONS.flatMap(operation => {
@@ -166,11 +219,12 @@ export function readableInvestigationRecord(manifest: InvestigationManifest): st
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MicrobeTrace investigation record</title>
 <style>
 :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f6f8;color:#203345;font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1120px;margin:auto;padding:40px 28px 60px}header{padding:30px 34px;background:#173d55;border-radius:12px;color:#fff}header .eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;font-weight:650;color:#c1dfeb}h1{font-size:32px;line-height:1.2;margin:10px 0 18px;font-weight:650}header p{max-width:780px;margin:10px 0;color:#e1edf2}.captured{font-size:14px}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}.stat{background:#fff;border:1px solid #d9e3e8;border-radius:9px;padding:18px 22px}.stat strong{display:block;font-size:29px;line-height:1.25;color:#164b60}.stat span{font-size:13px;color:#4b6272}nav{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 0 22px}a{color:#145976;text-decoration-thickness:1px;text-underline-offset:3px}a:focus-visible,summary:focus-visible{outline:3px solid #2484ab;outline-offset:4px}section{background:#fff;border:1px solid #d9e3e8;border-radius:10px;padding:24px 28px;margin:18px 0;scroll-margin-top:20px}h2{font-size:21px;line-height:1.3;color:#173d55;margin:0 0 18px}h3{font-size:16px;margin:0 0 10px}p{margin:12px 0}.muted{font-size:13px;color:#536a79}.table-scroll{overflow-x:auto;margin:12px 0}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}th{background:#edf3f6;color:#254658;font-weight:650}th,td{min-width:110px;padding:11px 13px;border-bottom:1px solid #e2e9ed;vertical-align:top;overflow-wrap:anywhere}th:first-child{min-width:140px}td:first-child{font-weight:500}td{max-width:550px}details{border:1px solid #dce5ea;border-radius:7px;padding:11px 15px;margin:14px 0}summary{cursor:pointer;font-size:14px;font-weight:600;color:#29546a}details[open]>summary{margin-bottom:15px}.reference{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.members{font-size:13px;overflow-wrap:anywhere}.badge{display:inline-block;white-space:nowrap;font-size:12px;line-height:1.4;font-weight:600;border-radius:5px;padding:4px 8px}.completed{color:#165b46;background:#e5f3ec}.stale{color:#815119;background:#fff0d8}.neutral{color:#536675;background:#edf1f4}.note{border-left:3px solid #5592a7;padding:8px 18px;margin:18px 0;background:#f7fafb}.note-text{white-space:pre-wrap}footer{padding:10px 4px;color:#536a79;font-size:13px}
+.exported-figure{margin:24px 0;padding-bottom:24px;border-bottom:1px solid #d9e3e8}.exported-figure img{display:block;max-width:100%;height:auto;border:1px solid #d9e3e8;background:#fff}.exported-figure figcaption{margin:10px 0;font-size:13px;overflow-wrap:anywhere}@media print{.exported-figure img{max-height:75vh;width:auto;object-fit:contain}}
 @media(max-width:650px){main{padding:18px 12px 30px}header{padding:24px 20px}h1{font-size:27px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat{padding:14px}section{padding:20px 16px}th,td{padding:9px}nav{font-size:13px}}
 @media print{body{background:#fff;color:#111;font-size:10pt}main{max-width:none;padding:0}header{background:#fff;color:#111;border:1px solid #aaa;padding:18px}header p,header .eyebrow{color:#333}nav{display:none}section{border:0;border-top:1px solid #aaa;border-radius:0;padding:18px 0;margin:12px 0}h2,h3{break-after:avoid}tr,.note,.stat{break-inside:avoid}.table-scroll{overflow:visible}details>summary{list-style:none}details::details-content{display:block;content-visibility:visible}.badge{border:1px solid #aaa;color:#111;background:#fff}.reference{font-size:8pt}th{background:#eee}}
 </style></head><body><main><header><div class="eyebrow">MicrobeTrace · Saved investigation</div><h1>Investigation record</h1><p>A readable account of the network, analytical settings, notes, and saved calculations at the time of capture.</p><p class="captured">Captured ${escape(date(manifest.capturedAt))}</p></header>
 <div class="stats">${[[counts.nodes, 'Loaded nodes'], [counts.visibleNodes, 'Visible nodes'], [counts.edges, 'Loaded relationships'], [counts.visibleEdges, 'Visible relationships']].map(([count, title]) => `<div class="stat"><strong>${escape(count)}</strong><span>${title}</span></div>`).join('')}</div>
 <p>To continue this analysis, open the accompanying <strong>.microbetrace session</strong> in MicrobeTrace. This HTML is for reading and sharing; <strong>investigation-manifest.json</strong> contains the machine-readable audit details.</p>
-<nav aria-label="Record sections">${[['threshold','Threshold'],['filters','Filters'],['layout','Layout'],['grouping','Grouping'],['cohorts','Cohorts'],['layers','Layers'],['notes','Notes'],['calculations','Calculations'],['sources','Sources'],['integrity','Audit references']].map(([id,title])=>`<a href="#${id}">${title}</a>`).join('')}</nav>
-${threshold}${filters}${layout}${grouping}${cohorts}${layers}${notes}${calculations}${sources}${integrity}<footer>Snapshot ID: <span class="reference">${escape(manifest.snapshotId)}</span></footer></main></body></html>`;
+<nav aria-label="Record sections">${[['figures','Images'],['figure-evidence','Figure evidence'],['threshold','Threshold'],['filters','Filters'],['layout','Layout'],['grouping','Grouping'],['cohorts','Cohorts'],['layers','Layers'],['notes','Notes'],['calculations','Calculations'],['sources','Sources'],['integrity','Audit references']].map(([id,title])=>`<a href="#${id}">${title}</a>`).join('')}</nav>
+${figures}${figureEvidence}${threshold}${filters}${layout}${grouping}${cohorts}${layers}${notes}${calculations}${sources}${integrity}<footer>Snapshot ID: <span class="reference">${escape(manifest.snapshotId)}</span></footer></main></body></html>`;
 }

@@ -3271,6 +3271,8 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
         // Listen for all selection events to trigger the sync.
         this.cy.on('select unselect', 'node', syncCySelectionToService);
+        this.cy.on('select unselect', 'edge', () =>
+            this.commonService.investigationCalculations?.notifyChanged(this.commonService.session, 'selection'));
         
 	        this.cy.on('tap', 'node', (evt) => {
 	            const node = evt.target;
@@ -4370,6 +4372,7 @@ export class TwoDComponent extends BaseComponentDirective implements OnInit, Mic
 
         // Prepare export options
         const exportOptions: ExportOptions = {
+            view: '2D Network',
             filename: this.SelectedNetworkExportFilenameVariable,
             filetype: this.SelectedNetworkExportFileTypeListVariable,
             scale: this.SelectedNetworkExportScaleVariable,

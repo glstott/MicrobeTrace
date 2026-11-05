@@ -50,6 +50,12 @@ const OPENFREEMAP_TEST_STYLE = {
       paint: { 'background-color': '#eef2f5' },
     },
     {
+      id: 'test-place',
+      type: 'circle',
+      source: 'openmaptiles',
+      paint: { 'circle-radius': 5, 'circle-color': '#243746' },
+    },
+    {
       id: 'place-label',
       type: 'symbol',
       source: 'openmaptiles',
@@ -76,14 +82,16 @@ describe('Journey Flow - OpenFreeMap basemap', () => {
       encoding: 'binary',
     }).then((response) => {
       expect(response.status, 'MapLibre worker response').to.equal(200);
-      expect(response.body.length, 'MapLibre worker bundle size').to.be.greaterThan(1000);
+      expect(response.body.trim(), 'MapLibre worker script').not.to.equal('');
+      expect(response.headers['content-type'], 'MapLibre worker content type').to.match(/javascript/);
     });
     cy.request({
       url: '/assets/maplibre/maplibre-gl-shared.mjs',
       encoding: 'binary',
     }).then((response) => {
       expect(response.status, 'MapLibre shared module response').to.equal(200);
-      expect(response.body.length, 'MapLibre shared module bundle size').to.be.greaterThan(1000);
+      // Supported MapLibre releases also publish this module as an empty stub.
+      expect(response.headers['content-type'], 'MapLibre shared module content type').to.match(/javascript/);
     });
 
     launchProfileToTwoD(profile);
@@ -119,6 +127,10 @@ describe('Journey Flow - OpenFreeMap basemap', () => {
       const style = maplibreMap.getStyle();
       expect(style.name).to.equal(OPENFREEMAP_TEST_STYLE.name);
       expect(style.sources.openmaptiles.type).to.equal('geojson');
+      expect(maplibreMap.isSourceLoaded('openmaptiles'), 'GeoJSON processed by the worker').to.equal(true);
+      const renderedPlace = maplibreMap.queryRenderedFeatures({ layers: ['test-place'] })
+        .find((feature: any) => feature.properties?.['name:en'] === 'Test place');
+      expect(renderedPlace, 'worker-backed place rendered on the basemap').to.exist;
 
       const nameLabelFields = style.layers
         .filter((layer: any) => layer.type === 'symbol' && layer.layout?.['text-field'])

@@ -2953,6 +2953,7 @@ export class CommonService extends AppComponentBase implements OnInit {
         //     }
         // }
         await this.finishUp();
+        this.investigationCalculations?.notifyChanged(this.session);
         } catch (error) {
             this.session = previousSession;
             this.temp = previousTemp;
@@ -2960,6 +2961,7 @@ export class CommonService extends AppComponentBase implements OnInit {
             this.store.setNetworkRendered(!!previousSession.network.isFullyLoaded);
             this.store.setSettingsLoaded(!!previousSession.network.isFullyLoaded);
             this.sessionLoadError = error instanceof Error ? error.message : 'The investigation could not be opened.';
+            this.investigationCalculations?.notifyChanged(this.session);
             throw error;
         }
 
@@ -4323,6 +4325,7 @@ private alignUnscoped(params): Promise<any> {
     invalidateInvestigationInputs(): void {
         this.invalidateThresholdAnalysisCache();
         this.investigationCalculations.refreshStatus(this.session);
+        this.investigationCalculations.notifyChanged(this.session);
     }
 
     getInvestigationLayerStyle(linkOrSource: any, fallback: { color: any; opacity: any }): { color: any; opacity: any } {
@@ -4364,6 +4367,7 @@ private alignUnscoped(params): Promise<any> {
           this.createLinkColorMap();
           this.visuals?.microbeTrace?.publishUpdateLinkColor?.();
           this.updateStatistics();
+          this.investigationCalculations?.notifyChanged(this.session);
           if (!silent) this.store.setNetworkUpdated(true);
           let updatedNumberOfVisibleClusters = this.session.data.clusters.filter(cluster => cluster.visible).length;
           let updatedVisNodeCount = this.session.data.clusters.filter(cluster => cluster.visible).reduce((acc, cluster) => acc + cluster.nodes, 0)
@@ -4888,6 +4892,7 @@ private alignUnscoped(params): Promise<any> {
                 
         this.session.files = files;
         this.session.meta = meta;
+        this.investigationCalculations?.notifyChanged(this.session);
         //this.layout.unbind("stateChanged");
 
         //this.layout.root.replaceChild(this.layout.root.contentItems[0], {

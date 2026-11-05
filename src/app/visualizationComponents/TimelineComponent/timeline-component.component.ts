@@ -7,8 +7,7 @@ import * as d3 from 'd3';
 import moment from 'moment';
 import { MicrobeTraceNextVisuals } from '@app/microbe-trace-next-plugin-visuals';
 
-import { saveAs } from 'file-saver';
-import { saveSvgAsPng } from 'save-svg-as-png';
+import { svgAsPngUri } from 'save-svg-as-png';
 import { SelectItem } from 'primeng/api';
 import { ExportService } from '@app/contactTraceCommonServices/export.service';
 import { Subject, takeUntil } from 'rxjs';
@@ -1484,20 +1483,26 @@ openExport() {
   this.ShowEpiExportPane = !this.ShowEpiExportPane;
 }
 
-exportVisualization() {
+async exportVisualization(): Promise<void> {
+  const filename = this.EpiExportFileName + '.' + this.EpiExportFileType;
+  const imageExport = this.exportService.beginImageExport('Epi Curve', { filename, filetype: this.EpiExportFileType, scale: this.SelectedNetworkExportScaleVariable });
+  try {
   if (this.EpiExportFileType == 'svg') {
       let content = this.exportService.unparseSVG(this.epiCurveSVGElement.nativeElement);
       let blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' });
-      saveAs(blob, this.EpiExportFileName + '.' + this.EpiExportFileType);
+      await imageExport.save(blob, filename);
   } else {
-      saveSvgAsPng(this.epiCurveSVGElement.nativeElement, this.EpiExportFileName + '.' + this.EpiExportFileType, {
+      const dataUrl = await svgAsPngUri(this.epiCurveSVGElement.nativeElement, {
           scale: this.SelectedNetworkExportScaleVariable,
           backgroundColor: "#ffffff",
           encoderType: 'image/' + this.EpiExportFileType,
           //encoderOptions: this.SelectedNetworkExportQualityVariable
       });
+      await imageExport.save(dataUrl, filename);
   }
   this.ShowEpiExportPane = false;
+  this.cdref.markForCheck();
+  } catch (error) { imageExport.cancel(); this.exportService.failExport(); console.error('Timeline image export failed', error); }
 }
 
 openRefreshScreen() {
