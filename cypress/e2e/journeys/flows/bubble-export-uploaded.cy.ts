@@ -2,6 +2,7 @@
 
 import { byTestId, testIds } from '../../../support/selectors';
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   goToBubbleView,
@@ -225,6 +226,7 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
       .trigger('change');
 
     cy.get('@exportDialog').find('#bubble-export-filetype').select('svg');
+    rememberInvestigationImageInputs('bubbleImageInputs');
     cy.get('@exportDialog').find('#bubble-export-confirm').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Bubble View').should('not.exist');
 
@@ -281,6 +283,7 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
         expect(Number(separator.attributes['stroke-width']), 'exported Bubble pie separator width').to.be.greaterThan(0);
       });
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Bubble', inputsAlias: 'bubbleImageInputs' }]);
   });
 
   it('exports the uploaded Bubble view as a PNG file after changing the advanced scale', () => {
@@ -330,6 +333,7 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
         expect(String(text).trim(), 'updated Bubble export dimensions').not.to.equal(initialDimensions);
       });
 
+    rememberInvestigationImageInputs('bubbleImageInputs');
     cy.get('@exportDialog').find('#bubble-export-confirm').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Bubble View').should('not.exist');
 
@@ -341,5 +345,6 @@ describe('Journey Flow - Bubble export on uploaded data', () => {
       expect(pngBuffer, 'exported Bubble PNG buffer').not.to.equal(null);
       expect(byteLength, 'exported Bubble PNG byte length').to.be.greaterThan(1000);
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Bubble', inputsAlias: 'bubbleImageInputs' }]);
   });
 });

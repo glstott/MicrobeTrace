@@ -106,7 +106,8 @@ describe('Investigation save feedback and retries', () => {
       { id: 'second-image', mimeType: 'image/png', dataUrl: 'data:image/png;base64,BAUG', filename: 'same.png' }];
     const evidenceId = 'a'.repeat(64);
     const figureEvidence = { [evidenceId]: { version: 1, data: { nodes: [{ _id: 'original-node' }], links: [] }, calculations: { original: { output: 'original result' } } } };
-    const snapshot = { session: { data: {} }, investigation: { figures, figureEvidence }, provenance: {} };
+    const calculations = { 'network-statistics': { id: 'captured-run', output: { summary: { nodeCount: 6 } } } };
+    const snapshot = { session: { data: {} }, investigation: { figures, figureEvidence, calculations }, provenance: {} };
     component.selectedSaveFileType = 'bundle';
     component.buildSessionStash.and.resolveTo(snapshot);
     const readableRecord = jasmine.createSpy('record').and.returnValue('<h1>Images</h1>');
@@ -115,7 +116,7 @@ describe('Investigation save feedback and retries', () => {
     const zip = await JSZip.loadAsync(component.saveGeneratedFile.calls.mostRecent().args[0]);
     expect(Array.from(await zip.file('figures/first-image.png').async('uint8array'))).toEqual([1, 2, 3]);
     expect(Array.from(await zip.file('figures/second-image.png').async('uint8array'))).toEqual([4, 5, 6]);
-    expect(readableRecord).toHaveBeenCalledWith(snapshot.provenance, figures);
+    expect(readableRecord).toHaveBeenCalledWith(snapshot.provenance, figures, snapshot.investigation);
     expect(JSON.parse(await zip.file('complete-investigation.microbetrace').async('text')).investigation.figures).toEqual(figures);
     expect(JSON.parse(await zip.file(`figure-evidence/${evidenceId}.json`).async('text'))).toEqual(figureEvidence[evidenceId]);
   });

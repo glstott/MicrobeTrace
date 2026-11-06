@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   createGanttEntry,
@@ -58,6 +59,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
 
     openGanttExportDialog();
     setGanttExportDetails(exportFileName, 'svg');
+    rememberInvestigationImageInputs('ganttImageInputs');
 
     cy.get('@exportDialog').find('#export-tree').click({ force: true });
 
@@ -68,6 +70,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
     });
 
     cy.contains('.p-dialog-title', 'Export Gantt Chart').should('not.exist');
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Gantt Chart', inputsAlias: 'ganttImageInputs' }]);
   });
 
   it('exports the uploaded Gantt view as a PNG file', () => {
@@ -76,6 +79,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
 
     openGanttExportDialog();
     setGanttExportDetails(exportFileName, 'png');
+    rememberInvestigationImageInputs('ganttImageInputs');
 
     cy.get('@exportDialog').find('#export-tree').click({ force: true });
 
@@ -84,6 +88,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
     });
 
     cy.contains('.p-dialog-title', 'Export Gantt Chart').should('not.exist');
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Gantt Chart', inputsAlias: 'ganttImageInputs' }]);
   });
 
   it('exports the uploaded Gantt view as a JPEG file', () => {
@@ -92,6 +97,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
 
     openGanttExportDialog();
     setGanttExportDetails(exportFileName, 'jpeg');
+    rememberInvestigationImageInputs('ganttImageInputs');
 
     cy.get('@exportDialog').find('#export-tree').click({ force: true });
 
@@ -100,6 +106,7 @@ describe('Journey Flow - Gantt export on uploaded data', () => {
     });
 
     cy.contains('.p-dialog-title', 'Export Gantt Chart').should('not.exist');
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Gantt Chart', inputsAlias: 'ganttImageInputs' }]);
   });
 
   it('toggles export file types and closes the dialog without exporting', () => {

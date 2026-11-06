@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   assertMapRenderedCounts,
@@ -47,11 +48,13 @@ describe('Journey Flow - Map export on uploaded data', () => {
       .trigger('input')
       .trigger('change');
 
+    rememberInvestigationImageInputs('mapImageInputs');
     cy.get('@exportDialog').find('#map-export').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Geospatial Data').should('not.exist');
 
     cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
       expect(pngBinary.length, 'exported PNG byte length').to.be.greaterThan(1000);
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Map', inputsAlias: 'mapImageInputs' }]);
   });
 });

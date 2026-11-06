@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   installSaveAsCaptureHook,
@@ -231,6 +232,7 @@ describe('Journey Flow - Dashboard export on uploaded data', () => {
         });
       });
 
+    rememberInvestigationImageInputs('dashboardImageInputs');
     cy.get(byTestId(testIds.dashboardExportConfirm)).click({ force: true });
     cy.contains('.p-dialog-title', 'Export Dashboard').should('not.exist');
 
@@ -247,5 +249,6 @@ describe('Journey Flow - Dashboard export on uploaded data', () => {
 
     waitForProcessingDialogToClear();
     assertNoDashboardRuntimeBanner();
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Dashboard', inputsAlias: 'dashboardImageInputs' }]);
   });
 });

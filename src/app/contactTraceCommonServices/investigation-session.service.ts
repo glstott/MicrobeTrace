@@ -354,7 +354,7 @@ export class InvestigationSessionService {
     for (const figure of figures) if (await investigationFigureChecksum(investigationFigureBytes(figure)) !== figure.sha256) throw new Error('A report image checksum does not match its saved contents.');
   }
 
-  readableRecord(manifest: InvestigationManifest, figures: InvestigationFigure[] = []): string {
-    return readableInvestigationRecord(manifest, figures);
+  readableRecord(manifest: InvestigationManifest, figures: InvestigationFigure[] = [], results?: Pick<InvestigationWorkspace, 'calculations' | 'figureEvidence'>): string {
+    return readableInvestigationRecord(manifest, figures, results);
   }
 }

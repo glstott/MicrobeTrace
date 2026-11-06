@@ -67,6 +67,14 @@ describe('Exported visualization images in reproducibility reports', () => {
       const html = await zip.file('investigation-record.html')!.async('text');
       recordHtml = html;
       const document = new DOMParser().parseFromString(html, 'text/html');
+      const findings = document.querySelector('#findings [data-operation="network-statistics"]');
+      expect(findings?.getAttribute('data-run-id'), 'numerical findings use the current saved run').to.equal(replacementRunId);
+      expect(findings?.textContent, 'numerical findings show the saved scope').to.include('Scope when run: Full network');
+      const nodeRow = Array.from(findings!.querySelectorAll('tbody tr')).find(row => row.querySelector('td')?.textContent === 'Nodes');
+      expect(nodeRow?.querySelectorAll('td')[1].textContent, 'readable saved node count').to.equal(String(snapshot.investigation.calculations['network-statistics'].output.summary.nodeCount));
+      const historicalFindings = document.querySelector('#figure-evidence [data-operation="network-statistics"]');
+      expect(historicalFindings?.getAttribute('data-run-id'), 'figure findings use the original saved run').to.equal(originalRunId);
+      expect(historicalFindings?.textContent, 'historical numerical findings identify status at image export').to.include('Status at image export:');
       expect(Cypress._.isEqual(snapshot.investigation.figures, expected), 'saved images match the exact original records').to.equal(true);
       expect(snapshot.investigation.figureEvidence).to.deep.equal(expectedEvidence);
       expect(document.querySelectorAll('#figures img')).to.have.length(4);

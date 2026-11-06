@@ -1,0 +1,796 @@
+{
+  "formatVersion": 1,
+  "collectedAt": "2026-11-05T21:00:57.144Z",
+  "method": "Shared browser probe executed through Playwright CLI; Cypress not run",
+  "build": "development",
+  "revision": "675b8a50b1300d85bbc644474e515303e86b9d94",
+  "worktreeDirty": true,
+  "probeSha256": "82b3d3317d28c57317239e90f103d15d892c5076aacb02dce6e9a320c33f0cb6",
+  "environment": {
+    "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "cores": 22,
+    "deviceMemoryGiB": 32,
+    "heap": {
+      "used": 347133085,
+      "limit": 4395630592
+    },
+    "fileInputAvailable": true,
+    "browserVersion": "156.0.8078.80"
+  },
+  "memoryFlags": [
+    "--enable-precise-memory-info",
+    "--js-flags=--expose-gc"
+  ],
+  "garbageCollection": "Requested before each sample, outside timed operations",
+  "limits": [
+    "Synthetic high-entropy PNGs on a six-node fixture; not a large-graph benchmark.",
+    "Single hardware/browser/development build; no release performance budgets.",
+    "Observed JavaScript heap only; native image/ZIP buffers and missed blocked-interval allocations are excluded.",
+    "Save ends at download handoff; file restore uses the resulting in-memory File.",
+    "Reopen timings exclude page startup and code loading.",
+    "p95 uses nearest rank and equals the maximum with five samples.",
+    "The optional 24-image stress tier was not run."
+  ],
+  "validation": {
+    "focusedUnitTestsPassed": 111,
+    "newTypeScriptErrors": 0,
+    "cypressRun": false,
+    "browserCleanup": {
+      "browserVersion": "156.0.8078.80",
+      "remainingBenchmarkLinks": 0,
+      "retainedImages": 0,
+      "syntheticRevisionRemoved": true,
+      "restoredNodes": 6
+    }
+  },
+  "summaries": {
+    "report-control-1-image": {
+      "samples": 1,
+      "metrics": {
+        "storageInitializeMs": {
+          "samples": 1,
+          "min": 0.5,
+          "median": 0.5,
+          "p95NearestRank": 0.5,
+          "max": 0.5
+        },
+        "fixturePreparationMs": {
+          "samples": 1,
+          "min": 257.4000000357628,
+          "median": 257.4000000357628,
+          "p95NearestRank": 257.4000000357628,
+          "max": 257.4000000357628
+        },
+        "imageRetentionMs": {
+          "samples": 1,
+          "min": 47.60000002384186,
+          "median": 47.60000002384186,
+          "p95NearestRank": 47.60000002384186,
+          "max": 47.60000002384186
+        },
+        "imageBytes": {
+          "samples": 1,
+          "min": 3171480,
+          "median": 3171480,
+          "p95NearestRank": 3171480,
+          "max": 3171480
+        },
+        "bundleCaptureMs": {
+          "samples": 1,
+          "min": 336.10000002384186,
+          "median": 336.10000002384186,
+          "p95NearestRank": 336.10000002384186,
+          "max": 336.10000002384186
+        },
+        "htmlRenderMs": {
+          "samples": 1,
+          "min": 170.19999998807907,
+          "median": 170.19999998807907,
+          "p95NearestRank": 170.19999998807907,
+          "max": 170.19999998807907
+        },
+        "bundleSaveMs": {
+          "samples": 1,
+          "min": 1640.8999999761581,
+          "median": 1640.8999999761581,
+          "p95NearestRank": 1640.8999999761581,
+          "max": 1640.8999999761581
+        },
+        "bundleBytes": {
+          "samples": 1,
+          "min": 12810099,
+          "median": 12810099,
+          "p95NearestRank": 12810099,
+          "max": 12810099
+        },
+        "htmlCharacters": {
+          "samples": 1,
+          "min": 8532928,
+          "median": 8532928,
+          "p95NearestRank": 8532928,
+          "max": 8532928
+        },
+        "bundleDirectoryReadMs": {
+          "samples": 1,
+          "min": 14.199999988079071,
+          "median": 14.199999988079071,
+          "p95NearestRank": 14.199999988079071,
+          "max": 14.199999988079071
+        },
+        "htmlBytes": {
+          "samples": 1,
+          "min": 8533609,
+          "median": 8533609,
+          "p95NearestRank": 8533609,
+          "max": 8533609
+        },
+        "sessionBytes": {
+          "samples": 1,
+          "min": 4346387,
+          "median": 4346387,
+          "p95NearestRank": 4346387,
+          "max": 4346387
+        },
+        "fileReopenMs": {
+          "samples": 1,
+          "min": 989.7000000476837,
+          "median": 989.7000000476837,
+          "p95NearestRank": 989.7000000476837,
+          "max": 989.7000000476837
+        },
+        "localLinkCaptureMs": {
+          "samples": 1,
+          "min": 366.69999998807907,
+          "median": 366.69999998807907,
+          "p95NearestRank": 366.69999998807907,
+          "max": 366.69999998807907
+        },
+        "localLinkSaveMs": {
+          "samples": 1,
+          "min": 396,
+          "median": 396,
+          "p95NearestRank": 396,
+          "max": 396
+        },
+        "localLinkReadMs": {
+          "samples": 1,
+          "min": 14.800000011920929,
+          "median": 14.800000011920929,
+          "p95NearestRank": 14.800000011920929,
+          "max": 14.800000011920929
+        },
+        "localLinkReopenMs": {
+          "samples": 1,
+          "min": 1169.4000000357628,
+          "median": 1169.4000000357628,
+          "p95NearestRank": 1169.4000000357628,
+          "max": 1169.4000000357628
+        },
+        "quotaFailureCaptureMs": {
+          "samples": 1,
+          "min": 344,
+          "median": 344,
+          "p95NearestRank": 344,
+          "max": 344
+        },
+        "quotaFailureMs": {
+          "samples": 1,
+          "min": 414.19999998807907,
+          "median": 414.19999998807907,
+          "p95NearestRank": 414.19999998807907,
+          "max": 414.19999998807907
+        },
+        "maxHeartbeatGapMs": {
+          "samples": 1,
+          "min": 1149.6000000238419,
+          "median": 1149.6000000238419,
+          "p95NearestRank": 1149.6000000238419,
+          "max": 1149.6000000238419
+        }
+      },
+      "observedPeakJSHeapBytes": {
+        "samples": 1,
+        "min": 622261086,
+        "median": 622261086,
+        "p95NearestRank": 622261086,
+        "max": 622261086
+      },
+      "allReopensPreservedImagesAndRuns": true,
+      "allQuotaChecksPassed": true
+    },
+    "large-report-12-images": {
+      "samples": 5,
+      "metrics": {
+        "storageInitializeMs": {
+          "samples": 5,
+          "min": 0.2999999523162842,
+          "median": 0.40000003576278687,
+          "p95NearestRank": 0.6000000238418579,
+          "max": 0.6000000238418579
+        },
+        "fixturePreparationMs": {
+          "samples": 5,
+          "min": 1585,
+          "median": 1676.0999999642372,
+          "p95NearestRank": 2142.100000023842,
+          "max": 2142.100000023842
+        },
+        "imageRetentionMs": {
+          "samples": 5,
+          "min": 900.4999998807907,
+          "median": 939.3999999165535,
+          "p95NearestRank": 1166.6999999284744,
+          "max": 1166.6999999284744
+        },
+        "imageBytes": {
+          "samples": 5,
+          "min": 59463147,
+          "median": 59463147,
+          "p95NearestRank": 59463147,
+          "max": 59463147
+        },
+        "bundleCaptureMs": {
+          "samples": 5,
+          "min": 6237,
+          "median": 6409.699999988079,
+          "p95NearestRank": 6591.699999988079,
+          "max": 6591.699999988079
+        },
+        "htmlRenderMs": {
+          "samples": 5,
+          "min": 2815,
+          "median": 2891.800000011921,
+          "p95NearestRank": 2922.800000011921,
+          "max": 2922.800000011921
+        },
+        "bundleSaveMs": {
+          "samples": 5,
+          "min": 28819.19999998808,
+          "median": 29438.400000035763,
+          "p95NearestRank": 29620.899999976158,
+          "max": 29620.899999976158
+        },
+        "bundleBytes": {
+          "samples": 5,
+          "min": 239475564,
+          "median": 239475605,
+          "p95NearestRank": 239475643,
+          "max": 239475643
+        },
+        "htmlCharacters": {
+          "samples": 5,
+          "min": 158892398,
+          "median": 158892398,
+          "p95NearestRank": 158892398,
+          "max": 158892398
+        },
+        "bundleDirectoryReadMs": {
+          "samples": 5,
+          "min": 130.70000004768372,
+          "median": 138.5,
+          "p95NearestRank": 140.80000001192093,
+          "max": 140.80000001192093
+        },
+        "htmlBytes": {
+          "samples": 5,
+          "min": 158896333,
+          "median": 158896333,
+          "p95NearestRank": 158896333,
+          "max": 158896333
+        },
+        "sessionBytes": {
+          "samples": 5,
+          "min": 79688056,
+          "median": 79688056,
+          "p95NearestRank": 79688056,
+          "max": 79688056
+        },
+        "fileReopenMs": {
+          "samples": 5,
+          "min": 7988.899999976158,
+          "median": 8183.100000023842,
+          "p95NearestRank": 8315.099999964237,
+          "max": 8315.099999964237
+        },
+        "localLinkCaptureMs": {
+          "samples": 5,
+          "min": 6310.900000035763,
+          "median": 6483.599999964237,
+          "p95NearestRank": 6522.800000011921,
+          "max": 6522.800000011921
+        },
+        "localLinkSaveMs": {
+          "samples": 5,
+          "min": 6604.400000035763,
+          "median": 6790.699999988079,
+          "p95NearestRank": 6858.099999964237,
+          "max": 6858.099999964237
+        },
+        "localLinkReadMs": {
+          "samples": 5,
+          "min": 126,
+          "median": 127.60000002384186,
+          "p95NearestRank": 143.5,
+          "max": 143.5
+        },
+        "localLinkReopenMs": {
+          "samples": 5,
+          "min": 6571.900000035763,
+          "median": 6827.300000011921,
+          "p95NearestRank": 6973.300000011921,
+          "max": 6973.300000011921
+        },
+        "quotaFailureCaptureMs": {
+          "samples": 5,
+          "min": 6257.100000023842,
+          "median": 6447.400000035763,
+          "p95NearestRank": 6500.399999976158,
+          "max": 6500.399999976158
+        },
+        "quotaFailureMs": {
+          "samples": 5,
+          "min": 6393.599999964237,
+          "median": 6604.5,
+          "p95NearestRank": 6651.199999988079,
+          "max": 6651.199999988079
+        },
+        "maxHeartbeatGapMs": {
+          "samples": 5,
+          "min": 12167,
+          "median": 12454,
+          "p95NearestRank": 12499.199999988079,
+          "max": 12499.199999988079
+        }
+      },
+      "observedPeakJSHeapBytes": {
+        "samples": 5,
+        "min": 1586292282,
+        "median": 1881714283,
+        "p95NearestRank": 1934855803,
+        "max": 1934855803
+      },
+      "allReopensPreservedImagesAndRuns": true,
+      "allQuotaChecksPassed": true
+    }
+  },
+  "samples": [
+    {
+      "sample": "baseline-control-1",
+      "scenario": {
+        "id": "report-control-1-image",
+        "images": 1,
+        "width": 1280,
+        "height": 720,
+        "evidenceVariants": 1,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:51:15.898Z",
+      "metrics": {
+        "storageInitializeMs": 0.5,
+        "fixturePreparationMs": 257.4000000357628,
+        "imageRetentionMs": 47.60000002384186,
+        "imageBytes": 3171480,
+        "bundleCaptureMs": 336.10000002384186,
+        "htmlRenderMs": 170.19999998807907,
+        "bundleSaveMs": 1640.8999999761581,
+        "bundleBytes": 12810099,
+        "htmlCharacters": 8532928,
+        "bundleDirectoryReadMs": 14.199999988079071,
+        "htmlBytes": 8533609,
+        "sessionBytes": 4346387,
+        "fileReopenMs": 989.7000000476837,
+        "localLinkCaptureMs": 366.69999998807907,
+        "localLinkSaveMs": 396,
+        "localLinkReadMs": 14.800000011920929,
+        "localLinkReopenMs": 1169.4000000357628,
+        "quotaFailureCaptureMs": 344,
+        "quotaFailureMs": 414.19999998807907,
+        "maxHeartbeatGapMs": 1149.6000000238419
+      },
+      "checks": {
+        "images": 1,
+        "historicalRecords": 1,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 4497408,
+        "usageDeltaBytes": 4349952,
+        "payloadCharacters": 4346387,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 351509482,
+        "finalUsedJSHeapSize": 461650481,
+        "deltaUsedJSHeapSize": 110140999,
+        "peakObservedUsedJSHeapSize": 622261086,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 58,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 8,
+        "maxDurationMs": 684,
+        "totalDurationMs": 3297
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:51:13.951Z"
+      }
+    },
+    {
+      "sample": "baseline-large-1",
+      "scenario": {
+        "id": "large-report-12-images",
+        "images": 12,
+        "width": 1600,
+        "height": 900,
+        "evidenceVariants": 4,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:51:31.26Z",
+      "metrics": {
+        "storageInitializeMs": 0.40000003576278687,
+        "fixturePreparationMs": 1706.5,
+        "imageRetentionMs": 900.4999998807907,
+        "imageBytes": 59463147,
+        "bundleCaptureMs": 6237,
+        "htmlRenderMs": 2815,
+        "bundleSaveMs": 28819.19999998808,
+        "bundleBytes": 239475605,
+        "htmlCharacters": 158892398,
+        "bundleDirectoryReadMs": 130.70000004768372,
+        "htmlBytes": 158896333,
+        "sessionBytes": 79688056,
+        "fileReopenMs": 8191.800000011921,
+        "localLinkCaptureMs": 6310.900000035763,
+        "localLinkSaveMs": 6604.400000035763,
+        "localLinkReadMs": 127.60000002384186,
+        "localLinkReopenMs": 6571.900000035763,
+        "quotaFailureCaptureMs": 6492.100000023842,
+        "quotaFailureMs": 6633.699999988079,
+        "maxHeartbeatGapMs": 12167
+      },
+      "checks": {
+        "images": 12,
+        "historicalRecords": 4,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 79912960,
+        "usageDeltaBytes": 79765504,
+        "payloadCharacters": 79688056,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 352344001,
+        "finalUsedJSHeapSize": 682536955,
+        "deltaUsedJSHeapSize": 330192954,
+        "peakObservedUsedJSHeapSize": 1586292282,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 422,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 14,
+        "maxDurationMs": 12150,
+        "totalDurationMs": 38853
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:51:29.323Z"
+      }
+    },
+    {
+      "sample": "baseline-large-2",
+      "scenario": {
+        "id": "large-report-12-images",
+        "images": 12,
+        "width": 1600,
+        "height": 900,
+        "evidenceVariants": 4,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:52:45.62Z",
+      "metrics": {
+        "storageInitializeMs": 0.40000003576278687,
+        "fixturePreparationMs": 1676.0999999642372,
+        "imageRetentionMs": 954.299999833107,
+        "imageBytes": 59463147,
+        "bundleCaptureMs": 6318.099999964237,
+        "htmlRenderMs": 2900.699999988079,
+        "bundleSaveMs": 29620.899999976158,
+        "bundleBytes": 239475564,
+        "htmlCharacters": 158892398,
+        "bundleDirectoryReadMs": 137.20000004768372,
+        "htmlBytes": 158896333,
+        "sessionBytes": 79688056,
+        "fileReopenMs": 7988.899999976158,
+        "localLinkCaptureMs": 6316.899999976158,
+        "localLinkSaveMs": 6608.5,
+        "localLinkReadMs": 130.10000002384186,
+        "localLinkReopenMs": 6913.300000011921,
+        "quotaFailureCaptureMs": 6257.100000023842,
+        "quotaFailureMs": 6393.599999964237,
+        "maxHeartbeatGapMs": 12381.699999988079
+      },
+      "checks": {
+        "images": 12,
+        "historicalRecords": 4,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 79912960,
+        "usageDeltaBytes": 79765504,
+        "payloadCharacters": 79688056,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 353495465,
+        "finalUsedJSHeapSize": 1925429925,
+        "deltaUsedJSHeapSize": 1571934460,
+        "peakObservedUsedJSHeapSize": 1925429953,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 433,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 14,
+        "maxDurationMs": 12366,
+        "totalDurationMs": 38943
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:52:43.761Z"
+      }
+    },
+    {
+      "sample": "baseline-large-3",
+      "scenario": {
+        "id": "large-report-12-images",
+        "images": 12,
+        "width": 1600,
+        "height": 900,
+        "evidenceVariants": 4,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:54:01.191Z",
+      "metrics": {
+        "storageInitializeMs": 0.6000000238418579,
+        "fixturePreparationMs": 2142.100000023842,
+        "imageRetentionMs": 1166.6999999284744,
+        "imageBytes": 59463147,
+        "bundleCaptureMs": 6591.699999988079,
+        "htmlRenderMs": 2840.699999988079,
+        "bundleSaveMs": 29306.69999998808,
+        "bundleBytes": 239475579,
+        "htmlCharacters": 158892398,
+        "bundleDirectoryReadMs": 138.5,
+        "htmlBytes": 158896333,
+        "sessionBytes": 79688056,
+        "fileReopenMs": 8183.100000023842,
+        "localLinkCaptureMs": 6522.800000011921,
+        "localLinkSaveMs": 6858.099999964237,
+        "localLinkReadMs": 126,
+        "localLinkReopenMs": 6827.300000011921,
+        "quotaFailureCaptureMs": 6439.699999988079,
+        "quotaFailureMs": 6599.400000035763,
+        "maxHeartbeatGapMs": 12494.400000035763
+      },
+      "checks": {
+        "images": 12,
+        "historicalRecords": 4,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 79912960,
+        "usageDeltaBytes": 79765504,
+        "payloadCharacters": 79688056,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 351764185,
+        "finalUsedJSHeapSize": 679993889,
+        "deltaUsedJSHeapSize": 328229704,
+        "peakObservedUsedJSHeapSize": 1635044100,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 432,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 13,
+        "maxDurationMs": 12473,
+        "totalDurationMs": 39546
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:53:59.111Z"
+      }
+    },
+    {
+      "sample": "baseline-large-4",
+      "scenario": {
+        "id": "large-report-12-images",
+        "images": 12,
+        "width": 1600,
+        "height": 900,
+        "evidenceVariants": 4,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:55:17.076Z",
+      "metrics": {
+        "storageInitializeMs": 0.5,
+        "fixturePreparationMs": 1591.2000000476837,
+        "imageRetentionMs": 939.3999999165535,
+        "imageBytes": 59463147,
+        "bundleCaptureMs": 6436.099999964237,
+        "htmlRenderMs": 2922.800000011921,
+        "bundleSaveMs": 29531,
+        "bundleBytes": 239475617,
+        "htmlCharacters": 158892398,
+        "bundleDirectoryReadMs": 140.80000001192093,
+        "htmlBytes": 158896333,
+        "sessionBytes": 79688056,
+        "fileReopenMs": 8315.099999964237,
+        "localLinkCaptureMs": 6488.599999964237,
+        "localLinkSaveMs": 6822,
+        "localLinkReadMs": 126.29999995231628,
+        "localLinkReopenMs": 6822.199999988079,
+        "quotaFailureCaptureMs": 6447.400000035763,
+        "quotaFailureMs": 6604.5,
+        "maxHeartbeatGapMs": 12499.199999988079
+      },
+      "checks": {
+        "images": 12,
+        "historicalRecords": 4,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 79912960,
+        "usageDeltaBytes": 79765504,
+        "payloadCharacters": 79688056,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 350468447,
+        "finalUsedJSHeapSize": 782023644,
+        "deltaUsedJSHeapSize": 431555197,
+        "peakObservedUsedJSHeapSize": 1881714283,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 426,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 13,
+        "maxDurationMs": 12480,
+        "totalDurationMs": 39632
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:55:15.198Z"
+      }
+    },
+    {
+      "sample": "baseline-large-5",
+      "scenario": {
+        "id": "large-report-12-images",
+        "images": 12,
+        "width": 1600,
+        "height": 900,
+        "evidenceVariants": 4,
+        "seed": 41001
+      },
+      "startedAt": "2026-11-05T20:56:32.738Z",
+      "metrics": {
+        "storageInitializeMs": 0.2999999523162842,
+        "fixturePreparationMs": 1585,
+        "imageRetentionMs": 920.4999999403954,
+        "imageBytes": 59463147,
+        "bundleCaptureMs": 6409.699999988079,
+        "htmlRenderMs": 2891.800000011921,
+        "bundleSaveMs": 29438.400000035763,
+        "bundleBytes": 239475643,
+        "htmlCharacters": 158892398,
+        "bundleDirectoryReadMs": 140,
+        "htmlBytes": 158896333,
+        "sessionBytes": 79688056,
+        "fileReopenMs": 8156.100000023842,
+        "localLinkCaptureMs": 6483.599999964237,
+        "localLinkSaveMs": 6790.699999988079,
+        "localLinkReadMs": 143.5,
+        "localLinkReopenMs": 6973.300000011921,
+        "quotaFailureCaptureMs": 6500.399999976158,
+        "quotaFailureMs": 6651.199999988079,
+        "maxHeartbeatGapMs": 12454
+      },
+      "checks": {
+        "images": 12,
+        "historicalRecords": 4,
+        "fileReopened": true,
+        "localLinkReopened": true,
+        "savedRunsPreserved": true,
+        "replacementCalculations": 0,
+        "quotaFailureExplained": true,
+        "previousLinkSurvivedQuotaFailure": true
+      },
+      "storage": {
+        "quotaBytes": 10737565696,
+        "usageBeforeBytes": 147456,
+        "usageAfterBytes": 79912960,
+        "usageDeltaBytes": 79765504,
+        "payloadCharacters": 79688056,
+        "saveOutcome": "saved",
+        "error": null
+      },
+      "heap": {
+        "initialUsedJSHeapSize": 350486368,
+        "finalUsedJSHeapSize": 1934855775,
+        "deltaUsedJSHeapSize": 1584369407,
+        "peakObservedUsedJSHeapSize": 1934855803,
+        "jsHeapSizeLimit": 4395630592,
+        "samples": 423,
+        "method": "performance.memory sampled every 50 ms and at phase boundaries; observed JS heap only, excluding native image/ZIP buffers and missed allocations during blocked intervals"
+      },
+      "longTasks": {
+        "count": 13,
+        "maxDurationMs": 12437,
+        "totalDurationMs": 39597
+      },
+      "software": {
+        "name": "MicrobeTrace",
+        "version": "2.4.0",
+        "commit": "development",
+        "buildDate": "2026-11-05T20:56:30.913Z"
+      }
+    }
+  ]
+}

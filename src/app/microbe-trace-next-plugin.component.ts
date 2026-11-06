@@ -5223,7 +5223,7 @@ ${warnings.join('\n')}`,
                 if (x.componentRef != null) {
                     // Unsubscribe from previous files view subscription in get file contents
                     this.subscription.unsubscribe();
-                    this.subscription = this.homepageTabs[0].componentRef.instance.LoadDefaultVisualizationEvent.subscribe((v) => {
+                    this.subscription = x.componentRef.instance.LoadDefaultVisualizationEvent.subscribe((v) => {
                         console.log('--- Files loading default from subscription: ');
 
                         // this.loadSettings();
@@ -5600,7 +5600,7 @@ ${warnings.join('\n')}`,
                       const snapshot = await this.buildSessionStash();
                       zip.file(`${filename}.microbetrace`, JSON.stringify(snapshot));
                       zip.file('investigation-manifest.json', JSON.stringify(snapshot.provenance, null, 2));
-                      zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance, snapshot.investigation?.figures));
+                      zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(snapshot.provenance, snapshot.investigation?.figures, snapshot.investigation));
                       this.addInvestigationImages(zip, snapshot);
                       await this.updateSessionSaveProgress('Preparing bundle…');
                       await zip.generateAsync({type:"blob"}, metadata => this.showBundleProgress(metadata.percent)).then(function(content) {
@@ -5616,7 +5616,7 @@ ${warnings.join('\n')}`,
                         const zip = new JSZip();
                         zip.file(`${filename}.microbetrace`, new Blob([JSON.stringify(stash)], { type: "application/json;charset=utf-8" }));
                         zip.file('investigation-manifest.json', JSON.stringify(stash.provenance, null, 2));
-                        zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance, stash.investigation?.figures));
+                        zip.file('investigation-record.html', this.commonService.investigationSessions.readableRecord(stash.provenance, stash.investigation?.figures, stash.investigation));
                         this.addInvestigationImages(zip, stash);
                         await this.updateSessionSaveProgress('Compressing bundle…');
                         await zip.generateAsync({

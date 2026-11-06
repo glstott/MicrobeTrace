@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertPhyloTreeReady,
   launchProfileToPhyloTree,
@@ -73,10 +74,12 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         .its('commonService.visuals.phylogenetic.SelectedTreeImageFilenameVariable')
         .should('equal', exportFileBase);
 
+      rememberInvestigationImageInputs('treeImageInputs');
       cy.get('#export-tree').click();
       cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
         expect(pngBinary.length, 'exported PNG byte length').to.be.greaterThan(1000);
       });
+      assertInvestigationImageBundle([{ path: exportPath, view: 'Phylogenetic Tree', inputsAlias: 'treeImageInputs' }]);
     });
 
     it('should change filename and export as svg', () => {
@@ -98,10 +101,12 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         .its('commonService.visuals.phylogenetic.SelectedNetworkExportFileTypeListVariable')
         .should('equal', 'svg');
 
+      rememberInvestigationImageInputs('treeImageInputs');
       cy.get('#export-tree').click();
       cy.readFile(exportPath, 'utf8', { timeout: 30000 }).should((svgText) => {
         expect(svgText, 'exported SVG contents').to.contain('<svg');
       });
+      assertInvestigationImageBundle([{ path: exportPath, view: 'Phylogenetic Tree', inputsAlias: 'treeImageInputs' }]);
     });
 
     it('should change filename and export as jpeg', () => {
@@ -119,10 +124,12 @@ describe('Journey Flow - Phylogenetic Tree Export (Newick file)', () => {
         .its('commonService.visuals.phylogenetic.SelectedNetworkExportFileTypeListVariable')
         .should('equal', 'jpeg');
 
+      rememberInvestigationImageInputs('treeImageInputs');
       cy.get('#export-tree').click();
       cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((jpegBinary) => {
         expect(jpegBinary.length, 'exported JPEG byte length').to.be.greaterThan(1000);
       });
+      assertInvestigationImageBundle([{ path: exportPath, view: 'Phylogenetic Tree', inputsAlias: 'treeImageInputs' }]);
     });
 
     it('should change filename and export newick string', () => {

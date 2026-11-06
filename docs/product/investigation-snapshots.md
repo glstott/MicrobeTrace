@@ -19,6 +19,10 @@ The manifest identifies the snapshot, capture time, MicrobeTrace version/build, 
 
 Open `investigation-record.html` in a browser to read the audit report. It presents network counts, threshold and filter rules, layout and grouping, cohorts, relationship layers, notes, and calculation status in summaries and tables. Expand individual sections for exact memberships, saved display settings, calculation parameters, and checksums. Dates are labelled in UTC. The HTML works offline and includes a print layout; the manifest remains the detailed machine-readable record. To resume the analysis, reopen the accompanying `.microbetrace` session or its complete ZIP rather than the HTML or manifest alone.
 
+**Saved numerical findings** presents completed network statistics and threshold-analysis results alongside the exported images. Statistics include components, clusters, singletons, density, degree, and path metrics when recorded, with sampled path metrics marked approximate. Threshold findings show the recorded sweep range and recommendation; expand **All saved threshold results** for every stored point. Each result identifies its scope when run, input counts, completion time, run ID, and status at snapshot capture, including explanations for stale results. Decimal values use six significant figures for readability; exact outputs remain in the session.
+
+Figure supporting records show their own numerical findings and status **at image export**, separately from the snapshot's current results. A later rerun cannot supply values for an earlier figure. Reports use only the completed outputs retained in the captured snapshot; saving never runs these analyses. Older or incomplete results show **Not recorded** or an explanation instead of inferred values or recommendations. The saved-session format and existing manifest checks remain unchanged.
+
 Opening a snapshot validates its version, integrity, and required references before replacing the current investigation. Its manifest must agree with its settings and results. Legacy sessions remain supported; historical provenance unavailable in those files is labelled **not recorded**.
 
 New saves use schema 5. Their state checksum covers the session and all manifest metadata, including software identity, capture time, counts, source summaries, calculation output summaries, annotation target resolution, exported images, and their retained supporting records. Reports include actual Bootstrap replicate counts, batch seeds and early stopping, and network-statistics approximation details when recorded. Schema-1 through schema-4 files remain readable using their original validation rules; resaving upgrades them to schema 5. Older checksums cannot retroactively verify historical metadata that they did not cover.
@@ -88,3 +92,20 @@ Snapshots do not provide a chronological action history or guarantee identical r
 ## Regression coverage
 
 Focused unit coverage exercises round trips, binary inputs, legacy migration, manifest consistency, scope resolution, mixed-origin layers, missing references, orphan notes, calculation isolation, stable-ID result merges, and late-result rejection. Existing filtering, threshold, statistics, and renderer tests cover shared behavior. The investigation Cypress round-trip spec covers the combined UI and saved-file workflow; run it only when Cypress testing is requested.
+
+An [opt-in large-report benchmark](../performance/investigation-report-performance.md) measures bundle saving, reopening, browser-local links, observed JavaScript heap and storage-failure recovery with deterministic large PNGs. It is excluded from normal regressions and records actual byte sizes and retained-result checks alongside timings.
+
+The image-export journey specs also verify portable report contents using shared investigation-export assertions. They capture analytical inputs before Export, compare the actual downloaded bytes and SHA-256 against the retained image and bundled file, check exact historical data/source contents/cohorts/layers/calculation outputs, inspect the manifest and embedded offline HTML image, and reopen the bundle without replacing completed calculations. Assertions log compact comparison results rather than full image payloads.
+
+| Export source | Report-specific coverage |
+| --- | --- |
+| Network and Heatmap | Existing combined PNG/SVG gallery, historical-record and round-trip cases |
+| Map | PNG |
+| Phylogenetic Tree | PNG/SVG/JPEG for imported trees; PNG/SVG for three computed-tree input profiles |
+| Bubble | PNG and collapsed vector SVG |
+| Alignment View | PNG/SVG alongside the existing sequence/data exports |
+| Gantt Chart | PNG/SVG/JPEG |
+| Sankey | PNG/SVG after advanced scaling and dialog cancellation |
+| Epi Curve | PNG/SVG and scaled PNG |
+| Dashboard | PNG after layout, splitter and styling changes |
+| Key tables | PNG/SVG including node colors, link colors, node shapes and group colors |

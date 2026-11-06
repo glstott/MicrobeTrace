@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   launchProfileToEpiCurve,
@@ -55,12 +56,14 @@ describe('Journey Flow - Epi Curve export on uploaded data', () => {
     openExportDialog();
     fillExportFilename(exportFileBase);
 
+    rememberInvestigationImageInputs('epiImageInputs');
     cy.get('@exportDialog').contains('button', 'Export').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Epi Curve').should('not.exist');
 
     cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
       expect(pngBinary.length, 'exported PNG byte length').to.be.greaterThan(1000);
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Epi Curve', inputsAlias: 'epiImageInputs' }]);
   });
 
   it('exports the uploaded Epi Curve view as an SVG file', () => {
@@ -74,6 +77,7 @@ describe('Journey Flow - Epi Curve export on uploaded data', () => {
       .find('select.form-control.form-control-sm')
       .select('svg');
 
+    rememberInvestigationImageInputs('epiImageInputs');
     cy.get('@exportDialog').contains('button', 'Export').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Epi Curve').should('not.exist');
 
@@ -81,6 +85,7 @@ describe('Journey Flow - Epi Curve export on uploaded data', () => {
       expect(svgText, 'exported SVG content').to.include('<svg');
       expect(svgText.length, 'exported SVG length').to.be.greaterThan(100);
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Epi Curve', inputsAlias: 'epiImageInputs' }]);
   });
 
   it('updates calculated resolution when the uploaded PNG export scale changes', () => {
@@ -126,12 +131,14 @@ describe('Journey Flow - Epi Curve export on uploaded data', () => {
         .should('contain.text', expectedResolution);
     });
 
+    rememberInvestigationImageInputs('epiImageInputs');
     cy.get('@exportDialog').contains('button', 'Export').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Epi Curve').should('not.exist');
 
     cy.readFile(exportPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
       expect(pngBinary.length, 'scaled PNG byte length').to.be.greaterThan(1000);
     });
+    assertInvestigationImageBundle([{ path: exportPath, view: 'Epi Curve', inputsAlias: 'epiImageInputs' }]);
   });
 
   it('does not expose an inert PNG quality slider in advanced export settings', () => {

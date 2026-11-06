@@ -2,6 +2,7 @@
 
 import type { DatasetProfile } from '../datasets/profile';
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   assertPhyloTreeReady,
@@ -61,6 +62,7 @@ describe('Journey Flow - Computed Phylogenetic Tree export on uploaded non-Newic
         .trigger('input')
         .trigger('change');
 
+      rememberInvestigationImageInputs('computedTreePngInputs');
       cy.get('#export-tree').click({ force: true });
       cy.readFile(pngPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
         expect(pngBinary.length, `PNG byte length for ${profile.id}`).to.be.greaterThan(1000);
@@ -73,6 +75,7 @@ describe('Journey Flow - Computed Phylogenetic Tree export on uploaded non-Newic
         .trigger('change');
 
       setExportFileType('svg');
+      rememberInvestigationImageInputs('computedTreeSvgInputs');
       cy.get('#export-tree').click({ force: true });
       cy.readFile(svgPath, 'utf8', { timeout: 30000 }).should((svgText) => {
         expect(svgText, `SVG export contents for ${profile.id}`).to.contain('<svg');
@@ -96,6 +99,10 @@ describe('Journey Flow - Computed Phylogenetic Tree export on uploaded non-Newic
           expect(savedText, `non-negative Newick branches for ${profile.id}`).not.to.match(/:-(?:\d|\.)/);
         });
       });
+      assertInvestigationImageBundle([
+        { path: pngPath, view: 'Phylogenetic Tree', inputsAlias: 'computedTreePngInputs' },
+        { path: svgPath, view: 'Phylogenetic Tree', inputsAlias: 'computedTreeSvgInputs' },
+      ]);
     });
   });
 });

@@ -1,6 +1,11 @@
 import { INVESTIGATION_OPERATIONS } from './investigation-state';
 import { investigationFigureBytes } from './investigation-state';
-import type { InvestigationManifest, InvestigationFigure } from './investigation-state';
+import type { InvestigationManifest, InvestigationFigure, InvestigationWorkspace, InvestigationCalculationSummary } from './investigation-state';
+import type { NetworkStatisticsSummary } from './network-statistics';
+import type { ThresholdSweepSummary } from './threshold-analysis';
+
+/** Completed outputs from the same captured snapshot as the manifest, never the live session. */
+export type InvestigationReportResults = Pick<InvestigationWorkspace, 'calculations' | 'figureEvidence'>;
 
 interface ReportCell { html: string }
 const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g,
@@ -50,8 +55,80 @@ const settingRows = (value: any, prefix = ''): Array<[string, any]> => Object.en
   return [[name, item] as [string, any]];
 });
 
+const numericalValue = (value: unknown): string => typeof value === 'number' && Number.isFinite(value)
+  ? new Intl.NumberFormat('en-GB', Number.isInteger(value) ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: 6 }).format(value)
+  : 'Not recorded';
+const numericalTable = (rows: Array<[string, unknown]>): string => table(['Finding', 'Saved result'],
+  rows.map(([name, value]) => [text(name), text(numericalValue(value))]));
+
+function networkFindings(summary: NetworkStatisticsSummary, run: InvestigationCalculationSummary): string {
+  if (!summary || typeof summary !== 'object') return '<p class="muted">Numerical network statistics were not recorded.</p>';
+  const metrics: Array<[keyof NetworkStatisticsSummary, string]> = [
+    ['nodeCount', 'Nodes'], ['linkCount', 'Relationships'], ['componentCount', 'Connected components'],
+    ['clusterCount', 'Clusters'], ['singletonCount', 'Singleton nodes'], ['largestComponentSize', 'Largest connected component (nodes)'],
+    ['density', 'Network density'], ['averageDegree', 'Average degree'], ['maxDegree', 'Maximum degree'],
+    ['averageLocalClusteringCoefficient', 'Average local clustering coefficient'], ['transitivity', 'Transitivity'],
+    ['averagePathLength', 'Average reachable path length'], ['diameter', 'Diameter'],
+  ];
+  const rows: Array<[string, unknown]> = metrics.filter(([key]) => key in summary).map(([key, name]) => [
+    name + (summary.approximatePathMetrics && (key === 'averagePathLength' || key === 'diameter') ? ' (approximate)' : ''), summary[key],
+  ]);
+  if (summary.componentMetrics) {
+    for (const [key, name] of [['largestClusterSize', 'Largest cluster (nodes)'], ['clusteredFraction', 'Fraction of nodes in clusters'],
+      ['meanClusterSize', 'Mean cluster size'], ['medianClusterSize', 'Median cluster size']] as const) {
+      if (key in summary.componentMetrics) rows.push([name, summary.componentMetrics[key]]);
+    }
+  }
+  return facts([['Threshold field when run', summary.metricLabel ? label(summary.metricLabel) : undefined],
+    ['Distance metric when run', run.parameters?.['default-distance-metric'] ? label(run.parameters['default-distance-metric']) : undefined],
+    ['Threshold when run', summary.threshold]])
+    + numericalTable(rows)
+    + '<p class="muted">Components include isolated nodes. Clusters contain at least two connected nodes. Path lengths count relationships between reachable nodes.</p>'
+    + (summary.approximatePathMetrics ? `<p class="muted">Path metrics were estimated from ${escape(numericalValue(summary.sampledSourceCount))} sampled source nodes.</p>`
+      : summary.approximatePathMetrics === false ? '<p class="muted">Path metrics were calculated exactly.</p>' : '<p class="muted">Path-metric approximation status was not recorded.</p>');
+}
+
+function thresholdFindings(value: ThresholdSweepSummary, run: InvestigationCalculationSummary): string {
+  if (!Array.isArray(value?.thresholds) || !value.thresholds.length) return '<p class="muted">No threshold sweep points were recorded.</p>';
+  const recommended = value.recommendedIndex;
+  const hasRecommendation = Number.isInteger(recommended) && recommended >= 0 && recommended < value.thresholds.length
+    && Number.isFinite(value.thresholds[recommended]);
+  const rows: Array<[string, unknown]> = [['Sweep points', value.thresholds.length]];
+  if (hasRecommendation) rows.push(['Recommended threshold (saved)', value.thresholds[recommended]],
+    ['Components at recommendation', value.componentCounts?.[recommended]], ['Clusters at recommendation', value.clusterCounts?.[recommended]],
+    ['Singletons at recommendation', value.singletonCounts?.[recommended]], ['Largest cluster at recommendation (nodes)', value.largestClusterSizes?.[recommended]],
+    ['Structure score at recommendation', value.componentStructureScores?.[recommended]]);
+  return facts([['Threshold field when run', value.metric ? label(value.metric) : undefined],
+    ['Distance metric when run', run.parameters?.['default-distance-metric'] ? label(run.parameters['default-distance-metric']) : undefined],
+    ['Recorded sweep range', `${numericalValue(value.thresholds[0])} to ${numericalValue(value.thresholds[value.thresholds.length - 1])}`]])
+    + numericalTable(rows)
+    + `<p class="muted">${hasRecommendation ? 'The recommendation above is the one stored in this completed sweep.' : 'No recommended threshold was recorded.'} Components include isolated nodes; clusters contain at least two connected nodes.</p>`
+    + details(`All saved threshold results (${value.thresholds.length})`, table(
+      ['Threshold', 'Components', 'Clusters', 'Singletons', 'Largest cluster (nodes)', 'Structure score', 'Saved recommendation'],
+      value.thresholds.map((threshold, index) => [threshold, value.componentCounts?.[index], value.clusterCounts?.[index],
+        value.singletonCounts?.[index], value.largestClusterSizes?.[index], value.componentStructureScores?.[index]]
+        .map(item => text(numericalValue(item))).concat(text(hasRecommendation && index === recommended ? 'Recommended' : '—')))));
+}
+
+function numericalFindings(calculations: InvestigationManifest['investigation']['calculations'],
+  recorded: InvestigationWorkspace['calculations'] = {}, historical = false): string {
+  return (['network-statistics', 'threshold-analysis'] as const).map(operation => {
+    const run = calculations[operation];
+    if (!run) return '';
+    const source = recorded[operation];
+    // A newer run must never supply numerical findings for an older figure or manifest.
+    const output = source?.id === run.id && source.operation === run.operation ? source.output?.value ?? source.output : undefined;
+    return `<article class="numerical-result" data-operation="${operation}" data-run-id="${escape(run.id)}"><h3>${escape(INVESTIGATION_OPERATIONS.find(item => item.id === operation).label)}</h3>`
+      + `<p><strong>Scope when run: ${escape(scopeName(run.scope))}</strong> · Saved inputs: ${escape(counted(run.nodeIds.length, 'node'))}; ${escape(counted(run.edgeIds.length, 'relationship'))}. Status ${historical ? 'at image export' : 'at snapshot capture'}: ${badge(run.status, run.status === 'stale' ? 'Stale — retained' : 'Completed').html}</p>`
+      + (run.status === 'stale' ? `<p class="stale-explanation">Inputs or settings changed after this run. ${escape((run.staleReasons || ['Exact change details were not recorded.']).join(' '))}</p>` : '')
+      + (output ? operation === 'network-statistics' ? networkFindings(output.summary, run) : thresholdFindings(output, run)
+        : '<p class="muted">Numerical outputs are not available in this record. The original completed outputs remain in the accompanying session.</p>')
+      + `<p class="muted">Completed ${escape(date(run.completedAt))}. Run ID: <span class="reference">${escape(run.id)}</span>.</p></article>`;
+  }).join('');
+}
+
 /** An offline, script-free publication record. Exact machine-readable state stays in the manifest/session. */
-export function readableInvestigationRecord(manifest: InvestigationManifest, images: InvestigationFigure[] = []): string {
+export function readableInvestigationRecord(manifest: InvestigationManifest, images: InvestigationFigure[] = [], results?: InvestigationReportResults): string {
   const state = manifest.investigation;
   const counts = manifest.counts;
   const runs = Object.values(state.calculations);
@@ -63,6 +140,9 @@ export function readableInvestigationRecord(manifest: InvestigationManifest, ima
   const nodes = state.layout.nodes;
   const ids = (title: string, values: string[]): string => details(`${title} (${values.length})`, `<p class="members">${escape(values.length ? values.join(', ') : 'None')}</p>`);
   const evidenceArchives = state.figureEvidence || {};
+  const findings = section('findings', 'Saved numerical findings',
+    '<p>These tables show completed results saved with this snapshot. Decimal values are displayed to six significant figures; complete precision is retained in the session.</p>'
+    + (numericalFindings(state.calculations, results?.calculations) || '<p class="muted">No network statistics or threshold-analysis results were saved.</p>'));
   const figures = section('figures', 'Exported visualizations', (state.figures?.length
     ? '<p>These are the images exported during this investigation. Each image preserves its appearance and recorded settings at export time; later changes do not replace it.</p>'
       + state.figures.map(figure => {
@@ -95,6 +175,7 @@ export function readableInvestigationRecord(manifest: InvestigationManifest, ima
     const labelFor = (operation: string) => INVESTIGATION_OPERATIONS.find(item => item.id === operation)?.label || operation;
     return `<article id="evidence-${escape(id)}"><h3>Supporting record ${index + 1}</h3><p>Preserves the loaded data, source files, cohort and relationship-layer definitions, scope choices, and saved calculation inputs and outputs present at export. ${counted(references, 'figure')} ${references === 1 ? 'references' : 'reference'} this record.</p>`
       + facts([['Loaded nodes at export', evidence.counts.nodes], ['Loaded relationships at export', evidence.counts.edges]])
+      + numericalFindings(evidence.calculations, results?.figureEvidence?.[id]?.calculations, true)
       + table(['Analysis', 'Retained run ID', 'Scope when run', 'Result at export', 'Recorded inputs', 'Recorded outputs', 'Completed at (UTC)'], historicalRuns.map(run => [
         text(labelFor(run.operation)), code(run.id), text(scopeName(run.scope)), badge(run.status, run.status === 'stale' ? 'Stale — retained' : 'Completed'),
         text(`${run.nodeIds.length} nodes; ${run.edgeIds.length} relationships`),
@@ -220,11 +301,13 @@ export function readableInvestigationRecord(manifest: InvestigationManifest, ima
 <style>
 :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f6f8;color:#203345;font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1120px;margin:auto;padding:40px 28px 60px}header{padding:30px 34px;background:#173d55;border-radius:12px;color:#fff}header .eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:12px;font-weight:650;color:#c1dfeb}h1{font-size:32px;line-height:1.2;margin:10px 0 18px;font-weight:650}header p{max-width:780px;margin:10px 0;color:#e1edf2}.captured{font-size:14px}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}.stat{background:#fff;border:1px solid #d9e3e8;border-radius:9px;padding:18px 22px}.stat strong{display:block;font-size:29px;line-height:1.25;color:#164b60}.stat span{font-size:13px;color:#4b6272}nav{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 0 22px}a{color:#145976;text-decoration-thickness:1px;text-underline-offset:3px}a:focus-visible,summary:focus-visible{outline:3px solid #2484ab;outline-offset:4px}section{background:#fff;border:1px solid #d9e3e8;border-radius:10px;padding:24px 28px;margin:18px 0;scroll-margin-top:20px}h2{font-size:21px;line-height:1.3;color:#173d55;margin:0 0 18px}h3{font-size:16px;margin:0 0 10px}p{margin:12px 0}.muted{font-size:13px;color:#536a79}.table-scroll{overflow-x:auto;margin:12px 0}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}th{background:#edf3f6;color:#254658;font-weight:650}th,td{min-width:110px;padding:11px 13px;border-bottom:1px solid #e2e9ed;vertical-align:top;overflow-wrap:anywhere}th:first-child{min-width:140px}td:first-child{font-weight:500}td{max-width:550px}details{border:1px solid #dce5ea;border-radius:7px;padding:11px 15px;margin:14px 0}summary{cursor:pointer;font-size:14px;font-weight:600;color:#29546a}details[open]>summary{margin-bottom:15px}.reference{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.members{font-size:13px;overflow-wrap:anywhere}.badge{display:inline-block;white-space:nowrap;font-size:12px;line-height:1.4;font-weight:600;border-radius:5px;padding:4px 8px}.completed{color:#165b46;background:#e5f3ec}.stale{color:#815119;background:#fff0d8}.neutral{color:#536675;background:#edf1f4}.note{border-left:3px solid #5592a7;padding:8px 18px;margin:18px 0;background:#f7fafb}.note-text{white-space:pre-wrap}footer{padding:10px 4px;color:#536a79;font-size:13px}
 .exported-figure{margin:24px 0;padding-bottom:24px;border-bottom:1px solid #d9e3e8}.exported-figure h3{overflow-wrap:anywhere}.exported-figure img{display:block;max-width:100%;height:auto;border:1px solid #d9e3e8;background:#fff}.exported-figure figcaption{margin:10px 0;font-size:13px;overflow-wrap:anywhere}.figure-caption{white-space:pre-wrap;font-size:15px}@media print{.exported-figure img{max-height:75vh;width:auto;object-fit:contain}}
+.numerical-result{margin:20px 0;padding:18px 0;border-top:1px solid #d9e3e8}.stale-explanation{border-left:3px solid #bd852f;padding:10px 14px;background:#fff8ed}
+@media print{.numerical-result th,.numerical-result td{min-width:0}}
 @media(max-width:650px){main{padding:18px 12px 30px}header{padding:24px 20px}h1{font-size:27px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat{padding:14px}section{padding:20px 16px}th,td{padding:9px}nav{font-size:13px}}
 @media print{body{background:#fff;color:#111;font-size:10pt}main{max-width:none;padding:0}header{background:#fff;color:#111;border:1px solid #aaa;padding:18px}header p,header .eyebrow{color:#333}nav{display:none}section{border:0;border-top:1px solid #aaa;border-radius:0;padding:18px 0;margin:12px 0}h2,h3{break-after:avoid}tr,.note,.stat{break-inside:avoid}.table-scroll{overflow:visible}details>summary{list-style:none}details::details-content{display:block;content-visibility:visible}.badge{border:1px solid #aaa;color:#111;background:#fff}.reference{font-size:8pt}th{background:#eee}}
 </style></head><body><main><header><div class="eyebrow">MicrobeTrace · Saved investigation</div><h1>Investigation record</h1><p>A readable account of the network, analytical settings, notes, and saved calculations at the time of capture.</p><p class="captured">Captured ${escape(date(manifest.capturedAt))}</p></header>
 <div class="stats">${[[counts.nodes, 'Loaded nodes'], [counts.visibleNodes, 'Visible nodes'], [counts.edges, 'Loaded relationships'], [counts.visibleEdges, 'Visible relationships']].map(([count, title]) => `<div class="stat"><strong>${escape(count)}</strong><span>${title}</span></div>`).join('')}</div>
 <p>To continue this analysis, open the accompanying <strong>.microbetrace session</strong> in MicrobeTrace. This HTML is for reading and sharing; <strong>investigation-manifest.json</strong> contains the machine-readable audit details.</p>
-<nav aria-label="Record sections">${[['figures','Images'],['figure-evidence','Figure evidence'],['threshold','Threshold'],['filters','Filters'],['layout','Layout'],['grouping','Grouping'],['cohorts','Cohorts'],['layers','Layers'],['notes','Notes'],['calculations','Calculations'],['sources','Sources'],['integrity','Audit references']].map(([id,title])=>`<a href="#${id}">${title}</a>`).join('')}</nav>
-${figures}${figureEvidence}${threshold}${filters}${layout}${grouping}${cohorts}${layers}${notes}${calculations}${sources}${integrity}<footer>Snapshot ID: <span class="reference">${escape(manifest.snapshotId)}</span></footer></main></body></html>`;
+<nav aria-label="Record sections">${[['figures','Images'],['findings','Findings'],['figure-evidence','Figure evidence'],['threshold','Threshold'],['filters','Filters'],['layout','Layout'],['grouping','Grouping'],['cohorts','Cohorts'],['layers','Layers'],['notes','Notes'],['calculations','Calculations'],['sources','Sources'],['integrity','Audit references']].map(([id,title])=>`<a href="#${id}">${title}</a>`).join('')}</nav>
+${figures}${findings}${figureEvidence}${threshold}${filters}${layout}${grouping}${cohorts}${layers}${notes}${calculations}${sources}${integrity}<footer>Snapshot ID: <span class="reference">${escape(manifest.snapshotId)}</span></footer></main></body></html>`;
 }

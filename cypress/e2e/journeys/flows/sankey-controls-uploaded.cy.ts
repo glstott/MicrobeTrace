@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   expandAccordionTabByHeader,
@@ -441,6 +442,7 @@ describe('Journey Flow - Sankey controls on uploaded data', () => {
       .find('#sankey-export-filename')
       .clear()
       .type(pngFileBase);
+    rememberInvestigationImageInputs('sankeyPngInputs');
     cy.get('@sankeyExport').find('#sankey-export-submit').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Sankey').should('not.exist');
 
@@ -454,6 +456,7 @@ describe('Journey Flow - Sankey controls on uploaded data', () => {
       .find('#sankey-export-filename')
       .clear()
       .type(svgFileBase);
+    rememberInvestigationImageInputs('sankeySvgInputs');
     cy.get('@sankeyExport').find('#sankey-export-submit').click({ force: true });
     cy.contains('.p-dialog-title', 'Export Sankey').should('not.exist');
 
@@ -461,5 +464,9 @@ describe('Journey Flow - Sankey controls on uploaded data', () => {
       expect(svgText, 'exported Sankey SVG content').to.include('<svg');
       expect(svgText.length, 'exported Sankey SVG length').to.be.greaterThan(100);
     });
+    assertInvestigationImageBundle([
+      { path: pngPath, view: 'Sankey', inputsAlias: 'sankeyPngInputs' },
+      { path: svgPath, view: 'Sankey', inputsAlias: 'sankeySvgInputs' },
+    ]);
   });
 });

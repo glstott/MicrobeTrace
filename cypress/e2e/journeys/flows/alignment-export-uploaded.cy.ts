@@ -1,6 +1,7 @@
 /// <reference types="cypress" />
 
 import { getProfile } from '../datasets/profile';
+import { assertInvestigationImageBundle, rememberInvestigationImageInputs } from '../../../support/investigation-export-helpers';
 import {
   assertAfterLaunchCounts,
   assertAlignmentReady,
@@ -84,6 +85,7 @@ describe('Journey Flow - Alignment export on uploaded data', () => {
     cy.get('@alignmentExportDialog')
       .find('#alignment-export-visual-filetype')
       .select('svg');
+    rememberInvestigationImageInputs('alignmentImageInputs');
     cy.get('@alignmentExportDialog')
       .find('#alignment-export-visual')
       .click({ force: true });
@@ -123,6 +125,7 @@ describe('Journey Flow - Alignment export on uploaded data', () => {
       expect(csvText, 'exported alignment CSV header').to.include('position,');
       expect(csvText.length, 'exported alignment CSV length').to.be.greaterThan(100);
     });
+    assertInvestigationImageBundle([{ path: svgPath, view: 'Alignment View', inputsAlias: 'alignmentImageInputs' }]);
   });
 
   it('exports the uploaded Alignment view as PNG with resolution text matching the rendered size', () => {
@@ -157,6 +160,7 @@ describe('Journey Flow - Alignment export on uploaded data', () => {
         });
     });
 
+    rememberInvestigationImageInputs('alignmentImageInputs');
     cy.get('@alignmentExportDialog')
       .find('#alignment-export-visual')
       .click({ force: true });
@@ -164,6 +168,7 @@ describe('Journey Flow - Alignment export on uploaded data', () => {
     cy.readFile(pngPath, 'binary', { timeout: 30000 }).should((pngBinary) => {
       expect(pngBinary.length, 'exported alignment PNG byte length').to.be.greaterThan(1000);
     });
+    assertInvestigationImageBundle([{ path: pngPath, view: 'Alignment View', inputsAlias: 'alignmentImageInputs' }]);
   });
 
   it('exports uploaded Alignment MEGA plus consensus-enabled FASTA and DataTable artifacts', () => {
